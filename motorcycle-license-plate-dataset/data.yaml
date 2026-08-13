@@ -1,0 +1,14 @@
+path: motorcycle-license-plate
+train: train/images
+val: valid/images
+test: test/images
+
+nc: 3
+names: ['letters', 'license-plate', 'province']
+
+roboflow:
+  workspace: zusture
+  project: motorcycle-license-plate-thai
+  version: 4
+  license: CC BY 4.0
+  url: https://universe.roboflow.com/zusture/motorcycle-license-plate-thai/dataset/4
