@@ -1,7 +1,10 @@
 import gc
 import multiprocessing as mp
+import os
 import threading
 import time
+from collections import deque
+from datetime import timedelta
 
 import cv2
 import torch
@@ -10,39 +13,15 @@ from ocr import ocr_worker
 from province import extract_thai_province
 from render import draw_text_on_cv_img
 from app_config import load_yolo_model
-
-
-def open_capture(camera_url: str):
-    cap = cv2.VideoCapture(camera_url, cv2.CAP_FFMPEG)
-    cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
-    return cap
-
-
-def merge_related_boxes(boxes):
-    if not boxes:
-        return []
-
-    boxes = sorted(boxes, key=lambda x: x[4], reverse=True)
-    bx1, by1, bx2, by2, bconf = boxes[0]
-
-    for x1, y1, x2, y2, _ in boxes[1:]:
-        cx, cy = (x1 + x2) / 2, (y1 + y2) / 2
-        bcx, bcy = (bx1 + bx2) / 2, (by1 + by2) / 2
-        dist = ((cx - bcx) ** 2 + (cy - bcy) ** 2) ** 0.5
-        threshold = max(bx2 - bx1, by2 - by1) * 2.5
-
-        if dist < max(150, threshold):
-            bx1 = min(bx1, x1)
-            by1 = min(by1, y1)
-            bx2 = max(bx2, x2)
-            by2 = max(by2, y2)
-
-    return [(bx1, by1, bx2, by2, bconf)]
+from utils import format_thai_plate, open_capture, merge_related_boxes
+from tracker import MotorcycleTracker
+from ocr_manager import OCRManager
 
 
 class DetectionApp:
-    def __init__(self, config, device, device_secondary, use_half):
+    def __init__(self, config, camera_url: str, device, device_secondary, use_half):
         self.config = config
+        self.camera_url = camera_url   # URL or path selected from the menu
         self.device = device
         self.device_secondary = device_secondary
         self.use_half = use_half
@@ -54,24 +33,98 @@ class DetectionApp:
         except Exception:
             self.model_mc = None
 
+        if torch.cuda.is_available():
+            # Release cached-but-unused VRAM before spawning the OCR process (also GPU-based)
+            torch.cuda.empty_cache()
+
         self.ocr_in_q = mp.Queue(maxsize=2)
         self.ocr_out_q = mp.Queue(maxsize=2)
         self.ocr_proc = mp.Process(target=ocr_worker, args=(self.ocr_in_q, self.ocr_out_q), daemon=True)
+
+        # Initialize sub-components
+        self.tracker = MotorcycleTracker(
+            max_age_s=config.motorcycle_track_max_age_s, 
+            distance_threshold=config.motorcycle_track_distance
+        )
+        
+        self.ocr_manager = OCRManager(
+            cache_ttl_s=config.ocr_cache_ttl_s,
+            cache_distance=config.ocr_cache_distance
+        )
 
         self.state = {
             "latest_frame": None,
             "frame_for_proc": None,
             "latest_detections": [],
-            "latest_mc_detections": [],
-            # bbox -> (text, conf, timestamp, stable_count)
-            "ocr_cache": {},
-            "last_ocr_time": 0.0,
+            "video_pos_ms": 0.0,       # current position in the video (ms)
+            "video_total_ms": 0.0,     # total duration of the video (ms)
         }
 
         self.frame_lock = threading.Lock()
         self.proc_lock = threading.Lock()
         self.det_lock = threading.Lock()
         self.frame_ready = threading.Event()
+
+        # For video file only
+        self.is_video_file = not camera_url.lower().startswith("rtsp://")
+        self._paused = False          # pause/resume state
+        self._pause_lock = threading.Lock()
+        self._fps_samples = deque(maxlen=30)  # keep samples to compute actual FPS
+        self._video_writer = None     # for recording output video
+        self._source_fps = float(config.display_fps)  # replaced with the real source FPS once known
+
+    def _is_paused(self) -> bool:
+        with self._pause_lock:
+            return self._paused
+
+    def _toggle_pause(self):
+        with self._pause_lock:
+            self._paused = not self._paused
+        state = "PAUSED" if self._paused else "RESUMED"
+        print(f"[Video] {state}")
+
+    def _setup_video_writer(self, frame_shape, fps: float):
+        """Create a VideoWriter to record the output video"""
+        os.makedirs("output", exist_ok=True)
+        timestamp = time.strftime("%Y%m%d_%H%M%S")
+        out_path = os.path.join("output", f"detected_{timestamp}.mp4")
+        h, w = frame_shape[:2]
+        fourcc = cv2.VideoWriter_fourcc(*"mp4v")
+        self._video_writer = cv2.VideoWriter(out_path, fourcc, fps, (w, h))
+        print(f"[Video] Recording output to: {out_path}")
+        return out_path
+
+    def _draw_video_overlay(self, frame, pos_ms: float, total_ms: float,
+                            proc_fps: float, paused: bool):
+        """Draw an overlay showing timestamp, progress bar, and FPS on the frame"""
+        h, w = frame.shape[:2]
+
+        # --- Timestamp & FPS (top-left corner) ---
+        pos_td = str(timedelta(milliseconds=int(pos_ms))).split(".")[0]
+        total_td = str(timedelta(milliseconds=int(total_ms))).split(".")[0]
+        time_text = f"{pos_td} / {total_td}"
+        fps_text = f"Proc FPS: {proc_fps:.1f}"
+        pause_text = "  [PAUSED]" if paused else ""
+
+        overlay = frame.copy()
+        cv2.rectangle(overlay, (0, 0), (320, 56), (0, 0, 0), -1)
+        cv2.addWeighted(overlay, 0.5, frame, 0.5, 0, frame)
+
+        cv2.putText(frame, time_text + pause_text, (10, 22),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.65, (255, 255, 255), 1, cv2.LINE_AA)
+        cv2.putText(frame, fps_text, (10, 46),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.55, (180, 255, 180), 1, cv2.LINE_AA)
+
+        # --- Progress bar (bottom) ---
+        bar_h = 6
+        bar_y = h - bar_h
+        progress = pos_ms / total_ms if total_ms > 0 else 0
+        filled_w = int(w * progress)
+
+        cv2.rectangle(frame, (0, bar_y), (w, h), (60, 60, 60), -1)
+        cv2.rectangle(frame, (0, bar_y), (filled_w, h), (0, 200, 120), -1)
+
+        return frame
 
     def start(self):
         self.ocr_proc.start()
@@ -87,30 +140,47 @@ class DetectionApp:
         threading.Thread(target=self._yolo_fn, daemon=True, name="YOLO").start()
         threading.Thread(target=self._ocr_result_fn, daemon=True, name="OCR-Result").start()
 
-        print("Waiting for camera feed...")
+        print("Waiting for video feed...")
         while True:
             with self.frame_lock:
                 if self.state["latest_frame"] is not None:
                     break
             time.sleep(0.1)
-        print("Camera feed active! Detection starting... Press 'q' to exit.")
 
-        frame_interval = 1.0 / self.config.display_fps
+        if self.is_video_file:
+            print("Video loaded! Detection starting...")
+            print("  [Space] Pause/Resume  |  [Q] Quit")
+        else:
+            print("Camera feed active! Detection starting... Press 'q' to exit.")
+
         frame_counter = 0
+        win_title = "Motorcycle License Plate Detection"
+        cv2.namedWindow(win_title, cv2.WINDOW_NORMAL)
+        cv2.resizeWindow(win_title, 1024, 576)
+
+        # For video: prepare output writer after getting the first frame
+        output_initialized = False
+        display_t = time.time()
 
         while True:
-            loop_start = time.time()
-
             with self.frame_lock:
                 raw = self.state["latest_frame"]
                 frame = raw.copy() if raw is not None else None
+                pos_ms = self.state["video_pos_ms"]
+                total_ms = self.state["video_total_ms"]
 
             if frame is not None:
                 frame_counter += 1
 
+                # Start the video writer for the first time (video file only)
+                # Paused
+                # if self.is_video_file and not output_initialized:
+                #     self._setup_video_writer(frame.shape, self._source_fps)
+                #     output_initialized = True
+
                 with self.det_lock:
                     dets = list(self.state["latest_detections"])
-                    mc_dets = list(self.state.get("latest_mc_detections", []))
+                    mc_dets = list(self.tracker.latest_mc_detections)
 
                 for (mx1, my1, mx2, my2), m_conf in mc_dets:
                     cv2.rectangle(frame, (mx1, my1), (mx2, my2), (255, 100, 0), 2)
@@ -124,18 +194,39 @@ class DetectionApp:
                         label = f"{text} ({conf * 100:.0f}%)"
                         frame = draw_text_on_cv_img(frame, label, (x1, y1), font_size=24, text_color=(255, 255, 255), bg_color=(0, 180, 0))
 
+                # Draw overlay for video file
+                if self.is_video_file:
+                    now = time.time()
+                    self._fps_samples.append(now)
+                    if len(self._fps_samples) >= 2:
+                        proc_fps = (len(self._fps_samples) - 1) / (self._fps_samples[-1] - self._fps_samples[0])
+                    else:
+                        proc_fps = 0.0
+                    frame = self._draw_video_overlay(
+                        frame, pos_ms, total_ms, proc_fps, self._is_paused()
+                    )
+
+                # Write frame to output video
+                # Paused
+                # if self._video_writer is not None:
+                #     self._video_writer.write(frame)
+
                 if frame_counter % 300 == 0:
                     gc.collect()
 
-                win_title = "Motorcycle License Plate Detection"
-                cv2.namedWindow(win_title, cv2.WINDOW_NORMAL)
-                cv2.resizeWindow(win_title, 1024, 576)
                 cv2.imshow(win_title, frame)
 
-            elapsed = time.time() - loop_start
-            wait_ms = max(1, int((frame_interval - elapsed) * 1000))
-            if cv2.waitKey(wait_ms) & 0xFF == ord("q"):
+            key = cv2.waitKey(1) & 0xFF
+            if key == ord("q"):
                 break
+            elif key == ord(" ") and self.is_video_file:
+                self._toggle_pause()
+
+        # Close video writer
+        # Paused
+        # if self._video_writer is not None:
+        #     self._video_writer.release()
+        #     print("[Video] Output video saved.")
 
         try:
             self.ocr_in_q.put(None, timeout=1)
@@ -146,53 +237,97 @@ class DetectionApp:
         print("Program exited.")
 
     def _capture_fn(self):
-        cap = open_capture(self.config.camera_url)
-        counter = 0
+        cap = open_capture(self.camera_url)
+
+        if self.is_video_file:
+            # Pace playback at the source file's native FPS to match real-time playback
+            source_fps = cap.get(cv2.CAP_PROP_FPS)
+            if source_fps <= 0:
+                source_fps = self.config.display_fps
+            self._source_fps = source_fps
+            frame_interval = 1.0 / source_fps
+            total_ms = cap.get(cv2.CAP_PROP_FRAME_COUNT) / source_fps * 1000.0
+            with self.frame_lock:
+                self.state["video_total_ms"] = total_ms
+            print(f"[Video] Playback FPS: {source_fps:.1f} (source)  |  Duration: {str(timedelta(milliseconds=int(total_ms))).split('.')[0]}")
+        else:
+            frame_interval = 0.0
+
+        grab_fail_streak = 0
         while True:
+            # --- Pause: stop reading new frames when paused ---
+            if self.is_video_file and self._is_paused():
+                time.sleep(0.05)
+                continue
+
+            frame_start = time.time()
             try:
                 if not cap.isOpened():
                     cap.release()
                     time.sleep(1)
-                    cap = open_capture(self.config.camera_url)
+                    cap = open_capture(self.camera_url)
+                    if self.is_video_file:
+                        source_fps = cap.get(cv2.CAP_PROP_FPS)
+                        if source_fps <= 0:
+                            source_fps = self.config.display_fps
+                        self._source_fps = source_fps
+                        frame_interval = 1.0 / source_fps
                     continue
+
                 if not cap.grab():
-                    time.sleep(0.02)
+                    if self.is_video_file:
+                        total_frames = cap.get(cv2.CAP_PROP_FRAME_COUNT)
+                        current_frame = cap.get(cv2.CAP_PROP_POS_FRAMES)
+                        at_real_end = total_frames > 0 and current_frame >= total_frames - 1
+                        grab_fail_streak += 1
+                        # A corrupt/undecodable frame mid-stream also fails grab(), so only
+                        # treat this as real EOF near the last frame or after repeated failures.
+                        if at_real_end or grab_fail_streak >= 30:
+                            print("[Video] End of video. Looping...")
+                            cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
+                            with self.frame_lock:
+                                self.state["video_pos_ms"] = 0.0
+                            grab_fail_streak = 0
+                        else:
+                            time.sleep(0.05)
+                    else:
+                        # Stream stalled/dropped: reconnect instead of retrying a dead connection
+                        print("[RTSP] Stream read failed. Reconnecting...")
+                        cap.release()
+                        time.sleep(1)
+                        cap = open_capture(self.camera_url)
                     continue
+                grab_fail_streak = 0
+
                 ret, frame = cap.retrieve()
                 if not ret or frame is None:
+                    # Bad/undecodable frame: back off briefly instead of busy-spinning
+                    time.sleep(0.02)
                     continue
+
+                # Update current position in the video
+                if self.is_video_file:
+                    pos_ms = cap.get(cv2.CAP_PROP_POS_MSEC)
+                    with self.frame_lock:
+                        self.state["video_pos_ms"] = pos_ms
+
                 with self.frame_lock:
                     self.state["latest_frame"] = frame
-                counter += 1
-                if counter % self.config.yolo_every_n == 0:
-                    with self.proc_lock:
-                        self.state["frame_for_proc"] = frame
-                    self.frame_ready.set()
+                with self.proc_lock:
+                    self.state["frame_for_proc"] = frame
+                self.frame_ready.set()
+
             except Exception:
                 time.sleep(0.5)
+                continue
 
-    def _get_cached_ocr(self, bbox):
-        x1, y1, x2, y2 = bbox
-        cx, cy = (x1 + x2) / 2, (y1 + y2) / 2
-        now = time.time()
-        best_text, best_conf = "", 0.0
+            # Control speed to match the source video's FPS
+            if self.is_video_file:
+                elapsed = time.time() - frame_start
+                sleep_time = frame_interval - elapsed
+                if sleep_time > 0:
+                    time.sleep(sleep_time)
 
-        with self.det_lock:
-            for k, v in list(self.state["ocr_cache"].items()):
-                # support either (text, conf, ts) or (text, conf, ts, stable)
-                if len(v) >= 3:
-                    text, conf, t_stamp = v[0], v[1], v[2]
-                else:
-                    continue
-                if now - t_stamp > self.config.ocr_cache_ttl_s:
-                    continue
-                kx1, ky1, kx2, ky2 = k
-                kcx, kcy = (kx1 + kx2) / 2, (ky1 + ky2) / 2
-                dist = ((cx - kcx) ** 2 + (cy - kcy) ** 2) ** 0.5
-                if dist < self.config.ocr_cache_distance and text:
-                    best_text, best_conf = text, conf
-                    break
-        return best_text, best_conf
 
     def _yolo_fn(self):
         while True:
@@ -233,7 +368,7 @@ class DetectionApp:
                                 mc_bboxes.append(((mx1, my1, mx2, my2), m_conf))
 
                 with self.det_lock:
-                    self.state["latest_mc_detections"] = mc_bboxes
+                    self.tracker.update_tracks(mc_bboxes)
 
                 all_boxes = []
                 for r in results:
@@ -258,28 +393,26 @@ class DetectionApp:
                     crop = frame[y1_p:y2_p, x1_p:x2_p]
                     if crop.size > 0:
                         bboxes.append(((x1, y1, x2, y2), crop))
-                    x1_p, y1_p = max(0, x1 - pad_w), max(0, y1 - pad_h)
-                    x2_p, y2_p = min(w, x2 + pad_w), min(h, y2 + pad_h)
-
-                    crop = frame[y1_p:y2_p, x1_p:x2_p]
-                    if crop.size > 0:
-                        bboxes.append(((x1, y1, x2, y2), crop))
 
                 if bboxes:
                     current_dets = []
-                    for (bb, _) in bboxes:
-                        cached_text, cached_conf = self._get_cached_ocr(bb)
-                        current_dets.append((bb, cached_text, cached_conf))
-
+                    ocr_needed = []
                     with self.det_lock:
+                        for (bb, cr) in bboxes:
+                            cached_text, cached_conf = self.ocr_manager.get_cached_ocr(bb)
+                            current_dets.append((bb, cached_text, cached_conf))
+                            if not cached_text:
+                                ocr_needed.append((bb, cr))
+                        
                         self.state["latest_detections"] = current_dets
 
-                    now = time.time()
-                    if now - self.state["last_ocr_time"] >= self.config.ocr_cooldown_s:
-                        payload = [(bb, cr.tobytes(), cr.shape, str(cr.dtype)) for bb, cr in bboxes]
+                    if ocr_needed:
+                        payload = [
+                            (bb, cr.tobytes(), cr.shape, str(cr.dtype))
+                            for bb, cr in ocr_needed
+                        ]
                         try:
                             self.ocr_in_q.put_nowait(payload)
-                            self.state["last_ocr_time"] = now
                         except Exception:
                             pass
                 else:
@@ -292,16 +425,12 @@ class DetectionApp:
             time.sleep(0)
 
     def _ocr_result_fn(self):
-        last_printed = ""
-        last_printed_time = 0.0
-
         while True:
             try:
                 results = self.ocr_out_q.get(timeout=5.0)
                 if not isinstance(results, list):
                     continue
 
-                now = time.time()
                 for item in results:
                     if len(item) >= 5:
                         bbox, plate_text, plate_conf, province_text, province_conf = item[:5]
@@ -312,6 +441,17 @@ class DetectionApp:
                         bbox, plate_text = item[:2]
                         plate_conf = 0.0
                         province_text, province_conf = "", 0.0
+
+                    plate_text = str(plate_text or "").strip()
+                    province_text = str(province_text or "").strip()
+                    
+                    plate_text, plate_conf, province_text, province_conf = self.ocr_manager.aggregate_vote_result(
+                        bbox,
+                        plate_text,
+                        float(plate_conf) if plate_conf else 0.0,
+                        province_text,
+                        float(province_conf) if province_conf else 0.0,
+                    )
 
                     if plate_text and province_text:
                         final_text = f"{plate_text} {province_text}"
@@ -325,21 +465,29 @@ class DetectionApp:
 
                     if final_text and final_conf >= self.config.ocr_conf_threshold:
                         with self.det_lock:
-                            old_text, old_conf, _ = self.state["ocr_cache"].get(bbox, ("", 0.0, 0))
-                            if final_conf >= old_conf:
-                                self.state["ocr_cache"][bbox] = (final_text, final_conf, now)
-                            else:
-                                final_text, final_conf = old_text, old_conf
+                            final_text, final_conf = self.ocr_manager.update_cache(bbox, final_text, final_conf)
 
-                        if final_text and (final_text != last_printed or (now - last_printed_time) >= 8.0):
+                            track_id = self.tracker.resolve_track_id(bbox)
+                            if track_id is not None:
+                                self.ocr_manager.add_motorcycle_ocr(track_id, final_text, final_conf)
+                                consensus = self.ocr_manager.get_motorcycle_consensus(track_id)
+                                
+                                if consensus["plate_text"]:
+                                    print(f"\nMotorcycle ID {track_id}")
+                                    print(f"  Frame: {consensus.get('latest_timestamp', 0)}")
+                                    print(f"  OCR count: {consensus['ocr_count']}")
+                                    print(f"  Consensed plate: {consensus['plate_text']}")
+                                    print(f"  Confidence: {consensus['consensus_conf'] * 100:.1f}%")
+                                    print("-----------------------------------------")
+
+                        if final_text:
                             pct = final_conf * 100
                             province = extract_thai_province(final_text)
+                            formatted_plate = format_thai_plate(plate_text, province)
                             print(f"\n=========================================")
-                            print(f"   License Plate Detected: {final_text}")
+                            print(f"   License Plate Detected: {formatted_plate}")
                             print(f"   Province: {province if province else 'Province not found'}")
                             print(f"   Confidence: {pct:.1f}%")
                             print(f"=========================================\n")
-                            last_printed = final_text
-                            last_printed_time = now
             except Exception:
                 pass

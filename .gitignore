@@ -28,9 +28,12 @@ dist/
 .DS_Store
 Thumbs.db
 
-# Training/inference outputs
+# Training
 runs/
+
+# Data directories
 output/
+input/
 
 # Large local model weights
 models/

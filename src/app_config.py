@@ -11,27 +11,32 @@ load_dotenv()
 
 @dataclass(frozen=True)
 class AppConfig:
-    camera_url: str
+    rtsp_url: str
+    video_file: str
     
     model_path: str = "runs/detect/train-14/weights/best.pt"
     motorcycle_model_path: str = "yolov8n.pt"
-    
+
+    ###DEFAULT CONFIG VALUES###
     # Detection parameters
     detection_imgsz: int = 640
     detection_conf: float = 0.25
-    yolo_every_n: int = 2
     
-    # OCR parameters
-    ocr_cooldown_s: float = 0.2
     # When to 'lock' an OCR result and print it: minimum confidence (0-1)
     ocr_lock_confidence: float = 0.90
     # Number of consecutive updates (stable reads) required to consider a result stable
     ocr_lock_stable_count: int = 2
-    # Minimum seconds between printed locked results
-    ocr_lock_print_cooldown_s: float = 8.0
+    
+    # Motorcycle tracking parameters
+    # distance_threshold: max pixel distance between bbox centers to consider same motorcycle.
+    # Increase if motorcycles move fast between frames (e.g. 250 for ~30fps, higher for low-fps cameras).
+    motorcycle_track_distance: float = 250.0
+    # max_age_s: how long (seconds) to keep a track alive without a new detection.
+    # Increase if YOLO sometimes misses a motorcycle for multiple frames.
+    motorcycle_track_max_age_s: float = 6.0
     
     # Display parameters
-    display_fps: int = 25
+    display_fps: int = 30
     ocr_conf_threshold: float = 0.80
     ocr_cache_ttl_s: float = 5.0
     ocr_cache_distance: float = 120.0
@@ -48,16 +53,16 @@ class AppConfig:
                 return default
 
         return cls(
-            camera_url=os.getenv("CAMERA_URL"),
-            model_path=os.getenv("MODEL_PATH", cls.model_path),
-            motorcycle_model_path=os.getenv("MOTORCYCLE_MODEL_PATH", cls.motorcycle_model_path),
+            rtsp_url=os.getenv("RTSP_URL", ""),
+            video_file=os.getenv("VIDEO_FILE", ""),
+            model_path=_getenv("MODEL_PATH", str, cls.model_path),
+            motorcycle_model_path=_getenv("MOTORCYCLE_MODEL_PATH", str, cls.motorcycle_model_path),
             detection_imgsz=_getenv("DETECTION_IMGSZ", int, cls.detection_imgsz),
             detection_conf=_getenv("DETECTION_CONF", float, cls.detection_conf),
-            yolo_every_n=_getenv("YOLO_EVERY_N", int, cls.yolo_every_n),
-            ocr_cooldown_s=_getenv("OCR_COOLDOWN_S", float, cls.ocr_cooldown_s),
             ocr_lock_confidence=_getenv("OCR_LOCK_CONFIDENCE", float, cls.ocr_lock_confidence),
             ocr_lock_stable_count=_getenv("OCR_LOCK_STABLE_COUNT", int, cls.ocr_lock_stable_count),
-            ocr_lock_print_cooldown_s=_getenv("OCR_LOCK_PRINT_COOLDOWN_S", float, cls.ocr_lock_print_cooldown_s),
+            motorcycle_track_distance=_getenv("MOTORCYCLE_TRACK_DISTANCE", float, cls.motorcycle_track_distance),
+            motorcycle_track_max_age_s=_getenv("MOTORCYCLE_TRACK_MAX_AGE_S", float, cls.motorcycle_track_max_age_s),
             display_fps=_getenv("DISPLAY_FPS", int, cls.display_fps),
             ocr_conf_threshold=_getenv("OCR_CONF_THRESHOLD", float, cls.ocr_conf_threshold),
             ocr_cache_ttl_s=_getenv("OCR_CACHE_TTL_S", float, cls.ocr_cache_ttl_s),
@@ -84,6 +89,11 @@ def configure_torch_runtime():
             pass
         try:
             torch.set_float32_matmul_precision("high")
+        except Exception:
+            pass
+        try:
+            # Leave headroom on the GPU for the separate OCR process (also GPU-based)
+            torch.cuda.set_per_process_memory_fraction(0.7, device=0)
         except Exception:
             pass
 

@@ -12,24 +12,31 @@ def validate_and_clean_thai_plate(raw_text, conf):
     if not raw_text or conf < 0.25:
         return "", 0.0
 
-    text = raw_text.strip()
-
-    english_chars = re.findall(r"[A-Za-z]", text)
-    if len(english_chars) > 2:
+    # 1. Clean the text but KEEP spaces initially to help with ambiguity
+    cleaned = re.sub(r"[^\u0E00-\u0E7F0-9\s]", "", raw_text).strip()
+    cleaned = re.sub(r"\s+", " ", cleaned) # normalize spaces
+    
+    if len(cleaned.replace(" ", "")) < 2:
         return "", 0.0
 
-    thai_letters = "".join(re.findall(r"[\u0E00-\u0E7F]", text))
-    digits = "".join(re.findall(r"[0-9]", text))
-    if not thai_letters and not digits:
-        return "", 0.0
+    # Format Regex components
+    # Plate part: optional 1-9 followed by 1-3 Thai letters
+    plate_regex = r"([1-9]?[\u0E00-\u0E7F]{1,3})"
+    # Number part: 1 to 4 digits
+    num_regex = r"([0-9]{1,4})"
 
-    cleaned_text = re.sub(r"[^\u0E00-\u0E7F0-9\s]", "", text).strip()
-    cleaned_text = re.sub(r"\s+", " ", cleaned_text)
+    # 2. Check Standard Format (with or without space)
+    std_match = re.match(f"^{plate_regex}\\s?{num_regex}$", cleaned)
+    if std_match:
+        return f"{std_match.group(1)} {std_match.group(2)}", conf
 
-    if len(cleaned_text.replace(" ", "")) < 2:
-        return "", 0.0
+    # 3. Check Swapped Format (with or without space)
+    swap_match = re.match(f"^{num_regex}\\s?{plate_regex}$", cleaned)
+    if swap_match:
+        return f"{swap_match.group(2)} {swap_match.group(1)}", conf
 
-    return cleaned_text, conf
+    # If it doesn't match either, it's invalid grammar -> reject
+    return "", 0.0
 
 
 def _extract_ocr_candidates(ocr_out):
@@ -112,6 +119,9 @@ def ocr_worker(in_q: mp.Queue, out_q: mp.Queue):
     os.environ["PADDLE_PDX_ENABLE_MKLDNN_BYDEFAULT"] = "0"
     os.environ["FLAGS_minloglevel"] = "2"
     os.environ["GLOG_minloglevel"] = "2"
+    # Grow GPU memory on demand instead of Paddle's default upfront ~92% reservation,
+    # so this process can share the GPU with the main (YOLO) process's CUDA context.
+    os.environ.setdefault("FLAGS_allocator_strategy", "auto_growth")
     warnings.filterwarnings("ignore")
 
     from paddleocr import PaddleOCR
@@ -143,7 +153,7 @@ def ocr_worker(in_q: mp.Queue, out_q: mp.Queue):
             peri = cv2.arcLength(c, True)
             approx = cv2.approxPolyDP(c, 0.02 * peri, True)
             if len(approx) == 4:
-                # ตรวจสอบว่าพื้นที่ใหญ่พอ ไม่ใช่ noise เล็กๆ
+                # Check that the area is large enough, not small noise
                 if cv2.contourArea(approx) > (image.shape[0]*image.shape[1] * 0.3):
                     plate_contour = approx
                     break
@@ -183,10 +193,10 @@ def ocr_worker(in_q: mp.Queue, out_q: mp.Queue):
         warped = cv2.warpPerspective(image, M, (maxWidth, maxHeight))
         return warped
 
-    def _preprocess_crop_for_ocr(crop_bgr):
+    def _generate_ocr_variants(crop_bgr):
         crop_bgr = _apply_perspective_transform(crop_bgr)
         if crop_bgr is None or crop_bgr.size == 0:
-            return crop_bgr
+            return []
 
         h, w = crop_bgr.shape[:2]
 
@@ -197,7 +207,7 @@ def ocr_worker(in_q: mp.Queue, out_q: mp.Queue):
             h, w = crop_bgr.shape[:2]
 
         if w < 10 or h < 10:
-            return None
+            return []
 
         target_w = 600
         scale = target_w / float(w)
@@ -211,8 +221,6 @@ def ocr_worker(in_q: mp.Queue, out_q: mp.Queue):
 
         crop_bgr = cv2.resize(crop_bgr, (new_w, new_h), interpolation=cv2.INTER_CUBIC)
 
-        # เพิ่ม padding แนวตั้งให้สูงอย่างน้อย 80px
-        # ป้องกัน PaddleOCR ขยาย short-side → 640 แล้วด้าน wide พุ่งเกิน 4000px
         MIN_OCR_H = 80
         if new_h < MIN_OCR_H:
             pad_total = MIN_OCR_H - new_h
@@ -223,15 +231,43 @@ def ocr_worker(in_q: mp.Queue, out_q: mp.Queue):
                 cv2.BORDER_CONSTANT, value=(255, 255, 255)
             )
 
-        # CLAHE: เพิ่ม contrast ท้องถิ่นช่วยอ่านป้ายที่ไม่ชัด
-        gray = cv2.cvtColor(crop_bgr, cv2.COLOR_BGR2GRAY)
-        clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
-        gray = clahe.apply(gray)
-        crop_bgr = cv2.cvtColor(gray, cv2.COLOR_GRAY2BGR)
+        # Base Denoise & Contrast
+        base_img = cv2.bilateralFilter(crop_bgr, 11, 17, 17)
+        base_img = cv2.convertScaleAbs(base_img, alpha=1.2, beta=10)
+        base_rgb = cv2.cvtColor(base_img, cv2.COLOR_BGR2RGB)
+        gray = cv2.cvtColor(base_img, cv2.COLOR_BGR2GRAY)
 
-        crop_bgr = cv2.convertScaleAbs(crop_bgr, alpha=1.2, beta=10)
-        crop_rgb = cv2.cvtColor(crop_bgr, cv2.COLOR_BGR2RGB)
-        return crop_rgb
+        variants = []
+        
+        # 1. Original (Base)
+        variants.append(base_rgb)
+        
+        # 2. CLAHE
+        clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
+        cl1 = clahe.apply(gray)
+        variants.append(cv2.cvtColor(cl1, cv2.COLOR_GRAY2RGB))
+        
+        # 3. Adaptive Threshold
+        th_adapt = cv2.adaptiveThreshold(gray, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY, 11, 2)
+        variants.append(cv2.cvtColor(th_adapt, cv2.COLOR_GRAY2RGB))
+        
+        # 4. Otsu Threshold
+        _, th_otsu = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+        variants.append(cv2.cvtColor(th_otsu, cv2.COLOR_GRAY2RGB))
+        
+        # 5. Sharpen
+        kernel = np.array([[-1,-1,-1], [-1,9,-1], [-1,-1,-1]])
+        sharpened = cv2.filter2D(base_rgb, -1, kernel)
+        variants.append(sharpened)
+        
+        # 6. Gamma Correction (gamma = 0.6)
+        gamma = 0.6
+        invGamma = 1.0 / gamma
+        table = np.array([((i / 255.0) ** invGamma) * 255 for i in np.arange(0, 256)]).astype("uint8")
+        gamma_img = cv2.LUT(base_rgb, table)
+        variants.append(gamma_img)
+        
+        return variants
 
     def _extract_region(crop_bgr, top_ratio: float = 0.0, bottom_ratio: float = 1.0):
         if crop_bgr is None or crop_bgr.size == 0:
@@ -277,33 +313,45 @@ def ocr_worker(in_q: mp.Queue, out_q: mp.Queue):
         det_results = []
         for bbox, crop_bytes, shape, dtype_str in item:
             crop_bgr = np.frombuffer(crop_bytes, dtype=np.dtype(dtype_str)).reshape(shape).copy()
-            plate_crop = _preprocess_crop_for_ocr(crop_bgr)
+            variants = _generate_ocr_variants(crop_bgr)
 
-            plate_text, plate_conf = "", 0.0
-            province_text, province_conf = "", 0.0
+            best_plate_text, best_plate_conf = "", 0.0
+            best_prov_text, best_prov_conf = "", 0.0
 
-            plate_out = ocr.ocr(plate_crop)
-            candidates = _extract_ocr_candidates(plate_out)
-            plate_parts = []
+            for v_img in variants:
+                plate_out = ocr.ocr(v_img)
+                candidates = _extract_ocr_candidates(plate_out)
+                
+                v_plate_parts = []
+                v_prov_text, v_prov_conf = "", 0.0
 
-            for t, s in candidates:
-                t_clean = str(t).strip()
-                if not t_clean:
-                    continue
+                for t, s in candidates:
+                    t_clean = str(t).strip()
+                    if not t_clean:
+                        continue
 
-                detected_prov = extract_thai_province(t_clean)
-                if detected_prov:
-                    if not province_text:
-                        province_text, province_conf = detected_prov, float(s)
-                    continue
+                    detected_prov = extract_thai_province(t_clean)
+                    if detected_prov:
+                        if not v_prov_text:
+                            v_prov_text, v_prov_conf = detected_prov, float(s)
+                        continue
 
-                plate_parts.append((t_clean, float(s)))
+                    v_plate_parts.append((t_clean, float(s)))
 
-            if plate_parts:
-                combined = " ".join(t for t, _ in plate_parts if t)
-                avg_conf = sum(s for _, s in plate_parts) / len(plate_parts)
-                plate_text, plate_conf = validate_and_clean_thai_plate(combined, avg_conf)
+                v_plate_text, v_plate_conf = "", 0.0
+                if v_plate_parts:
+                    combined = " ".join(t for t, _ in v_plate_parts if t)
+                    avg_conf = sum(s for _, s in v_plate_parts) / len(v_plate_parts)
+                    v_plate_text, v_plate_conf = validate_and_clean_thai_plate(combined, avg_conf)
 
-            det_results.append((bbox, plate_text, plate_conf, province_text, province_conf))
+                if v_plate_conf > best_plate_conf:
+                    best_plate_conf = v_plate_conf
+                    best_plate_text = v_plate_text
+                
+                if v_prov_conf > best_prov_conf:
+                    best_prov_conf = v_prov_conf
+                    best_prov_text = v_prov_text
+
+            det_results.append((bbox, best_plate_text, best_plate_conf, best_prov_text, best_prov_conf))
 
         out_q.put(det_results)
