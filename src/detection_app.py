@@ -16,6 +16,7 @@ from app_config import load_yolo_model
 from utils import format_thai_plate, open_capture, merge_related_boxes
 from tracker import MotorcycleTracker
 from ocr_manager import OCRManager
+from speed import SpeedEstimator, parse_calibration
 
 
 class DetectionApp:
@@ -52,9 +53,26 @@ class DetectionApp:
             cache_distance=config.ocr_cache_distance
         )
 
+        self.speed_estimator = SpeedEstimator()
+        calib = parse_calibration(config.speed_calib_points, config.speed_calib_world)
+        if calib:
+            try:
+                self.speed_estimator.set_calibration(*calib)
+                print("[Speed] Calibration loaded from env.")
+            except Exception as e:
+                print(f"[Speed] Invalid calibration in env ({e}). Press [C] to recalibrate.")
+        else:
+            print("[Speed] Not calibrated. Press [C] in the video window to calibrate.")
+        self._calib_pts = None        # list of clicked points while calibrating, else None
+        self._calib_frame = None      # frozen frame shown during calibration
+        self._calib_w = None          # width (m) once entered
+        self._calib_input = ""        # digits typed in the window
+        self._calib_msg = ""          # error/info text shown in the window
+
         self.state = {
             "latest_frame": None,
             "frame_for_proc": None,
+            "frame_for_proc_t": 0.0,   # timestamp (s) of frame_for_proc
             "latest_detections": [],
             "video_pos_ms": 0.0,       # current position in the video (ms)
             "video_total_ms": 0.0,     # total duration of the video (ms)
@@ -82,6 +100,91 @@ class DetectionApp:
             self._paused = not self._paused
         state = "PAUSED" if self._paused else "RESUMED"
         print(f"[Video] {state}")
+
+    def _on_mouse(self, event, x, y, flags, param):
+        if event == cv2.EVENT_LBUTTONDOWN and self._calib_pts is not None and len(self._calib_pts) < 4:
+            self._calib_pts.append((x, y))
+
+    def _begin_calibration(self, frame):
+        self._calib_frame = frame.copy()
+        self._calib_pts = []
+        self._calib_w = None
+        self._calib_input = ""
+        self._calib_msg = ""
+        if self.is_video_file and not self._is_paused():
+            self._toggle_pause()
+        print("[Speed] Click 4 ground points forming a rectangle on the road (e.g. lane markings):")
+        print("        1 far-left, 2 far-right, 3 near-right, 4 near-left.  [Esc] cancel")
+
+    def _end_calibration(self):
+        self._calib_pts = None
+        self._calib_frame = None
+        if self.is_video_file and self._is_paused():
+            self._toggle_pause()
+
+    def _draw_calibration(self, frame):
+        pts = self._calib_pts or []
+        for i, p in enumerate(pts):
+            cv2.circle(frame, p, 6, (0, 0, 255), -1)
+            cv2.putText(frame, str(i + 1), (p[0] + 8, p[1] - 8), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 0, 255), 2, cv2.LINE_AA)
+            if i > 0:
+                cv2.line(frame, pts[i - 1], p, (0, 255, 255), 2, cv2.LINE_AA)
+        if len(pts) == 4:
+            cv2.line(frame, pts[3], pts[0], (0, 255, 255), 2, cv2.LINE_AA)
+            what = "WIDTH (point 1->2)" if self._calib_w is None else "LENGTH (point 2->3)"
+            text = f"Real {what} in meters: {self._calib_input}_  [Enter] ok  [Esc] cancel"
+        else:
+            text = f"CALIBRATION: click point {len(pts) + 1}/4  [Esc] cancel"
+        frame = draw_text_on_cv_img(frame, text, (10, 96), font_size=22, text_color=(255, 255, 255),
+                                    bg_color=(0, 0, 0), bg_alpha=0.7)
+        if self._calib_msg:
+            frame = draw_text_on_cv_img(frame, self._calib_msg, (10, 132), font_size=22,
+                                        text_color=(255, 255, 255), bg_color=(0, 0, 0), bg_alpha=0.7)
+        return frame
+
+    def _handle_calib_key(self, key: int):
+        if key == 27:
+            self._end_calibration()
+            print("[Speed] Calibration cancelled.")
+            return
+        if self._calib_pts is None or len(self._calib_pts) < 4:
+            return
+
+        if key in (13, 10):
+            try:
+                val = float(self._calib_input)
+                if val <= 0:
+                    raise ValueError
+            except ValueError:
+                self._calib_msg = "Invalid number, enter a value > 0"
+                self._calib_input = ""
+                return
+            self._calib_input = ""
+            self._calib_msg = ""
+            if self._calib_w is None:
+                self._calib_w = val
+            else:
+                self._apply_calibration(self._calib_w, val)
+        elif key == 8:
+            self._calib_input = self._calib_input[:-1]
+        elif key != 255 and chr(key) in "0123456789." and len(self._calib_input) < 8:
+            self._calib_input += chr(key)
+
+    def _apply_calibration(self, w: float, l: float):
+        pts = list(self._calib_pts)
+        try:
+            self.speed_estimator.set_calibration(pts, (w, l))
+        except Exception as e:
+            # Let the user re-click instead of leaving the window stuck
+            self._calib_pts = []
+            self._calib_w = None
+            self._calib_msg = f"Calibration failed: {e}. Click 4 points again"
+            print(f"[Speed] Calibration failed: {e}")
+            return
+        print("[Speed] Calibrated. To persist, add to .env:")
+        print(f"SPEED_CALIB_POINTS={';'.join(f'{x},{y}' for x, y in pts)}")
+        print(f"SPEED_CALIB_WORLD={w},{l}")
+        self._end_calibration()
 
     def _setup_video_writer(self, frame_shape, fps: float):
         """Create a VideoWriter to record the output video"""
@@ -157,6 +260,7 @@ class DetectionApp:
         win_title = "Motorcycle License Plate Detection"
         cv2.namedWindow(win_title, cv2.WINDOW_NORMAL)
         cv2.resizeWindow(win_title, 1024, 576)
+        cv2.setMouseCallback(win_title, self._on_mouse)
 
         # For video: prepare output writer after getting the first frame
         output_initialized = False
@@ -181,10 +285,20 @@ class DetectionApp:
                 with self.det_lock:
                     dets = list(self.state["latest_detections"])
                     mc_dets = list(self.tracker.latest_mc_detections)
+                    mc_ids = dict(self.tracker.bbox_to_track_id)
+                    speeds = {tid: self.speed_estimator.get_speed(tid) for tid in mc_ids.values()}
+
+                if self._calib_pts is not None:
+                    frame = self._draw_calibration(self._calib_frame.copy())
 
                 for (mx1, my1, mx2, my2), m_conf in mc_dets:
                     cv2.rectangle(frame, (mx1, my1), (mx2, my2), (255, 100, 0), 2)
-                    cv2.putText(frame, f"Motorcycle {m_conf*100:.0f}%", (mx1, max(0, my1 - 10)), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 100, 0), 2)
+                    label_mc = f"Motorcycle {m_conf*100:.0f}%"
+                    spd = speeds.get(mc_ids.get((mx1, my1, mx2, my2)))
+                    if spd is not None:
+                        label_mc += f"  {spd:.0f} km/h"
+                    frame = draw_text_on_cv_img(frame, label_mc, (mx1, max(30, my1)), font_size=22,
+                                                text_color=(255, 255, 255), bg_color=(0, 0, 0), bg_alpha=0.7)
 
                 for item in dets:
                     (x1, y1, x2, y2), text, conf = item[:3]
@@ -217,10 +331,14 @@ class DetectionApp:
                 cv2.imshow(win_title, frame)
 
             key = cv2.waitKey(1) & 0xFF
-            if key == ord("q"):
+            if self._calib_pts is not None:
+                self._handle_calib_key(key)
+            elif key == ord("q"):
                 break
             elif key == ord(" ") and self.is_video_file:
                 self._toggle_pause()
+            elif key == ord("c") and frame is not None:
+                self._begin_calibration(raw)
 
         # Close video writer
         # Paused
@@ -313,8 +431,11 @@ class DetectionApp:
 
                 with self.frame_lock:
                     self.state["latest_frame"] = frame
+                # Use the media timestamp for files so speed is independent of processing FPS
+                frame_t = pos_ms / 1000.0 if self.is_video_file else time.time()
                 with self.proc_lock:
                     self.state["frame_for_proc"] = frame
+                    self.state["frame_for_proc_t"] = frame_t
                 self.frame_ready.set()
 
             except Exception:
@@ -336,6 +457,7 @@ class DetectionApp:
 
             with self.proc_lock:
                 frame = self.state["frame_for_proc"]
+                frame_t = self.state["frame_for_proc_t"]
             if frame is None:
                 continue
 
@@ -369,6 +491,10 @@ class DetectionApp:
 
                 with self.det_lock:
                     self.tracker.update_tracks(mc_bboxes)
+                    if self.speed_estimator.calibrated:
+                        for mc_bb, tid in self.tracker.bbox_to_track_id.items():
+                            self.speed_estimator.update(tid, mc_bb, frame_t)
+                        self.speed_estimator.prune(frame_t)
 
                 all_boxes = []
                 for r in results:

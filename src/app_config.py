@@ -41,6 +41,11 @@ class AppConfig:
     ocr_cache_ttl_s: float = 5.0
     ocr_cache_distance: float = 120.0
 
+    # Speed calibration: 4 ground points in the image (far-left;far-right;near-right;near-left)
+    # and the real size "W,L" in meters of that rectangle (W = pts 1-2, L = pts 2-3).
+    speed_calib_points: str = ""
+    speed_calib_world: str = ""
+
     @classmethod
     def from_env(cls) -> "AppConfig":
         def _getenv(key, cast, default):
@@ -67,6 +72,8 @@ class AppConfig:
             ocr_conf_threshold=_getenv("OCR_CONF_THRESHOLD", float, cls.ocr_conf_threshold),
             ocr_cache_ttl_s=_getenv("OCR_CACHE_TTL_S", float, cls.ocr_cache_ttl_s),
             ocr_cache_distance=_getenv("OCR_CACHE_DISTANCE", float, cls.ocr_cache_distance),
+            speed_calib_points=os.getenv("SPEED_CALIB_POINTS", ""),
+            speed_calib_world=os.getenv("SPEED_CALIB_WORLD", ""),
         )
 
     @property
