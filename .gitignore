@@ -28,8 +28,14 @@ dist/
 .DS_Store
 Thumbs.db
 
-# Training
-runs/
+
+# Datasets (download from Roboflow) and their archives
+*-dataset/
+*.zip
+
+# Training and evaluation scripts
+train.py
+eval.py
 
 # Data directories
 output/
@@ -37,3 +43,17 @@ input/
 
 # Large local model weights
 models/
+
+# Training runs: keep only the weights the app loads
+runs/*
+!runs/detect/
+runs/detect/*
+!runs/detect/moto-plate/
+!runs/detect/helmet-rider/
+runs/detect/moto-plate/*
+runs/detect/helmet-rider/*
+!runs/detect/moto-plate/weights/
+!runs/detect/helmet-rider/weights/
+runs/detect/*/weights/*
+!runs/detect/*/weights/best.pt
+yolo26n.pt
