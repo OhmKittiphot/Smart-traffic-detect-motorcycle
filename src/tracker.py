@@ -20,6 +20,11 @@ class MotorcycleTracker:
         self.helmet_window = 10
         self.helmet_min_samples = 3
         self.helmet_history: Dict[int, Deque[Tuple[int, int]]] = {}
+        # Riders per frame for each track. A passenger is often hidden behind the driver, so a median
+        # undercounts; instead a count is trusted once it was seen in rider_min_frames frames of the window
+        self.rider_min_frames = 3
+        self.rider_history: Dict[int, Deque[int]] = {}
+        self.rider_max: Dict[int, int] = {}
 
     def reset(self) -> None:
         """Clear all tracks so a new video loop starts with a clean session."""
@@ -28,6 +33,8 @@ class MotorcycleTracker:
         self.bbox_to_track_id.clear()
         self.latest_mc_detections = []
         self.helmet_history.clear()
+        self.rider_history.clear()
+        self.rider_max.clear()
 
     def _finish_track(self, track_id: int) -> Dict[str, Any]:
         """Remove a track and return its final summary (helmet/rider status snapshotted first)."""
@@ -35,9 +42,11 @@ class MotorcycleTracker:
         meta["track_id"] = track_id
         meta["helmet"] = self.get_helmet_status(track_id)
         meta["riders"] = self.get_rider_count(track_id)
-        # A rider's head/helmet was detected on this bike at least once (same helmet_conf as detection)
-        meta["rider_seen"] = any(h + b > 0 for h, b in self.helmet_history.get(track_id, ()))
+        # A rider's head was detected on this bike in at least rider_min_frames frames
+        meta["rider_seen"] = self.rider_max.get(track_id, 0) > 0
         self.helmet_history.pop(track_id, None)
+        self.rider_history.pop(track_id, None)
+        self.rider_max.pop(track_id, None)
         return meta
 
     def drain(self) -> List[Dict[str, Any]]:
@@ -137,7 +146,8 @@ class MotorcycleTracker:
                 x1, y1, x2, y2 = mc_bbox
                 w, h = x2 - x1, y2 - y1
                 # Riders sit above the motorcycle box, so extend the search area upward
-                zone = (x1 - 0.2 * w, y1 - 1.0 * h, x2 + 0.2 * w, y2)
+                # Heads of the same bike sit within its width; a wide margin grabs heads from the bike behind
+                zone = (x1 - 0.05 * w, y1 - 1.0 * h, x2 + 0.05 * w, y2)
                 if not point_in_bbox(bc, zone):
                     continue
                 dist = bbox_distance(mc_bbox, box)
@@ -149,14 +159,25 @@ class MotorcycleTracker:
         return counts
 
     def update_helmets(self, helmet_bboxes: List[Tuple[int, int, int, int]],
-                       head_bboxes: List[Tuple[int, int, int, int]]) -> None:
-        """Record this frame's helmet and bare-head counts for every tracked motorcycle."""
+                       head_bboxes: List[Tuple[int, int, int, int]],
+                       rider_bboxes: Optional[List[Tuple[int, int, int, int]]] = None) -> None:
+        """Record this frame's helmet / bare-head counts and rider count for every tracked motorcycle.
+        rider_bboxes are all heads (helmeted or not) kept at the lower rider_conf threshold."""
         helmets = self._count_per_track(helmet_bboxes)
         heads = self._count_per_track(head_bboxes)
+        riders = self._count_per_track(rider_bboxes) if rider_bboxes is not None else {
+            tid: helmets[tid] + heads[tid] for tid in helmets}
 
         for track_id in helmets:
             hist = self.helmet_history.setdefault(track_id, deque(maxlen=self.helmet_window))
             hist.append((helmets[track_id], heads[track_id]))
+
+            r_hist = self.rider_history.setdefault(track_id, deque(maxlen=self.helmet_window))
+            r_hist.append(riders[track_id])
+            if len(r_hist) >= self.rider_min_frames:
+                # Highest count reached in at least rider_min_frames frames of the window
+                est = sorted(r_hist, reverse=True)[self.rider_min_frames - 1]
+                self.rider_max[track_id] = max(self.rider_max.get(track_id, 0), est)
 
     def get_helmet_status(self, track_id: int) -> Optional[Tuple[int, int]]:
         """Smoothed (helmets, bare heads) for a track, or None until enough frames were observed."""
@@ -168,13 +189,9 @@ class MotorcycleTracker:
         return helmets, heads
 
     def get_rider_count(self, track_id: int) -> int:
-        """Smoothed number of riders (helmeted + bare heads). A moving motorcycle always has a
+        """Most riders seen on this track so far (counted as above). A moving motorcycle always has a
         driver, so this is at least 1 even when no head was detected."""
-        hist = self.helmet_history.get(track_id)
-        if not hist or len(hist) < self.helmet_min_samples:
-            return 1
-        # Median of per-frame totals, so one frame missing a head doesn't drop the count
-        return max(1, sorted(h + b for h, b in hist)[len(hist) // 2])
+        return max(1, self.rider_max.get(track_id, 0))
 
     def resolve_track_id(self, bbox: Tuple[int, int, int, int]) -> Optional[int]:
         """Resolve a track ID for a given license plate bounding box."""

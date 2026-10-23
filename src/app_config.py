@@ -26,6 +26,10 @@ class AppConfig:
     plate_imgsz: int = 960
     detection_conf: float = 0.25
     helmet_conf: float = 0.25
+    # Lower threshold for counting riders only: a passenger's head behind the driver often scores
+    # 0.25-0.4, while single-rider bikes show no extra heads even far below this.
+    # Helmet / NO HELMET status still uses helmet_conf.
+    rider_conf: float = 0.20
     # Heads are small in wide shots, so the helmet model runs at a higher resolution
     helmet_imgsz: int = 960
     # Class names of the helmet model (lowercase, "_" and "-" read as spaces); match your data.yaml

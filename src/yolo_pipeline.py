@@ -82,15 +82,17 @@ class YoloPipeline:
         return crops, rois
 
     @staticmethod
-    def suppress_overlapping_boxes(boxes, scores, iou_thresh=0.45):
-        """Deduplicate overlapping bounding boxes across multiple crops using NMS."""
-        if not boxes:
+    def suppress_overlapping_boxes(items, scores, iou_thresh=0.45, boxes_xyxy=None):
+        """Deduplicate overlapping boxes using NMS; returns the kept items.
+        items are the boxes themselves unless boxes_xyxy gives the boxes separately."""
+        if not items:
             return []
+        boxes = boxes_xyxy if boxes_xyxy is not None else items
         cv_boxes = [[x1, y1, x2 - x1, y2 - y1] for x1, y1, x2, y2 in boxes]
         indices = cv2.dnn.NMSBoxes(cv_boxes, scores, score_threshold=0.0, nms_threshold=iou_thresh)
         if len(indices) == 0:
             return []
-        return [boxes[int(i)] for i in indices]
+        return [items[int(i)] for i in indices]
 
     def process_frame(self, frame, frame_t: float, frame_gen: int, current_media_gen: int):
         """Runs the detection pipeline for a single frame."""
@@ -123,19 +125,19 @@ class YoloPipeline:
 
             helmet_bboxes = []
             head_bboxes = []
+            rider_bboxes = []
             if self.model_helmet is not None and mc_bboxes:
                 crops, rois = self.crop_rider_rois(frame, mc_bboxes)
                 if crops:
                     res_h = self.model_helmet.predict(
                         crops,
                         imgsz=self.config.helmet_imgsz,
-                        conf=self.config.helmet_conf,
+                        conf=min(self.config.helmet_conf, self.config.rider_conf),
                         verbose=False,
                         device=self.device,
                         quantize=self.config.inference_quantize,
                     )
-                    raw_helmets, raw_h_scores = [], []
-                    raw_heads, raw_hd_scores = [], []
+                    raw_boxes, raw_scores, raw_is_helmet = [], [], []
 
                     for r_h, (rx1, ry1, _, _) in zip(res_h, rois):
                         for box_h in r_h.boxes:
@@ -144,22 +146,26 @@ class YoloPipeline:
                             cls_h = int(box_h.cls[0])
                             orig_box = (rx1 + bx1, ry1 + by1, rx1 + bx2, ry1 + by2)
 
-                            if cls_h in self.head_ids:
-                                raw_heads.append(orig_box)
-                                raw_hd_scores.append(score)
-                            elif cls_h in self.helmet_ids:
-                                raw_helmets.append(orig_box)
-                                raw_h_scores.append(score)
+                            if cls_h in self.head_ids or cls_h in self.helmet_ids:
+                                raw_boxes.append(orig_box)
+                                raw_scores.append(score)
+                                raw_is_helmet.append(cls_h in self.helmet_ids)
 
-                    helmet_bboxes = self.suppress_overlapping_boxes(raw_helmets, raw_h_scores)
-                    head_bboxes = self.suppress_overlapping_boxes(raw_heads, raw_hd_scores)
+                    # Class-agnostic NMS: one head is one rider, even if the model scored it as both
+                    # Helmet and No-Helmet (or it appears in two overlapping bike crops)
+                    keep = self.suppress_overlapping_boxes(list(range(len(raw_boxes))), raw_scores,
+                                                           boxes_xyxy=raw_boxes)
+                    for i in keep:
+                        rider_bboxes.append(raw_boxes[i])
+                        if raw_scores[i] >= self.config.helmet_conf:
+                            (helmet_bboxes if raw_is_helmet[i] else head_bboxes).append(raw_boxes[i])
 
         with self.det_lock:
             if frame_gen < current_media_gen:
                 return []
             finished = self.tracker.update_tracks(mc_bboxes, frame_t)
             if self.model_helmet is not None:
-                self.tracker.update_helmets(helmet_bboxes, head_bboxes)
+                self.tracker.update_helmets(helmet_bboxes, head_bboxes, rider_bboxes)
             if self.speed_estimator.calibrated:
                 for mc_bb, tid in self.tracker.bbox_to_track_id.items():
                     self.tracker.record_speed(tid, self.speed_estimator.update(tid, mc_bb, frame_t))
