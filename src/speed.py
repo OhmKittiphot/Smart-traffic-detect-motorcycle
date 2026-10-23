@@ -99,6 +99,10 @@ class SpeedEstimator:
         st = self._tracks.get(track_id)
         return st["speed"] if st else None
 
+    def reset(self) -> None:
+        """Drop per-track speed history; keep the homography calibration."""
+        self._tracks = {}
+
     def prune(self, now_t: float, max_age_s: float = 3.0) -> None:
         for tid in list(self._tracks.keys()):
             if abs(now_t - self._tracks[tid]["last_t"]) > max_age_s:
