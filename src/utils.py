@@ -1,6 +1,24 @@
 import re
+import time
+import traceback
 import cv2
-from typing import List, Tuple
+from typing import Dict, List, Tuple
+
+
+_last_error_log: Dict[str, float] = {}
+
+
+def log_error(tag: str, exc: BaseException, interval_s: float = 5.0) -> None:
+    """Print an error with its traceback, at most once per interval per (tag, error type)
+    so a failure repeating inside a worker loop does not flood the console."""
+    key = f"{tag}:{type(exc).__name__}"
+    now = time.monotonic()
+    last = _last_error_log.get(key)
+    if last is not None and now - last < interval_s:
+        return
+    _last_error_log[key] = now
+    print(f"[{tag}] {type(exc).__name__}: {exc}")
+    traceback.print_exception(type(exc), exc, exc.__traceback__)
 
 def format_thai_plate(plate_text: str, province_text: str) -> str:
     """
@@ -81,27 +99,54 @@ def open_capture(camera_url: str) -> cv2.VideoCapture:
     return cap
 
 
+def _boxes_are_related(a: Tuple[int, int, int, int, float], b: Tuple[int, int, int, int, float]) -> bool:
+    """True when two detections likely belong to the same plate (nearby fragments)."""
+    dist = bbox_distance(a[:4], b[:4])
+    aw, ah = a[2] - a[0], a[3] - a[1]
+    bw, bh = b[2] - b[0], b[3] - b[1]
+    threshold = max(150.0, max(aw, ah, bw, bh) * 2.5)
+    return dist < threshold
+
+
 def merge_related_boxes(boxes: List[Tuple[int, int, int, int, float]]) -> List[Tuple[int, int, int, int, float]]:
-    """Merge bounding boxes that are close to each other."""
+    """Cluster nearby bounding boxes and merge each cluster into one box."""
     if not boxes:
         return []
 
-    boxes = sorted(boxes, key=lambda x: x[4], reverse=True)
-    bx1, by1, bx2, by2, bconf = boxes[0]
+    n = len(boxes)
+    parent = list(range(n))
 
-    for x1, y1, x2, y2, _ in boxes[1:]:
-        cx, cy = (x1 + x2) / 2, (y1 + y2) / 2
-        bcx, bcy = (bx1 + bx2) / 2, (by1 + by2) / 2
-        dist = ((cx - bcx) ** 2 + (cy - bcy) ** 2) ** 0.5
-        threshold = max(bx2 - bx1, by2 - by1) * 2.5
+    def find(i: int) -> int:
+        while parent[i] != i:
+            parent[i] = parent[parent[i]]
+            i = parent[i]
+        return i
 
-        if dist < max(150, threshold):
-            bx1 = min(bx1, x1)
-            by1 = min(by1, y1)
-            bx2 = max(bx2, x2)
-            by2 = max(by2, y2)
+    def union(i: int, j: int) -> None:
+        ri, rj = find(i), find(j)
+        if ri != rj:
+            parent[rj] = ri
 
-    return [(bx1, by1, bx2, by2, bconf)]
+    for i in range(n):
+        for j in range(i + 1, n):
+            if _boxes_are_related(boxes[i], boxes[j]):
+                union(i, j)
+
+    clusters: Dict[int, list] = {}
+    for i, box in enumerate(boxes):
+        root = find(i)
+        x1, y1, x2, y2, conf = box
+        if root not in clusters:
+            clusters[root] = [x1, y1, x2, y2, conf]
+            continue
+        c = clusters[root]
+        c[0] = min(c[0], x1)
+        c[1] = min(c[1], y1)
+        c[2] = max(c[2], x2)
+        c[3] = max(c[3], y2)
+        c[4] = max(c[4], conf)
+
+    return [tuple(c) for c in clusters.values()]
 
 
 def bbox_center(bbox: Tuple[float, float, float, float]) -> Tuple[float, float]:
