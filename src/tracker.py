@@ -165,13 +165,14 @@ class MotorcycleTracker:
         heads = sorted(b for _, b in hist)[len(hist) // 2]
         return helmets, heads
 
-    def get_rider_count(self, track_id: int) -> Optional[int]:
-        """Smoothed number of riders (helmeted + bare heads), or None until enough frames were observed."""
+    def get_rider_count(self, track_id: int) -> int:
+        """Smoothed number of riders (helmeted + bare heads). A moving motorcycle always has a
+        driver, so this is at least 1 even when no head was detected."""
         hist = self.helmet_history.get(track_id)
         if not hist or len(hist) < self.helmet_min_samples:
-            return None
+            return 1
         # Median of per-frame totals, so one frame missing a head doesn't drop the count
-        return sorted(h + b for h, b in hist)[len(hist) // 2]
+        return max(1, sorted(h + b for h, b in hist)[len(hist) // 2])
 
     def resolve_track_id(self, bbox: Tuple[int, int, int, int]) -> Optional[int]:
         """Resolve a track ID for a given license plate bounding box."""
