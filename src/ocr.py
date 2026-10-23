@@ -1,11 +1,14 @@
 import multiprocessing as mp
+import queue
 import re
+import traceback
 
 import cv2
 import numpy as np
 import torch
 
 from province import extract_thai_province
+from utils import log_error
 
 
 def validate_and_clean_thai_plate(raw_text, conf):
@@ -124,13 +127,21 @@ def ocr_worker(in_q: mp.Queue, out_q: mp.Queue):
     os.environ.setdefault("FLAGS_allocator_strategy", "auto_growth")
     warnings.filterwarnings("ignore")
 
-    from paddleocr import PaddleOCR
-
     MIN_CONF = 0.10
+    # Skip the remaining preprocessing variants once plate and province both reach this confidence
+    EARLY_STOP_CONF = 0.90
 
     print("[OCR-Process] Loading PaddleOCR ...")
-    ocr_device = "gpu" if torch.cuda.is_available() else "cpu"
-    ocr = PaddleOCR(lang="th", device=ocr_device, det_limit_side_len=640)
+    try:
+        from paddleocr import PaddleOCR
+
+        ocr_device = "gpu" if torch.cuda.is_available() else "cpu"
+        ocr = PaddleOCR(lang="th", device=ocr_device, det_limit_side_len=640)
+    except Exception as e:
+        # Tell the main process why OCR is unavailable instead of dying silently
+        traceback.print_exc()
+        out_q.put({"error": f"PaddleOCR failed to load: {type(e).__name__}: {e}"})
+        return
     out_q.put("ready")
     print("[OCR-Process] PaddleOCR is ready!")
 
@@ -304,22 +315,46 @@ def ocr_worker(in_q: mp.Queue, out_q: mp.Queue):
     while True:
         try:
             item = in_q.get(timeout=30.0)
-        except Exception:
+        except queue.Empty:
             continue
+        except (EOFError, OSError):
+            # The main process went away and closed the queue
+            break
 
         if item is None:
             break
 
+        frame_gen = 0
+        frame_t = 0.0
+        if isinstance(item, dict):
+            frame_gen = item.get("gen", 0)
+            frame_t = float(item.get("t", 0.0))
+            item = item.get("items", [])
+
         det_results = []
-        for bbox, crop_bytes, shape, dtype_str in item:
-            crop_bgr = np.frombuffer(crop_bytes, dtype=np.dtype(dtype_str)).reshape(shape).copy()
-            variants = _generate_ocr_variants(crop_bgr)
+        for item_data in item:
+            try:
+                if len(item_data) >= 5:
+                    bbox, crop_bytes, shape, dtype_str, track_id = item_data[:5]
+                else:
+                    bbox, crop_bytes, shape, dtype_str = item_data[:4]
+                    track_id = None
+                crop_bgr = np.frombuffer(crop_bytes, dtype=np.dtype(dtype_str)).reshape(shape).copy()
+                variants = _generate_ocr_variants(crop_bgr)
+            except Exception as e:
+                log_error("OCR-Process", e)
+                continue
 
             best_plate_text, best_plate_conf = "", 0.0
             best_prov_text, best_prov_conf = "", 0.0
 
             for v_img in variants:
-                plate_out = ocr.ocr(v_img)
+                try:
+                    plate_out = ocr.ocr(v_img)
+                except Exception as e:
+                    # One bad variant should not cost the other variants of this plate
+                    log_error("OCR-Process", e)
+                    continue
                 candidates = _extract_ocr_candidates(plate_out)
                 
                 v_plate_parts = []
@@ -352,6 +387,15 @@ def ocr_worker(in_q: mp.Queue, out_q: mp.Queue):
                     best_prov_conf = v_prov_conf
                     best_prov_text = v_prov_text
 
-            det_results.append((bbox, best_plate_text, best_plate_conf, best_prov_text, best_prov_conf))
+                # Each variant is a full PaddleOCR pass; stop once both parts are read confidently
+                if best_plate_conf >= EARLY_STOP_CONF and best_prov_conf >= EARLY_STOP_CONF:
+                    break
 
-        out_q.put(det_results)
+            det_results.append((bbox, best_plate_text, best_plate_conf, best_prov_text, best_prov_conf, track_id))
+
+        try:
+            out_q.put({"gen": frame_gen, "t": frame_t, "results": det_results}, timeout=5.0)
+        except queue.Full:
+            pass  # main process is not consuming (busy or shutting down); drop this batch
+        except (EOFError, OSError):
+            break
