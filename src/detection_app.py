@@ -122,7 +122,7 @@ class DetectionApp:
     def _report_remaining(self):
         """Print reports for motorcycles still in view (end of video loop / shutdown)."""
         print_motorcycle_reports(self.tracker.drain(), self.speed_estimator.calibrated,
-                                 self.config.report_min_frames, self.config.report_min_conf)
+                                 self.config.report_min_frames)
 
     def _reset_media_session(self):
         """Clear tracker / OCR / speed state bound to the playback session."""

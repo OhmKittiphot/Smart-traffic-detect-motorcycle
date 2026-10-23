@@ -41,10 +41,9 @@ def format_motorcycle_report(meta: Dict[str, Any], speed_calibrated: bool) -> st
     ])
 
 
-def print_motorcycle_reports(finished, speed_calibrated: bool, min_frames: int, min_conf: float) -> None:
+def print_motorcycle_reports(finished, speed_calibrated: bool, min_frames: int) -> None:
     for meta in finished:
-        # Short or low-confidence tracks are usually false detections; only report confident ones
-        hits = meta.get("hits", 0)
-        avg_conf = meta.get("conf_sum", 0.0) / hits if hits else 0.0
-        if hits >= min_frames and avg_conf >= min_conf:
+        # Only report a motorcycle detected together with its rider; short tracks or bikes with no
+        # rider detected (parked bikes, false detections) are skipped
+        if meta.get("hits", 0) >= min_frames and meta.get("rider_seen"):
             print("\n" + format_motorcycle_report(meta, speed_calibrated) + "\n")
