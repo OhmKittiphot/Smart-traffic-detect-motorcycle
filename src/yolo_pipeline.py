@@ -166,7 +166,8 @@ class YoloPipeline:
                 self.speed_estimator.prune(frame_t)
 
         # Motorcycles that have left the scene: print their summary outside the lock
-        print_motorcycle_reports(finished, self.speed_estimator.calibrated, self.config.report_min_frames)
+        print_motorcycle_reports(finished, self.speed_estimator.calibrated,
+                                 self.config.report_min_frames, self.config.report_min_conf)
 
         all_boxes = []
         for r in results:

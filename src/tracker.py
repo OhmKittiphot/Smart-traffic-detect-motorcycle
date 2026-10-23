@@ -102,11 +102,12 @@ class MotorcycleTracker:
         # Update track info for all assigned tracks
         for track_id, (bbox, conf) in assigned.items():
             # Update in place: summary fields (hits, speeds, plate) live for the whole track
-            meta = self.motorcycle_tracks.setdefault(track_id, {"first_seen": now, "hits": 0, "speeds": []})
+            meta = self.motorcycle_tracks.setdefault(track_id, {"first_seen": now, "hits": 0, "conf_sum": 0.0, "speeds": []})
             meta["bbox"] = bbox
             meta["last_seen"] = now
             meta["confidence"] = conf
             meta["hits"] += 1
+            meta["conf_sum"] += conf
 
         # Map current bounding boxes to their assigned track IDs
         self.bbox_to_track_id = {bbox: track_id for track_id, (bbox, _) in assigned.items()}

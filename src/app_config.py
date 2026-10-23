@@ -35,6 +35,8 @@ class AppConfig:
     max_riders: int = 2
     # A motorcycle's summary is printed when it leaves; tracks seen in fewer YOLO frames are ignored
     report_min_frames: int = 5
+    # ...and tracks whose average motorcycle detection confidence is below this (likely false positives)
+    report_min_conf: float = 0.5
     # When to 'lock' an OCR result and print it: minimum confidence (0-1)
     ocr_lock_confidence: float = 0.90
     # Number of consecutive updates (stable reads) required to consider a result stable
