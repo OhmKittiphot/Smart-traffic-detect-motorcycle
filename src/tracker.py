@@ -3,6 +3,11 @@ from typing import Deque, Dict, List, Tuple, Any, Optional
 from utils import bbox_distance, point_in_bbox, bbox_center
 
 
+# Minimum head height relative to the motorcycle box for the head to count as that bike's rider.
+# Measured on the test video: real riders 0.18-0.37, heads of riders on bikes behind 0.05-0.07.
+MIN_HEAD_TO_BIKE_HEIGHT = 0.12
+
+
 class MotorcycleTracker:
     """Tracks motorcycles across frames: greedy matching on velocity-predicted position."""
 
@@ -189,6 +194,10 @@ class MotorcycleTracker:
                 # Heads of the same bike sit within its width; a wide margin grabs heads from the bike behind
                 zone = (x1 - 0.05 * w, y1 - 1.0 * h, x2 + 0.05 * w, y2)
                 if not point_in_bbox(bc, zone):
+                    continue
+                # A rider's head is ~0.18-0.37 of the bike's height; a much smaller head inside the zone
+                # belongs to a rider on a bike further back
+                if (box[3] - box[1]) < MIN_HEAD_TO_BIKE_HEIGHT * h:
                     continue
                 dist = bbox_distance(mc_bbox, box)
                 if best_dist is None or dist < best_dist:
