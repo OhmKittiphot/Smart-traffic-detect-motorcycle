@@ -4,7 +4,7 @@ from utils import bbox_distance, point_in_bbox, bbox_center
 
 
 class MotorcycleTracker:
-    """Manages tracking of motorcycles across frames using greedy nearest-neighbor matching."""
+    """Tracks motorcycles across frames: greedy matching on velocity-predicted position."""
 
     def __init__(self, max_age_s: float, distance_threshold: float):
         self.max_age_s = max_age_s
@@ -56,9 +56,61 @@ class MotorcycleTracker:
         self.latest_mc_detections = []
         return finished
 
+    @staticmethod
+    def _dedupe_detections(mc_dets):
+        """Drop duplicate boxes on one bike (YOLO sometimes returns two overlapping boxes per bike,
+        which would otherwise become two tracks and two reports). Highest confidence wins."""
+        kept = []
+        for bbox, conf in sorted(mc_dets, key=lambda d: d[1], reverse=True):
+            x1, y1, x2, y2 = bbox
+            area = max(1, (x2 - x1) * (y2 - y1))
+            dup = False
+            for (kx1, ky1, kx2, ky2), _ in kept:
+                iw = min(x2, kx2) - max(x1, kx1)
+                ih = min(y2, ky2) - max(y1, ky1)
+                if iw <= 0 or ih <= 0:
+                    continue
+                inter = iw * ih
+                k_area = max(1, (kx2 - kx1) * (ky2 - ky1))
+                # Overlapping a lot, or one box mostly inside the other
+                if inter / (area + k_area - inter) > 0.45 or inter / min(area, k_area) > 0.75:
+                    dup = True
+                    break
+            if not dup:
+                kept.append((bbox, conf))
+        return kept
+
+    def _match_cost(self, meta, bbox, now: float) -> Optional[float]:
+        """Cost of assigning a detection to a track, or None if it can't be the same bike.
+        Compares against the position predicted from the track's velocity, scaled to the bike's size,
+        so a stale track left behind by another bike can't steal its detection."""
+        px1, py1, px2, py2 = meta["bbox"]
+        dt = max(0.0, now - meta["last_seen"])
+        horizon = min(dt, 1.0)  # don't extrapolate far: bikes turn and stop
+        vx, vy = meta.get("vel", (0.0, 0.0))
+        pcx = (px1 + px2) / 2.0 + vx * horizon
+        pcy = (py1 + py2) / 2.0 + vy * horizon
+
+        x1, y1, x2, y2 = bbox
+        cx, cy = (x1 + x2) / 2.0, (y1 + y2) / 2.0
+        dist = ((cx - pcx) ** 2 + (cy - pcy) ** 2) ** 0.5
+
+        ph, h = max(1, py2 - py1), max(1, y2 - y1)
+        if not 0.5 <= h / ph <= 2.0:
+            return None  # far too different in size to be the same bike
+
+        diag = ((px2 - px1) ** 2 + ph ** 2) ** 0.5
+        # Allowed error grows with the bike's size and with how long the track went unseen
+        gate = min(self.distance_threshold, max(40.0, diag * (0.6 + horizon)))
+        if dist > gate:
+            return None
+        # Prefer recently seen tracks when two are similarly close
+        return dist / gate + 0.5 * horizon
+
     def update_tracks(self, mc_dets: List[Tuple[Tuple[int, int, int, int], float]], now: float) -> List[Dict[str, Any]]:
-        """Update active tracks with new detections using greedy nearest-neighbor matching.
+        """Update active tracks with new detections using greedy matching on predicted position.
         Returns summaries of tracks that left the scene (not seen for max_age_s)."""
+        mc_dets = self._dedupe_detections(mc_dets)
         self.latest_mc_detections = mc_dets
 
         # Remove old tracks that haven't been seen recently
@@ -68,52 +120,40 @@ class MotorcycleTracker:
             if now - meta.get("last_seen", now) > self.max_age_s:
                 finished.append(self._finish_track(track_id))
 
-        # Build a cost matrix: (detection_index, track_id) -> distance
-        # Use Hungarian-like greedy matching to prevent double-assignment
-        unmatched_dets = list(enumerate(mc_dets))  # [(det_idx, (bbox, conf)), ...]
-        available_tracks = dict(self.motorcycle_tracks)  # copy so we can remove matched ones
+        # Greedy matching: all feasible (det, track) pairs, cheapest first, each used once
+        pairs = []
+        for det_idx, (bbox, _) in enumerate(mc_dets):
+            for track_id, meta in self.motorcycle_tracks.items():
+                cost = self._match_cost(meta, bbox, now)
+                if cost is not None:
+                    pairs.append((cost, det_idx, track_id))
+        pairs.sort()
+
         assigned: Dict[int, Tuple[Tuple[int, int, int, int], float]] = {}  # track_id -> (bbox, conf)
-
-        # Greedy matching: repeatedly pick the closest (det, track) pair
-        while unmatched_dets and available_tracks:
-            best_det_idx = None
-            best_track_id = None
-            best_distance = None
-
-            for det_idx, (bbox, conf) in unmatched_dets:
-                for track_id, meta in available_tracks.items():
-                    prev_bbox = meta.get("bbox")
-                    if prev_bbox is None:
-                        continue
-                    dist = bbox_distance(prev_bbox, bbox)
-                    if dist <= self.distance_threshold:
-                        if best_distance is None or dist < best_distance:
-                            best_distance = dist
-                            best_det_idx = det_idx
-                            best_track_id = track_id
-
-            if best_track_id is None:
-                # No more feasible matches, break early
-                break
-
-            # Commit this match
-            bbox, conf = next(
-                (bbox, conf) for idx, (bbox, conf) in unmatched_dets if idx == best_det_idx
-            )
-            assigned[best_track_id] = (bbox, conf)
-            unmatched_dets = [(i, d) for i, d in unmatched_dets if i != best_det_idx]
-            del available_tracks[best_track_id]
+        used_dets = set()
+        for _, det_idx, track_id in pairs:
+            if det_idx in used_dets or track_id in assigned:
+                continue
+            assigned[track_id] = mc_dets[det_idx]
+            used_dets.add(det_idx)
 
         # Create new tracks for unmatched detections
-        for _, (bbox, conf) in unmatched_dets:
-            new_id = self.next_mc_id
-            self.next_mc_id += 1
-            assigned[new_id] = (bbox, conf)
+        for det_idx, det in enumerate(mc_dets):
+            if det_idx not in used_dets:
+                assigned[self.next_mc_id] = det
+                self.next_mc_id += 1
 
         # Update track info for all assigned tracks
         for track_id, (bbox, conf) in assigned.items():
             # Update in place: summary fields (hits, speeds, plate) live for the whole track
             meta = self.motorcycle_tracks.setdefault(track_id, {"first_seen": now, "hits": 0, "speeds": []})
+            prev, prev_t = meta.get("bbox"), meta.get("last_seen")
+            if prev is not None and now > prev_t:
+                (ox, oy), (nx, ny) = bbox_center(prev), bbox_center(bbox)
+                dt = now - prev_t
+                v_new = ((nx - ox) / dt, (ny - oy) / dt)
+                vx, vy = meta.get("vel", v_new)
+                meta["vel"] = (0.5 * vx + 0.5 * v_new[0], 0.5 * vy + 0.5 * v_new[1])
             meta["bbox"] = bbox
             meta["last_seen"] = now
             meta["confidence"] = conf
