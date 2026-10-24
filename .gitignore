@@ -35,8 +35,5 @@ runs/
 output/
 input/
 
-# Large local model weights
-models/
-
 # Datasets built by tools/
 datasets/
