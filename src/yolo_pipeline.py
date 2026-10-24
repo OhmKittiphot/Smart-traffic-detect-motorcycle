@@ -1,3 +1,4 @@
+import os
 import queue
 
 import cv2
@@ -6,6 +7,8 @@ import torch
 
 from app_config import load_yolo_model
 from report import print_motorcycle_reports
+from rider_classifier import RiderClassifier
+from rider_voting import RiderVoting
 from utils import log_error, merge_related_boxes
 
 
@@ -23,18 +26,46 @@ class YoloPipeline:
         self.det_lock = det_lock
 
         print("Loading YOLO models...")
-        self.model = load_yolo_model(config.model_path, device, use_half)
-        try:
-            self.model_mc = load_yolo_model(config.motorcycle_model_path, device, use_half)
-        except Exception as e:
-            print(f"[Motorcycle] Model not loaded ({e}). Motorcycle detection disabled.")
-            self.model_mc = None
+        self.model = load_yolo_model(config.model_path, device, use_half) if config.enable_plate_ocr else None
+        if self.model is None:
+            print("[Plate] Plate detection + OCR disabled (ENABLE_PLATE_OCR=0).")
 
-        try:
-            self.model_helmet = load_yolo_model(config.helmet_model_path, device, use_half)
-        except Exception as e:
-            print(f"[Helmet] Model not loaded ({e}). Helmet detection disabled.")
-            self.model_helmet = None
+        self.model_mc = None
+        self.mc_classes = None
+        for path in dict.fromkeys((config.motorcycle_model_path, config.motorcycle_fallback_model_path)):
+            if not os.path.isfile(path):
+                continue
+            try:
+                self.model_mc = load_yolo_model(path, device, use_half)
+            except Exception as e:
+                print(f"[Motorcycle] Model '{path}' not loaded ({e}).")
+                continue
+            # Works for both the custom detector ({0: motorcycle}) and COCO models ({3: motorcycle})
+            self.mc_classes = [i for i, n in self.model_mc.names.items() if n in ("motorcycle", "motorbike")] or None
+            print(f"[Motorcycle] Detector loaded: {path}")
+            break
+        if self.model_mc is None:
+            print("[Motorcycle] No detector found. Motorcycle detection disabled.")
+
+        self.rider_cls = None
+        if os.path.isfile(config.rider_model_path):
+            try:
+                self.rider_cls = RiderClassifier(config.rider_model_path, device, use_half)
+                print(f"[Rider] Classifier loaded: {config.rider_model_path} (replaces the helmet model)")
+            except Exception as e:
+                print(f"[Rider] Classifier not loaded ({e}); using the helmet model.")
+        self.rider_voting = RiderVoting(
+            window=config.rider_vote_window,
+            min_frames=config.rider_vote_min_frames,
+            max_age_s=config.motorcycle_track_max_age_s,
+        )
+
+        self.model_helmet = None
+        if self.rider_cls is None:
+            try:
+                self.model_helmet = load_yolo_model(config.helmet_model_path, device, use_half)
+            except Exception as e:
+                print(f"[Helmet] Model not loaded ({e}). Helmet detection disabled.")
 
         self.helmet_ids = set()
         self.head_ids = set()
@@ -67,6 +98,42 @@ class YoloPipeline:
                                   quantize=self.config.inference_quantize)
                 except Exception as e:
                     log_error("Warmup", e)
+            if self.rider_cls is not None:
+                try:
+                    self.rider_cls.predict_probs([frame[:300, :200]])
+                except Exception as e:
+                    log_error("Warmup", e)
+
+    def reset(self):
+        """Drop per-track rider votes (track IDs restart with the media session)."""
+        self.rider_voting.reset()
+
+    @staticmethod
+    def crop_motorcycles(frame, mc_ids):
+        """Motorcycle crops (5% padding) for the rider classifier, with their track IDs."""
+        h, w = frame.shape[:2]
+        crops, tids = [], []
+        for (x1, y1, x2, y2), tid in mc_ids.items():
+            pad_w, pad_h = int((x2 - x1) * 0.05), int((y2 - y1) * 0.05)
+            crop = frame[max(0, y1 - pad_h):min(h, y2 + pad_h), max(0, x1 - pad_w):min(w, x2 + pad_w)]
+            if crop.shape[0] >= 24 and crop.shape[1] >= 24:
+                crops.append(crop)
+                tids.append(tid)
+        return crops, tids
+
+    def classify_riders(self, frame, mc_ids):
+        """Run the rider/helmet classifier on every tracked motorcycle and update its smoothed votes.
+        Returns {track_id: summary or None}."""
+        crops, tids = self.crop_motorcycles(frame, mc_ids)
+        if not crops:
+            return {}
+        with torch.inference_mode():
+            probs = self.rider_cls.predict_probs(crops)
+        with self.det_lock:
+            for tid, p in zip(tids, probs):
+                self.rider_voting.update(tid, p)
+            self.rider_voting.prune()
+            return {tid: self.rider_voting.get(tid) for tid in tids}
 
     def crop_plate_rois(self, frame, mc_bboxes):
         """Regions where each motorcycle's plate can be: the bike box, widened because in side and
@@ -91,6 +158,8 @@ class YoloPipeline:
         """Plate boxes [x1, y1, x2, y2, conf] in frame coordinates."""
         common = dict(conf=self.config.detection_conf, verbose=False, device=self.device,
                       quantize=self.config.inference_quantize)
+        if self.model is None:
+            return []
         if self.config.plate_search != "roi" or self.model_mc is None:
             results = self.model.predict(frame, imgsz=self.config.plate_imgsz, **common)
             return [[*map(int, b.xyxy[0].tolist()), float(b.conf[0])] for r in results for b in r.boxes]
@@ -160,7 +229,7 @@ class YoloPipeline:
                 res_mc = self.model_mc.predict(
                     frame,
                     imgsz=self.config.detection_imgsz,
-                    classes=[3],
+                    classes=self.mc_classes,
                     conf=self.config.detection_conf,
                     verbose=False,
                     device=self.device,
@@ -220,6 +289,16 @@ class YoloPipeline:
                 self.tracker.record_snapshot(tid, frame, mc_bb)
             if self.model_helmet is not None:
                 self.tracker.update_helmets(helmet_bboxes, head_bboxes, rider_bboxes)
+            mc_ids = dict(self.tracker.bbox_to_track_id)
+
+        # Needs the track IDs, so it runs after tracking (outside the lock: the classifier is the slow part)
+        if self.rider_cls is not None and mc_ids:
+            summaries = self.classify_riders(frame, mc_ids)
+            with self.det_lock:
+                for tid, summary in summaries.items():
+                    self.tracker.update_rider_summary(tid, summary)
+
+        with self.det_lock:
             if self.speed_estimator.calibrated:
                 for mc_bb, tid in self.tracker.bbox_to_track_id.items():
                     self.tracker.record_speed(tid, self.speed_estimator.update(tid, mc_bb, frame_t))

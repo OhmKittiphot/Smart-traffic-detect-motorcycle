@@ -137,6 +137,7 @@ class DetectionApp:
         self.tracker.reset()
         self.ocr_manager.reset()
         self.speed_estimator.reset()
+        self.yolo_pipeline.reset()
         self.latest_detections = []
         self._last_proc_t = None
 
@@ -229,13 +230,15 @@ class DetectionApp:
 
     def start_workers(self):
         """Start OCR, capture and processing in the background (no window). Returns once OCR is ready."""
-        self.ocr_proc.start()
-        self._wait_for_ocr()
+        if self.config.enable_plate_ocr:
+            self.ocr_proc.start()
+            self._wait_for_ocr()
         print("Warming up models...")
         self.yolo_pipeline.warmup()
         self.video_stream.start()
         threading.Thread(target=self._yolo_fn, daemon=True, name="YOLO").start()
-        threading.Thread(target=self.ocr_handler.run_loop, daemon=True, name="OCR-Result").start()
+        if self.config.enable_plate_ocr:
+            threading.Thread(target=self.ocr_handler.run_loop, daemon=True, name="OCR-Result").start()
         self._workers_started = True
 
     def switch_source(self, video_camera: str):

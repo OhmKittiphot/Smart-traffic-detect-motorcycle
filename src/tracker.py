@@ -30,6 +30,9 @@ class MotorcycleTracker:
         self.rider_min_frames = 3
         self.rider_history: Dict[int, Deque[int]] = {}
         self.rider_max: Dict[int, int] = {}
+        # Smoothed rider classifier result per track (rider_classifier.summarize); when present it is used
+        # instead of the head counts above
+        self.rider_summary: Dict[int, Dict[str, Any]] = {}
 
     def reset(self) -> None:
         """Clear all tracks so a new video loop starts with a clean session."""
@@ -40,6 +43,7 @@ class MotorcycleTracker:
         self.helmet_history.clear()
         self.rider_history.clear()
         self.rider_max.clear()
+        self.rider_summary.clear()
 
     def _finish_track(self, track_id: int) -> Dict[str, Any]:
         """Remove a track and return its final summary (helmet/rider status snapshotted first)."""
@@ -48,10 +52,12 @@ class MotorcycleTracker:
         meta["helmet"] = self.get_helmet_status(track_id)
         meta["riders"] = self.get_rider_count(track_id)
         # A rider's head was detected on this bike in at least rider_min_frames frames
-        meta["rider_seen"] = self.rider_max.get(track_id, 0) > 0
+        # (or the rider classifier gave a result for it)
+        meta["rider_seen"] = self.rider_max.get(track_id, 0) > 0 or track_id in self.rider_summary
         self.helmet_history.pop(track_id, None)
         self.rider_history.pop(track_id, None)
         self.rider_max.pop(track_id, None)
+        self.rider_summary.pop(track_id, None)
         return meta
 
     def drain(self) -> List[Dict[str, Any]]:
@@ -246,8 +252,16 @@ class MotorcycleTracker:
                 est = sorted(r_hist, reverse=True)[self.rider_min_frames - 1]
                 self.rider_max[track_id] = max(self.rider_max.get(track_id, 0), est)
 
+    def update_rider_summary(self, track_id: int, summary: Optional[Dict[str, Any]]) -> None:
+        """Store the rider classifier's smoothed result for a track (None = not enough frames yet)."""
+        if summary is not None and track_id in self.motorcycle_tracks:
+            self.rider_summary[track_id] = summary
+
     def get_helmet_status(self, track_id: int) -> Optional[Tuple[int, int]]:
         """Smoothed (helmets, bare heads) for a track, or None until enough frames were observed."""
+        summary = self.rider_summary.get(track_id)
+        if summary is not None:
+            return summary["riders"] - summary["no_helmet"], summary["no_helmet"]
         hist = self.helmet_history.get(track_id)
         if not hist or len(hist) < self.helmet_min_samples:
             return None
@@ -258,6 +272,9 @@ class MotorcycleTracker:
     def get_rider_count(self, track_id: int) -> int:
         """Most riders seen on this track so far (counted as above). A moving motorcycle always has a
         driver, so this is at least 1 even when no head was detected."""
+        summary = self.rider_summary.get(track_id)
+        if summary is not None:
+            return max(1, summary["riders"])
         return max(1, self.rider_max.get(track_id, 0))
 
     def resolve_track_id(self, bbox: Tuple[int, int, int, int]) -> Optional[int]:

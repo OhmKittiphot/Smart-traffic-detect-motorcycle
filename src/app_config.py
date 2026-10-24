@@ -14,10 +14,22 @@ class AppConfig:
     rtsp_url: str
     video_file: str
 
-    motorcycle_model_path: str = "models/yolov8n.pt"
+    # Motorcycle(+riders) detector from tools/train_detector.py; the COCO model below is used when it
+    # has not been trained yet (both work: classes are picked by the name "motorcycle")
+    motorcycle_model_path: str = "models/motorcycle_det.pt"
+    motorcycle_fallback_model_path: str = "models/yolov8n.pt"
     # Single-class Thai motorcycle plate model (train.py plate)
     model_path: str = "runs/detect/moto-plate/weights/best.pt"
     helmet_model_path: str = "runs/detect/helmet-rider/weights/best.pt"
+    # Rider count / helmet classifier from tools/train_rider_classifier.py. When the file exists it
+    # replaces the helmet model above for rider counting and helmet status
+    rider_model_path: str = "models/rider_cls.pt"
+    # Frames of classifier output averaged per motorcycle before its result is used
+    rider_vote_window: int = 15
+    rider_vote_min_frames: int = 3
+
+    # License plate detection + OCR; off = rider/helmet/speed only (no plate model, no OCR process)
+    enable_plate_ocr: bool = True
 
     ###DEFAULT CONFIG VALUES###
     # Detection parameters
@@ -78,10 +90,14 @@ class AppConfig:
 
     @classmethod
     def from_env(cls) -> "AppConfig":
-        # Only the video source and speed calibration come from .env; everything else is set above.
+        # Only the video source, model paths, plate OCR switch and speed calibration come from .env;
+        # everything else is set above.
         return cls(
             rtsp_url=os.getenv("RTSP_URL", ""),
             video_file=os.getenv("VIDEO_FILE", ""),
+            motorcycle_model_path=os.getenv("MOTORCYCLE_MODEL_PATH", cls.motorcycle_model_path),
+            rider_model_path=os.getenv("RIDER_MODEL_PATH", cls.rider_model_path),
+            enable_plate_ocr=os.getenv("ENABLE_PLATE_OCR", "1").strip().lower() in ("1", "true", "yes", "on"),
             speed_calib_points=os.getenv("SPEED_CALIB_POINTS", ""),
             speed_calib_world=os.getenv("SPEED_CALIB_WORLD", ""),
         )

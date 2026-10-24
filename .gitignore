@@ -63,3 +63,6 @@ web/db.sqlite3
 web/.secret_key
 web/media/
 web/staticfiles/
+
+# Datasets built by tools/
+datasets/
