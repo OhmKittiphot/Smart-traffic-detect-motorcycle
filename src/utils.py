@@ -1,3 +1,4 @@
+import os
 import re
 import time
 import traceback
@@ -81,16 +82,25 @@ _RTSP_READ_TIMEOUT_MS = 10000
 
 
 def open_capture(camera_url: str) -> cv2.VideoCapture:
-    """Open a cv2 VideoCapture for an RTSP URL or a local video file path."""
+    """Open a cv2 VideoCapture for an RTSP / http(s) stream URL or a local video file path."""
     is_rtsp = camera_url.lower().startswith("rtsp://")
+    is_network = is_rtsp or camera_url.lower().startswith(("http://", "https://"))
+    # Low-latency RTSP options; read by OpenCV on every open, and they would break probing of video files
+    if is_rtsp:
+        os.environ["OPENCV_FFMPEG_CAPTURE_OPTIONS"] = (
+            "rtsp_transport;tcp|fflags;nobuffer|flags;low_delay|analyzeduration;0|probesize;32"
+        )
+    else:
+        os.environ.pop("OPENCV_FFMPEG_CAPTURE_OPTIONS", None)
 
     cap = cv2.VideoCapture()
-    if is_rtsp:
+    if is_network:
         cap.set(cv2.CAP_PROP_OPEN_TIMEOUT_MSEC, _RTSP_OPEN_TIMEOUT_MS)
         cap.set(cv2.CAP_PROP_READ_TIMEOUT_MSEC, _RTSP_READ_TIMEOUT_MS)
 
     if not cap.open(camera_url, cv2.CAP_FFMPEG):
-        print(f"[Capture] Failed to open source: {camera_url}")
+        # Never print the RTSP URL itself: it usually carries the camera password
+        print(f"[Capture] Failed to open source: {'RTSP camera' if is_rtsp else camera_url}")
         return cap
 
     if is_rtsp:

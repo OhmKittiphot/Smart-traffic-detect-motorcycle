@@ -1,0 +1,70 @@
+"""Start the CCTV admin dashboard (web server + detection) with one command:
+
+    venv\Scripts\python web\run.py
+
+Then open http://127.0.0.1:8000 and log in with an admin account
+(create one first with: venv\Scripts\python web\manage.py createsuperuser).
+Always use the project's venv: the detection models and Django are installed there.
+"""
+import multiprocessing as mp
+import os
+import sys
+from pathlib import Path
+
+WEB_DIR = Path(__file__).resolve().parent
+PROJECT_DIR = WEB_DIR.parent
+
+
+def main():
+    # Model paths in AppConfig are relative to the project root
+    os.chdir(PROJECT_DIR)
+    sys.path.insert(0, str(WEB_DIR))
+    os.environ.setdefault("DJANGO_SETTINGS_MODULE", "cctv_admin.settings")
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            # Line-buffered so pipeline messages show up immediately when output is piped to a log
+            stream.reconfigure(encoding="utf-8", errors="replace", line_buffering=True)
+        except (AttributeError, ValueError):
+            pass
+
+    import django
+    from django.core.management import call_command
+
+    django.setup()
+    call_command("migrate", interactive=False, verbosity=0)
+    call_command("collectstatic", interactive=False, verbosity=0)
+
+    from django.contrib.auth import get_user_model
+
+    if not get_user_model().objects.filter(is_staff=True, is_active=True).exists():
+        print("\nNo admin account yet. Create one first, then start again:\n"
+              "    venv\\Scripts\\python web\\manage.py createsuperuser\n")
+        sys.exit(1)
+
+    from django.conf import settings
+    from waitress import serve
+
+    from cctv_admin.wsgi import application
+    from dashboard.engine import get_service
+
+    service = get_service()   # loads models in the background while the server starts
+
+    host = os.getenv("DASHBOARD_HOST", "127.0.0.1")
+    port = int(os.getenv("DASHBOARD_PORT", "8000"))
+    if host not in ("127.0.0.1", "localhost") and not os.getenv("DJANGO_ALLOWED_HOSTS"):
+        print(f"[Warning] Listening on {host} but DJANGO_ALLOWED_HOSTS is not set; other hosts will get 400.")
+    if settings.DEBUG:
+        print("[Warning] DJANGO_DEBUG is on. Never use it on a shared network.")
+
+    print(f"\nCCTV dashboard: http://{'127.0.0.1' if host == '0.0.0.0' else host}:{port}\n")
+    try:
+        # Each open video stream holds one thread, so keep plenty for API requests
+        serve(application, host=host, port=port, threads=24, ident="cctv",
+              channel_timeout=60, connection_limit=200)
+    finally:
+        service.stop()
+
+
+if __name__ == "__main__":
+    mp.freeze_support()
+    main()

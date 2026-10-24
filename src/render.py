@@ -55,8 +55,10 @@ def draw_text_on_cv_img(img_cv, text, pos, font_size=24, text_color=(255, 255, 2
     return img_cv
 
 
-def draw_video_overlay(frame, pos_ms: float, total_ms: float, proc_fps: float, paused: bool):
-    """Draw an overlay showing timestamp, progress bar, and FPS on the frame."""
+def draw_video_overlay(frame, pos_ms: float, total_ms: float, proc_fps: float, paused: bool,
+                       show_progress: bool = True):
+    """Draw an overlay showing timestamp, progress bar, and FPS on the frame.
+    The web dashboard has its own seek bar, so it turns the progress bar off."""
     h, w = frame.shape[:2]
 
     # --- Timestamp & FPS (top-left corner) ---
@@ -74,6 +76,9 @@ def draw_video_overlay(frame, pos_ms: float, total_ms: float, proc_fps: float, p
                 cv2.FONT_HERSHEY_SIMPLEX, 0.65, (255, 255, 255), 1, cv2.LINE_AA)
     cv2.putText(frame, fps_text, (10, 46),
                 cv2.FONT_HERSHEY_SIMPLEX, 0.55, (180, 255, 180), 1, cv2.LINE_AA)
+
+    if not show_progress:
+        return frame
 
     # --- Progress bar (bottom) ---
     bar_h = 6

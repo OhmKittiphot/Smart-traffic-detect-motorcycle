@@ -168,6 +168,24 @@ class MotorcycleTracker:
         self.bbox_to_track_id = {bbox: track_id for track_id, (bbox, _) in assigned.items()}
         return finished
 
+    def record_snapshot(self, track_id: int, frame, bbox: Tuple[int, int, int, int]) -> None:
+        """Keep a crop of the motorcycle and its riders from the frame where it looks biggest
+        (usually closest to the camera); used as evidence in the web dashboard."""
+        meta = self.motorcycle_tracks.get(track_id)
+        if meta is None:
+            return
+        x1, y1, x2, y2 = bbox
+        area = (x2 - x1) * (y2 - y1)
+        if area <= meta.get("snapshot_area", 0):
+            return
+        h, w = frame.shape[:2]
+        bw, bh = x2 - x1, y2 - y1
+        # Riders sit above the motorcycle box (same zone as the rider count)
+        crop = frame[max(0, int(y1 - bh)):min(h, y2), max(0, int(x1 - 0.1 * bw)):min(w, int(x2 + 0.1 * bw))]
+        if crop.size:
+            meta["snapshot"] = crop.copy()
+            meta["snapshot_area"] = area
+
     def record_speed(self, track_id: int, speed: Optional[float]) -> None:
         meta = self.motorcycle_tracks.get(track_id)
         if meta is not None and speed is not None:

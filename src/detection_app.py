@@ -66,7 +66,8 @@ class DetectionApp:
         self.video_stream = VideoStream(
             video_camera=self.video_camera,
             display_fps=self.config.display_fps,
-            on_loop=self._on_video_loop
+            on_loop=self._on_video_loop,
+            on_seek=self._on_video_seek,
         )
 
         # Interactive calibration controller
@@ -99,6 +100,11 @@ class DetectionApp:
         )
 
         self._fps_samples = deque(maxlen=30)
+        # (media generation, source time) of the last processed frame; source time is the video position
+        # for files and the wall clock for live
+        self._last_proc_t = None
+        self._source_lock = threading.Lock()
+        self._workers_started = False
 
     def _init_speed_calibration(self):
         calib = parse_calibration(self.config.speed_calib_points, self.config.speed_calib_world)
@@ -124,28 +130,36 @@ class DetectionApp:
         print_motorcycle_reports(self.tracker.drain(), self.speed_estimator.calibrated,
                                  self.config.report_min_frames)
 
-    def _reset_media_session(self):
+    def _reset_media_session(self, report: bool = True):
         """Clear tracker / OCR / speed state bound to the playback session."""
-        self._report_remaining()
+        if report:
+            self._report_remaining()
         self.tracker.reset()
         self.ocr_manager.reset()
         self.speed_estimator.reset()
         self.latest_detections = []
+        self._last_proc_t = None
 
     def _on_video_loop(self, _cur_gen: int):
         with self.det_lock:
             self._reset_media_session()
 
+    def _on_video_seek(self, _cur_gen: int):
+        # Motorcycles in view before the jump were only partly seen: drop them instead of reporting
+        with self.det_lock:
+            self._reset_media_session(report=False)
+
     def _yolo_fn(self):
         while not self._stop_event.is_set():
-            if not self.video_stream.wait_frame_ready(timeout=2.0):
+            stream = self.video_stream   # may be replaced by switch_source() meanwhile
+            if not stream.wait_frame_ready(timeout=2.0):
                 continue
 
-            frame, frame_t, frame_gen = self.video_stream.get_proc_data()
+            frame, frame_t, frame_gen = stream.get_proc_data()
             if frame is None:
                 continue
 
-            current_gen = self.video_stream.media_generation
+            current_gen = stream.media_generation
             with self.det_lock:
                 if frame_gen < current_gen:
                     continue
@@ -158,12 +172,16 @@ class DetectionApp:
                 with self.det_lock:
                     self.latest_detections = dets
                     self._fps_samples.append(time.perf_counter())
+                    self._last_proc_t = (frame_gen, frame_t)
             except torch.cuda.OutOfMemoryError as e:
                 # Free cached blocks so the next frame has a chance; skipping one frame is harmless
                 torch.cuda.empty_cache()
                 log_error("YOLO", e)
             except Exception as e:
                 log_error("YOLO", e)
+            finally:
+                # Releases playback held at the start of a video / after a seek, even if this frame failed
+                stream.mark_processed(frame_gen)
 
     def _wait_for_ocr(self):
         """Block until the OCR process reports ready; raise if it failed or died."""
@@ -183,9 +201,99 @@ class DetectionApp:
         # First run may still be downloading PaddleOCR models; keep going and let results arrive later
         print(f"[OCR] Not ready after {OCR_STARTUP_TIMEOUT_S:.0f}s; continuing while it loads.")
 
+    def processing_fps(self) -> float:
+        """YOLO frames completed per second, sampled in the YOLO thread."""
+        with self.det_lock:
+            samples = list(self._fps_samples)
+        span = samples[-1] - samples[0] if len(samples) > 1 else 0.0
+        return (len(samples) - 1) / span if span > 0 else 0.0
+
+    def detection_lag_s(self) -> float:
+        """How far detection is behind the frame on screen, in seconds (0 when paused or idle)."""
+        stream = self.video_stream
+        with self.det_lock:
+            last_gen, last = self._last_proc_t or (None, None)
+        if last_gen != stream.media_generation:
+            last = None   # nothing processed yet since the last seek / loop / source switch
+        if stream.is_video_file:
+            if stream.is_paused() or last is None:
+                return 0.0
+            pos_ms, _ = stream.get_position()
+            return max(0.0, pos_ms / 1000.0 - last)
+        if last is None or stream.last_frame_age() > 2.0:
+            return 0.0
+        return max(0.0, time.time() - last)
+
+    def seek(self, pos_ms: float) -> None:
+        self.video_stream.seek(pos_ms)
+
+    def start_workers(self):
+        """Start OCR, capture and processing in the background (no window). Returns once OCR is ready."""
+        self.ocr_proc.start()
+        self._wait_for_ocr()
+        print("Warming up models...")
+        self.yolo_pipeline.warmup()
+        self.video_stream.start()
+        threading.Thread(target=self._yolo_fn, daemon=True, name="YOLO").start()
+        threading.Thread(target=self.ocr_handler.run_loop, daemon=True, name="OCR-Result").start()
+        self._workers_started = True
+
+    def switch_source(self, video_camera: str):
+        """Replace the video source while models and the OCR process keep running."""
+        with self._source_lock:
+            old = self.video_stream
+            old.stop()
+            with self.det_lock:
+                self._reset_media_session()
+                self._fps_samples.clear()
+            self.video_camera = video_camera
+            self.video_stream = VideoStream(
+                video_camera=video_camera,
+                display_fps=self.config.display_fps,
+                on_loop=self._on_video_loop,
+                on_seek=self._on_video_seek,
+                initial_generation=old.media_generation + 1,
+            )
+            if self._workers_started:
+                self.video_stream.start()
+
+    def render_frame(self):
+        """Latest frame with detections drawn on it, or None before the first frame."""
+        stream = self.video_stream
+        raw, pos_ms, total_ms = stream.get_display_data()
+        if raw is None:
+            return None
+        frame = raw.copy()
+
+        with self.det_lock:
+            dets = list(self.latest_detections)
+            mc_dets = list(self.tracker.latest_mc_detections)
+            mc_ids = dict(self.tracker.bbox_to_track_id)
+            speeds = {tid: self.speed_estimator.get_speed(tid) for tid in mc_ids.values()}
+            helmets = {tid: self.tracker.get_helmet_status(tid) for tid in mc_ids.values()}
+            riders = {tid: self.tracker.get_rider_count(tid) for tid in mc_ids.values()}
+
+        # A drawing failure (bad bbox, font issue...) should cost one overlay, not the app
+        try:
+            frame = draw_detections(frame, dets, mc_dets, mc_ids, speeds, helmets,
+                                    riders, self.config.max_riders)
+            if stream.is_video_file:
+                frame = draw_video_overlay(frame, pos_ms, total_ms, self.processing_fps(), stream.is_paused(),
+                                           show_progress=False)
+        except Exception as e:
+            log_error("Render", e)
+        return frame
+
+    def stop(self):
+        self._shutdown()
+
     def _shutdown(self):
         """Stop all workers and release resources. Safe to call more than once."""
         self._stop_event.set()
+        # Ctrl+C also kills the OCR process; without this, exit waits forever to flush queued crops
+        # into its closed pipe and the program never ends
+        for q in (self.ocr_in_q, self.ocr_out_q):
+            q.cancel_join_thread()
         self.ocr_handler.stop()
         self.video_stream.stop()
         with self.det_lock:
@@ -213,12 +321,7 @@ class DetectionApp:
             print("Program exited.")
 
     def _run(self):
-        self.ocr_proc.start()
-        self._wait_for_ocr()
-
-        self.video_stream.start()
-        threading.Thread(target=self._yolo_fn, daemon=True, name="YOLO").start()
-        threading.Thread(target=self.ocr_handler.run_loop, daemon=True, name="OCR-Result").start()
+        self.start_workers()
 
         print("Waiting for video feed...")
         if not self.video_stream.wait_for_first_frame(timeout=FIRST_FRAME_TIMEOUT_S):

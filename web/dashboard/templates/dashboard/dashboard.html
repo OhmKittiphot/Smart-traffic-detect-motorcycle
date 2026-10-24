@@ -1,0 +1,181 @@
+{% extends "dashboard/base.html" %}
+{% load static %}
+{% block title %}Dashboard · CCTV Control{% endblock %}
+{% block body %}
+<header class="topbar">
+  <div class="brand"><span class="rec-dot" aria-hidden="true"></span><span>CCTV Control</span></div>
+  <div class="topbar-user">
+    <button type="button" class="btn btn-ghost btn-sm theme-btn" id="theme-btn" aria-label="Change theme">
+      <svg class="ic-auto" viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><circle cx="12" cy="12" r="8" fill="none" stroke="currentColor" stroke-width="2"/><path d="M12 4a8 8 0 0 1 0 16z" fill="currentColor"/></svg>
+      <svg class="ic-light" viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><circle cx="12" cy="12" r="4.5" fill="currentColor"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M4.9 19.1 7 17M17 7l2.1-2.1" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+      <svg class="ic-dark" viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path d="M20 14.5A8 8 0 1 1 9.5 4a6.5 6.5 0 0 0 10.5 10.5z" fill="currentColor"/></svg>
+      <span class="theme-label">Auto</span>
+    </button>
+    <span class="muted">{{ user.get_username }}</span>
+    <a class="btn btn-ghost btn-sm" href="{% url 'admin:index' %}">Manage users</a>
+    <form method="post" action="{% url 'logout' %}">
+      {% csrf_token %}
+      <button type="submit" class="btn btn-ghost btn-sm">Log out</button>
+    </form>
+  </div>
+</header>
+
+<main class="layout">
+  <section class="video-panel" aria-label="Video">
+    <div class="video-head">
+      <div>
+        <span class="badge" id="source-badge" data-kind="nosignal">NO SIGNAL</span>
+        <span id="source-text" class="source-text">—</span>
+      </div>
+      <div class="video-meta">
+        <span title="Frames processed per second">Processing <b id="fps">0</b> fps</span>
+        <span id="calib" class="muted"></span>
+        <button type="button" class="btn btn-sm" id="calib-btn" disabled>Calibrate speed</button>
+      </div>
+    </div>
+    <div class="video-frame">
+      <img id="stream" src="{% url 'stream' %}" alt="Camera view">
+      <div class="loading-overlay" id="loading" role="status" aria-live="polite" hidden>
+        <span class="spinner" aria-hidden="true"></span>
+        <span id="loading-text">Loading…</span>
+      </div>
+      <div class="skip-hint" id="skip-hint" aria-hidden="true"></div>
+      <div class="engine-chip" id="engine-chip" data-state="starting" role="status">
+        <span class="chip-dot"></span><span id="engine-text">Starting…</span>
+      </div>
+    </div>
+
+    <div class="seekbar" id="seekbar" hidden>
+      <button type="button" class="btn btn-sm btn-skip" id="back-btn" title="Back 10 seconds (←)" aria-label="Back 10 seconds">&lt;&lt;&lt;</button>
+      <button type="button" class="btn btn-sm btn-icon" id="play-btn" title="Play / pause (Space)" aria-label="Pause">
+        <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true" class="icon-pause"><path fill="currentColor" d="M7 5h4v14H7zM13 5h4v14h-4z"/></svg>
+        <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true" class="icon-play"><path fill="currentColor" d="M8 5v14l11-7z"/></svg>
+      </button>
+      <button type="button" class="btn btn-sm btn-skip" id="fwd-btn" title="Forward 10 seconds (→)" aria-label="Forward 10 seconds">&gt;&gt;&gt;</button>
+      <input type="range" id="seek" min="0" max="0" step="100" value="0" aria-label="Video position">
+      <span class="seek-time"><span id="pos-text">0:00</span> / <span id="total-text">0:00</span></span>
+    </div>
+
+    <form id="source-form" class="controls">
+      <fieldset class="segmented" aria-label="Video source">
+        <legend class="sr-only">Video source</legend>
+        <label><input type="radio" name="mode" value="live" {% if saved.mode == "live" %}checked{% endif %}><span>Live camera</span></label>
+        <label><input type="radio" name="mode" value="file" {% if saved.mode == "file" %}checked{% endif %}><span>Video file</span></label>
+      </fieldset>
+      {% if live_sources %}
+      <select id="live-select" name="live" aria-label="Choose a live camera">
+        <option value="">IP camera (RTSP)</option>
+        {% for key, label in live_sources %}
+          <option value="{{ key }}" {% if key == saved.live_source %}selected{% endif %}>{{ label }}</option>
+        {% endfor %}
+      </select>
+      {% endif %}
+      <select id="file-select" name="file" aria-label="Choose a video file" {% if not video_files %}disabled{% endif %}>
+        {% for f in video_files %}
+          <option value="{{ f }}" {% if f == saved.video_file %}selected{% endif %}>{{ f }}</option>
+        {% empty %}
+          <option value="">No files in the input/ folder</option>
+        {% endfor %}
+      </select>
+      <button type="submit" class="btn btn-primary" id="apply-btn">Switch source</button>
+      <span id="form-msg" class="form-msg" role="status" aria-live="polite"></span>
+    </form>
+  </section>
+
+  <section class="stats" aria-label="Today">
+    <div class="stat"><span class="stat-label">Vehicles today</span><span class="stat-value" id="stat-total">0</span></div>
+    <div class="stat stat-ok"><span class="stat-label">Normal</span><span class="stat-value" id="stat-normal">0</span></div>
+    <div class="stat stat-bad"><span class="stat-label">Violations</span><span class="stat-value" id="stat-violation">0</span></div>
+    <p class="rules muted">Violation = no helmet · more than {{ max_riders }} riders{% if speed_limit %} · over {{ speed_limit|floatformat:0 }} km/h{% endif %}</p>
+  </section>
+
+  <section class="table-panel" aria-label="Passing motorcycles">
+    <div class="table-head">
+      <div class="table-head-main">
+        <h2>Passing motorcycles</h2>
+        <div class="filters" role="tablist">
+          <button type="button" class="filter is-active" data-filter="all" role="tab" aria-selected="true">All</button>
+          <button type="button" class="filter" data-filter="normal" role="tab" aria-selected="false"><span class="dot dot-ok"></span>Normal</button>
+          <button type="button" class="filter" data-filter="violation" role="tab" aria-selected="false"><span class="dot dot-bad"></span>Violation</button>
+        </div>
+      </div>
+      <!-- Trash icon: Bootstrap Icons "trash3" (MIT), inlined because the CSP allows no external files -->
+      <button type="button" class="btn btn-sm btn-danger-ghost btn-clear" id="clear-btn">
+        <span>Delete all</span>
+        <svg class="bi" xmlns="http://www.w3.org/2000/svg" width="15" height="15" fill="currentColor" viewBox="0 0 16 16" aria-hidden="true"><path d="M6.5 1h3a.5.5 0 0 1 .5.5v1H6v-1a.5.5 0 0 1 .5-.5M11 2.5v-1A1.5 1.5 0 0 0 9.5 0h-3A1.5 1.5 0 0 0 5 1.5v1H1.5a.5.5 0 0 0 0 1h.538l.853 10.66A2 2 0 0 0 4.885 16h6.23a2 2 0 0 0 1.994-1.84l.853-10.66h.538a.5.5 0 0 0 0-1zm1.958 1-.846 10.58a1 1 0 0 1-.997.92h-6.23a1 1 0 0 1-.997-.92L3.042 3.5zm-7.487 1a.5.5 0 0 1 .528.47l.5 8.5a.5.5 0 0 1-.998.06L5 5.03a.5.5 0 0 1 .47-.53Zm5.058 0a.5.5 0 0 1 .47.53l-.5 8.5a.5.5 0 1 1-.998-.06l.5-8.5a.5.5 0 0 1 .528-.47M8 4.5a.5.5 0 0 1 .5.5v8.5a.5.5 0 0 1-1 0V5a.5.5 0 0 1 .5-.5"/></svg>
+      </button>
+    </div>
+    <div class="table-wrap">
+      <table class="vehicles" id="vehicles" data-filter="all">
+        <thead>
+          <tr>
+            <th>Time</th><th>Photo</th><th>Plate</th><th>Province</th><th class="num">Riders</th>
+            <th>Helmet</th><th class="num">Speed</th><th>Status</th>
+          </tr>
+        </thead>
+        <tbody id="vehicle-rows"></tbody>
+      </table>
+      <p class="empty muted" id="empty-msg">No motorcycles yet</p>
+    </div>
+  </section>
+</main>
+
+<dialog id="snap-dialog" class="snap-dialog">
+  <img id="snap-img" alt="Evidence photo">
+  <form method="dialog"><button class="btn">Close</button></form>
+</dialog>
+
+<dialog id="clear-dialog" class="confirm-dialog" aria-labelledby="clear-title">
+  <h3 id="clear-title">Delete all motorcycle records?</h3>
+  <p class="muted">This permanently removes every row in the table and its evidence photos. It cannot be undone.</p>
+  <form method="dialog" class="confirm-actions">
+    <button class="btn" value="cancel" autofocus>Cancel</button>
+    <button class="btn btn-danger" value="confirm"><svg class="bi" xmlns="http://www.w3.org/2000/svg" width="15" height="15" fill="currentColor" viewBox="0 0 16 16" aria-hidden="true"><path d="M6.5 1h3a.5.5 0 0 1 .5.5v1H6v-1a.5.5 0 0 1 .5-.5M11 2.5v-1A1.5 1.5 0 0 0 9.5 0h-3A1.5 1.5 0 0 0 5 1.5v1H1.5a.5.5 0 0 0 0 1h.538l.853 10.66A2 2 0 0 0 4.885 16h6.23a2 2 0 0 0 1.994-1.84l.853-10.66h.538a.5.5 0 0 0 0-1zm1.958 1-.846 10.58a1 1 0 0 1-.997.92h-6.23a1 1 0 0 1-.997-.92L3.042 3.5zm-7.487 1a.5.5 0 0 1 .528.47l.5 8.5a.5.5 0 0 1-.998.06L5 5.03a.5.5 0 0 1 .47-.53Zm5.058 0a.5.5 0 0 1 .47.53l-.5 8.5a.5.5 0 1 1-.998-.06l.5-8.5a.5.5 0 0 1 .528-.47M8 4.5a.5.5 0 0 1 .5.5v8.5a.5.5 0 0 1-1 0V5a.5.5 0 0 1 .5-.5"/></svg><span>Delete all</span></button>
+  </form>
+</dialog>
+
+<dialog id="calib-dialog" class="calib-dialog" aria-labelledby="calib-title">
+  <div class="calib-head">
+    <h3 id="calib-title">Speed calibration</h3>
+    <span class="muted" id="calib-source"></span>
+  </div>
+  <p class="calib-help muted">
+    Click 4 points on the road that form a rectangle, in order:
+    <b>1</b> far-left, <b>2</b> far-right, <b>3</b> near-right, <b>4</b> near-left.
+    Drag a point to move it. Then enter the real size of that rectangle on the ground
+    (measure on site, or use known markings such as the lane width).
+  </p>
+  <div class="calib-stage-wrap">
+    <div class="calib-stage" id="calib-stage">
+      <img id="calib-img" alt="Current video frame">
+      <svg id="calib-svg" class="calib-svg" xmlns="http://www.w3.org/2000/svg" aria-label="Calibration points"></svg>
+      <p class="calib-next" id="calib-next"></p>
+    </div>
+  </div>
+  <div class="calib-form">
+    <label class="calib-field">
+      <span>Width <small class="muted">point 1 → 2</small></span>
+      <span class="input-unit"><input type="number" id="calib-w" min="0.1" max="500" step="0.01" inputmode="decimal" required><span>m</span></span>
+    </label>
+    <label class="calib-field">
+      <span>Length <small class="muted">point 2 → 3</small></span>
+      <span class="input-unit"><input type="number" id="calib-l" min="0.1" max="500" step="0.01" inputmode="decimal" required><span>m</span></span>
+    </label>
+    <div class="calib-point-tools">
+      <button type="button" class="btn btn-sm" id="calib-undo">Undo point</button>
+      <button type="button" class="btn btn-sm" id="calib-clear-pts">Clear points</button>
+      <button type="button" class="btn btn-sm" id="calib-refresh" title="Take a new frame from the video">New frame</button>
+    </div>
+  </div>
+  <p class="form-msg" id="calib-msg" role="status" aria-live="polite"></p>
+  <div class="calib-actions">
+    <button type="button" class="btn btn-sm btn-danger-ghost" id="calib-remove" hidden>Remove calibration</button>
+    <span class="spacer"></span>
+    <button type="button" class="btn" id="calib-cancel">Cancel</button>
+    <button type="button" class="btn btn-primary" id="calib-save" disabled>Save calibration</button>
+  </div>
+</dialog>
+
+<meta name="csrf-token" content="{{ csrf_token }}">
+<script src="{% static 'dashboard/dashboard.js' %}" defer></script>
+{% endblock %}

@@ -33,11 +33,6 @@ def select_source(config: AppConfig) -> str:
             if not config.rtsp_url:
                 print("RTSP_URL not found in .env, please set it first")
                 sys.exit(1)
-            # Enable RTSP low-latency options
-            os.environ["OPENCV_FFMPEG_CAPTURE_OPTIONS"] = (
-                "rtsp_transport;tcp|fflags;nobuffer|flags;low_delay|"
-                "analyzeduration;0|probesize;32"
-            )
             print(" > Using live RTSP camera\n")
             return config.rtsp_url
 

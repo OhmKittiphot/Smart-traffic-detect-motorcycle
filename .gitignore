@@ -57,3 +57,9 @@ runs/detect/helmet-rider/*
 runs/detect/*/weights/*
 !runs/detect/*/weights/best.pt
 yolo26n.pt
+
+# Web dashboard runtime data (database, generated secret key, evidence snapshots)
+web/db.sqlite3
+web/.secret_key
+web/media/
+web/staticfiles/

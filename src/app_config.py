@@ -24,6 +24,17 @@ class AppConfig:
     detection_imgsz: int = 640
     # Plates are small in wide shots; the plate model was trained at 960
     plate_imgsz: int = 960
+    # Where to look for plates: "roi" = only inside each detected motorcycle, cropped from the full-size
+    # frame (no plate search at all when no motorcycle is close enough); "frame" = the whole frame at
+    # plate_imgsz (also used when the motorcycle model is missing). On plate-dataset/test "frame" found
+    # 71% of plates and "roi" 54%, because the motorcycle model misses some bikes (67% with
+    # detection_imgsz 960). "roi" gains most once the plate model is trained on motorcycle crops.
+    plate_search: str = "roi"
+    # Input size for each motorcycle region. Measured on plate-dataset/test: 320 found the most plates;
+    # larger sizes enlarge the plate past what the current plate model was trained on
+    plate_roi_imgsz: int = 320
+    # Motorcycles shorter than this (pixels) are too far away for a readable plate and are skipped
+    plate_min_bike_h: int = 40
     detection_conf: float = 0.25
     helmet_conf: float = 0.25
     # Lower threshold for counting riders only: a passenger's head behind the driver often scores
@@ -37,6 +48,8 @@ class AppConfig:
     no_helmet_class_names: tuple = ("head", "no helmet", "without helmet", "bare head")
     # Riders allowed on one motorcycle (Thai law: driver + 1 passenger); more is flagged OVERLOAD
     max_riders: int = 2
+    # Median speed above this is reported as SPEEDING (only when speed is calibrated); 0 disables it
+    speed_limit_kmh: float = 80.0
     # A motorcycle's summary is printed when it leaves; tracks seen in fewer YOLO frames are ignored
     report_min_frames: int = 5
     # When to 'lock' an OCR result and print it: minimum confidence (0-1)
@@ -84,7 +97,9 @@ def configure_torch_runtime():
     use_half = use_cuda
 
     if use_cuda:
-        torch.backends.cudnn.benchmark = True
+        # Off on purpose: helmet crops change shape every frame, and benchmark mode re-tunes for each new
+        # shape (measured: 19 stalls of 0.7-1.2 s in 8 s of video vs none without it, same median speed)
+        torch.backends.cudnn.benchmark = False
         try:
             torch.backends.cuda.matmul.allow_tf32 = True
         except Exception:

@@ -99,6 +99,11 @@ class SpeedEstimator:
         st = self._tracks.get(track_id)
         return st["speed"] if st else None
 
+    def clear_calibration(self) -> None:
+        """Forget the calibration; speeds are not measured until it is set again."""
+        self._H = None
+        self._tracks = {}
+
     def reset(self) -> None:
         """Drop per-track speed history; keep the homography calibration."""
         self._tracks = {}
