@@ -17,6 +17,8 @@ from utils import format_thai_plate, open_capture, merge_related_boxes
 from tracker import MotorcycleTracker
 from ocr_manager import OCRManager
 from speed import SpeedEstimator, parse_calibration
+from rider_classifier import NO_HELMET, RiderClassifier
+from rider_voting import RiderVoting
 
 
 class DetectionApp:
@@ -28,19 +30,42 @@ class DetectionApp:
         self.use_half = use_half
 
         print("Loading YOLO models...")
-        self.model = load_yolo_model(config.model_path, device, use_half)
+        self.ocr_enabled = config.enable_plate_ocr
+        self.model = None
+        self.plate_classes = None
+        if self.ocr_enabled:
+            self.model = load_yolo_model(config.model_path, device, use_half)
+            # Multi-class plate models (e.g. letters/license-plate/province) -> keep only the plate box
+            self.plate_classes = [i for i, n in self.model.names.items() if n == "license-plate"] or None
         try:
             self.model_mc = load_yolo_model(config.motorcycle_model_path, device_secondary, use_half)
-        except Exception:
+            # Works for both the custom detector ({0: motorcycle}) and COCO models ({3: motorcycle})
+            self.mc_classes = [i for i, n in self.model_mc.names.items() if n in ("motorcycle", "motorbike")] or None
+        except Exception as e:
+            print(f"[Motorcycle] Could not load detector '{config.motorcycle_model_path}': {e}")
             self.model_mc = None
+            self.mc_classes = None
+
+        self.rider_cls = None
+        if os.path.exists(config.rider_model_path):
+            self.rider_cls = RiderClassifier(config.rider_model_path, device_secondary, use_half)
+            print(f"[Rider] Classifier loaded: {config.rider_model_path}")
+        else:
+            print(f"[Rider] Classifier not found at '{config.rider_model_path}', rider/helmet check disabled.")
+        self.rider_voting = RiderVoting(
+            window=config.rider_vote_window,
+            min_frames=config.rider_vote_min_frames,
+            max_age_s=config.motorcycle_track_max_age_s,
+        )
 
         if torch.cuda.is_available():
             # Release cached-but-unused VRAM before spawning the OCR process (also GPU-based)
             torch.cuda.empty_cache()
 
-        self.ocr_in_q = mp.Queue(maxsize=2)
-        self.ocr_out_q = mp.Queue(maxsize=2)
-        self.ocr_proc = mp.Process(target=ocr_worker, args=(self.ocr_in_q, self.ocr_out_q), daemon=True)
+        if self.ocr_enabled:
+            self.ocr_in_q = mp.Queue(maxsize=2)
+            self.ocr_out_q = mp.Queue(maxsize=2)
+            self.ocr_proc = mp.Process(target=ocr_worker, args=(self.ocr_in_q, self.ocr_out_q), daemon=True)
 
         # Initialize sub-components
         self.tracker = MotorcycleTracker(
@@ -229,19 +254,64 @@ class DetectionApp:
 
         return frame
 
-    def start(self):
-        self.ocr_proc.start()
+    def _violation_text(self, summary) -> str:
+        """Short violation description for a rider summary, or '' if the motorcycle is OK."""
+        parts = []
+        if summary["passengers"] > self.config.max_passengers:
+            parts.append(f"OVERLOAD {summary['riders']} riders")
+        if summary["no_helmet"]:
+            parts.append(f"NO HELMET x{summary['no_helmet']}")
+        return " | ".join(parts)
 
-        print("Waiting for OCR Process...")
-        try:
-            msg = self.ocr_out_q.get(timeout=60)
-            print(f"OCR Process Status: {msg}")
-        except Exception:
-            print("OCR Process started.")
+    def _report_violation(self, track_id: int, summary) -> None:
+        seats = ", ".join(
+            f"{pos}:{'no helmet' if s == NO_HELMET else 'helmet'}"
+            for pos, s in summary["states"].items() if s
+        )
+        print("\n=========================================")
+        print(f"   VIOLATION  Motorcycle ID {track_id}")
+        print(f"   Riders: {summary['riders']}  (passengers: {summary['passengers']})")
+        print(f"   Seats: {seats}")
+        print(f"   {self._violation_text(summary)}")
+        print("=========================================\n")
+
+    def _classify_riders(self, frame, mc_ids):
+        """Run the rider/helmet classifier on every tracked motorcycle crop and update the votes."""
+        if self.rider_cls is None or not mc_ids:
+            return
+        h, w = frame.shape[:2]
+        crops, tids = [], []
+        for (x1, y1, x2, y2), tid in mc_ids.items():
+            pad_w, pad_h = int((x2 - x1) * 0.05), int((y2 - y1) * 0.05)
+            crop = frame[max(0, y1 - pad_h):min(h, y2 + pad_h), max(0, x1 - pad_w):min(w, x2 + pad_w)]
+            if crop.shape[0] >= 24 and crop.shape[1] >= 24:
+                crops.append(crop)
+                tids.append(tid)
+        probs = self.rider_cls.predict_probs(crops)
+        with self.det_lock:
+            for tid, p in zip(tids, probs):
+                self.rider_voting.update(tid, p)
+            self.rider_voting.prune()
+            summaries = [(tid, self.rider_voting.get(tid)) for tid in tids]
+        for tid, summary in summaries:
+            if summary and self._violation_text(summary) and self.rider_voting.should_report(tid):
+                self._report_violation(tid, summary)
+
+    def start(self):
+        if self.ocr_enabled:
+            self.ocr_proc.start()
+
+            print("Waiting for OCR Process...")
+            try:
+                msg = self.ocr_out_q.get(timeout=60)
+                print(f"OCR Process Status: {msg}")
+            except Exception:
+                print("OCR Process started.")
 
         threading.Thread(target=self._capture_fn, daemon=True, name="Capture").start()
         threading.Thread(target=self._yolo_fn, daemon=True, name="YOLO").start()
-        threading.Thread(target=self._ocr_result_fn, daemon=True, name="OCR-Result").start()
+        if self.ocr_enabled:
+            threading.Thread(target=self._ocr_result_fn, daemon=True, name="OCR-Result").start()
 
         print("Waiting for video feed...")
         while True:
@@ -257,7 +327,7 @@ class DetectionApp:
             print("Camera feed active! Detection starting... Press 'q' to exit.")
 
         frame_counter = 0
-        win_title = "Motorcycle License Plate Detection"
+        win_title = "Motorcycle Rider & Helmet Detection"
         cv2.namedWindow(win_title, cv2.WINDOW_NORMAL)
         cv2.resizeWindow(win_title, 1024, 576)
         cv2.setMouseCallback(win_title, self._on_mouse)
@@ -287,18 +357,33 @@ class DetectionApp:
                     mc_dets = list(self.tracker.latest_mc_detections)
                     mc_ids = dict(self.tracker.bbox_to_track_id)
                     speeds = {tid: self.speed_estimator.get_speed(tid) for tid in mc_ids.values()}
+                    riders = {tid: self.rider_voting.get(tid) for tid in mc_ids.values()}
 
                 if self._calib_pts is not None:
                     frame = self._draw_calibration(self._calib_frame.copy())
 
                 for (mx1, my1, mx2, my2), m_conf in mc_dets:
-                    cv2.rectangle(frame, (mx1, my1), (mx2, my2), (255, 100, 0), 2)
-                    label_mc = f"Motorcycle {m_conf*100:.0f}%"
-                    spd = speeds.get(mc_ids.get((mx1, my1, mx2, my2)))
+                    tid = mc_ids.get((mx1, my1, mx2, my2))
+                    summary = riders.get(tid)
+                    violation = self._violation_text(summary) if summary else ""
+                    # Orange = not classified yet, green = OK, red = violation
+                    color = (0, 140, 255) if summary is None else ((0, 0, 255) if violation else (0, 200, 0))
+                    cv2.rectangle(frame, (mx1, my1), (mx2, my2), color, 2)
+
+                    label_mc = f"#{tid} " if tid is not None else ""
+                    if summary:
+                        label_mc += f"Riders {summary['riders']} (pax {summary['passengers']})"
+                        label_mc += f"  Helmet {summary['riders'] - summary['no_helmet']}/{summary['riders']}"
+                    else:
+                        label_mc += f"Motorcycle {m_conf*100:.0f}%"
+                    spd = speeds.get(tid)
                     if spd is not None:
                         label_mc += f"  {spd:.0f} km/h"
-                    frame = draw_text_on_cv_img(frame, label_mc, (mx1, max(30, my1)), font_size=22,
+                    frame = draw_text_on_cv_img(frame, label_mc, (mx1, max(30, my1)), font_size=20,
                                                 text_color=(255, 255, 255), bg_color=(0, 0, 0), bg_alpha=0.7)
+                    if violation:
+                        frame = draw_text_on_cv_img(frame, violation, (mx1, min(frame.shape[0] - 4, my2 + 30)),
+                                                    font_size=20, text_color=(255, 255, 255), bg_color=(200, 0, 0))
 
                 for item in dets:
                     (x1, y1, x2, y2), text, conf = item[:3]
@@ -346,11 +431,12 @@ class DetectionApp:
         #     self._video_writer.release()
         #     print("[Video] Output video saved.")
 
-        try:
-            self.ocr_in_q.put(None, timeout=1)
-        except Exception:
-            pass
-        self.ocr_proc.join(timeout=3)
+        if self.ocr_enabled:
+            try:
+                self.ocr_in_q.put(None, timeout=1)
+            except Exception:
+                pass
+            self.ocr_proc.join(timeout=3)
         cv2.destroyAllWindows()
         print("Program exited.")
 
@@ -463,21 +549,24 @@ class DetectionApp:
 
             try:
                 with torch.inference_mode():
-                    results = self.model.predict(
-                        frame,
-                        imgsz=self.config.detection_imgsz,
-                        conf=self.config.detection_conf,
-                        verbose=False,
-                        device=self.device,
-                        quantize=self.config.inference_quantize,
-                    )
+                    results = []
+                    if self.ocr_enabled:
+                        results = self.model.predict(
+                            frame,
+                            imgsz=self.config.detection_imgsz,
+                            classes=self.plate_classes,
+                            conf=self.config.detection_conf,
+                            verbose=False,
+                            device=self.device,
+                            quantize=self.config.inference_quantize,
+                        )
 
                     mc_bboxes = []
                     if self.model_mc is not None:
                         res_mc = self.model_mc.predict(
                             frame,
                             imgsz=self.config.detection_imgsz,
-                            classes=[3],
+                            classes=self.mc_classes,
                             conf=self.config.detection_conf,
                             verbose=False,
                             device=self.device_secondary,
@@ -495,6 +584,12 @@ class DetectionApp:
                         for mc_bb, tid in self.tracker.bbox_to_track_id.items():
                             self.speed_estimator.update(tid, mc_bb, frame_t)
                         self.speed_estimator.prune(frame_t)
+                    mc_ids = dict(self.tracker.bbox_to_track_id)
+
+                self._classify_riders(frame, mc_ids)
+
+                if not self.ocr_enabled:
+                    continue
 
                 all_boxes = []
                 for r in results:

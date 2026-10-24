@@ -15,13 +15,25 @@ class AppConfig:
     video_file: str
     
     model_path: str = "runs/detect/train-14/weights/best.pt"
-    motorcycle_model_path: str = "yolov8n.pt"
+    # Motorcycle(+riders) detector from tools/train_detector.py (a COCO model also works, class "motorcycle")
+    motorcycle_model_path: str = "models/motorcycle_det.pt"
+    # Rider count / helmet classifier from tools/train_rider_classifier.py
+    rider_model_path: str = "models/rider_cls.pt"
+
+    # License plate detection + OCR (off for now: rider/helmet detection only)
+    enable_plate_ocr: bool = False
 
     ###DEFAULT CONFIG VALUES###
     # Detection parameters
     detection_imgsz: int = 640
     detection_conf: float = 0.25
-    
+
+    # Rider rules: more than this many passengers (riders besides the driver) is a violation
+    max_passengers: int = 1
+    # Frames of classifier output averaged per motorcycle before showing/reporting a result
+    rider_vote_window: int = 15
+    rider_vote_min_frames: int = 3
+
     # When to 'lock' an OCR result and print it: minimum confidence (0-1)
     ocr_lock_confidence: float = 0.90
     # Number of consecutive updates (stable reads) required to consider a result stable
@@ -62,8 +74,14 @@ class AppConfig:
             video_file=os.getenv("VIDEO_FILE", ""),
             model_path=_getenv("MODEL_PATH", str, cls.model_path),
             motorcycle_model_path=_getenv("MOTORCYCLE_MODEL_PATH", str, cls.motorcycle_model_path),
+            rider_model_path=_getenv("RIDER_MODEL_PATH", str, cls.rider_model_path),
+            enable_plate_ocr=_getenv("ENABLE_PLATE_OCR", lambda v: v.strip().lower() in ("1", "true", "yes", "on"),
+                                     cls.enable_plate_ocr),
             detection_imgsz=_getenv("DETECTION_IMGSZ", int, cls.detection_imgsz),
             detection_conf=_getenv("DETECTION_CONF", float, cls.detection_conf),
+            max_passengers=_getenv("MAX_PASSENGERS", int, cls.max_passengers),
+            rider_vote_window=_getenv("RIDER_VOTE_WINDOW", int, cls.rider_vote_window),
+            rider_vote_min_frames=_getenv("RIDER_VOTE_MIN_FRAMES", int, cls.rider_vote_min_frames),
             ocr_lock_confidence=_getenv("OCR_LOCK_CONFIDENCE", float, cls.ocr_lock_confidence),
             ocr_lock_stable_count=_getenv("OCR_LOCK_STABLE_COUNT", int, cls.ocr_lock_stable_count),
             motorcycle_track_distance=_getenv("MOTORCYCLE_TRACK_DISTANCE", float, cls.motorcycle_track_distance),
