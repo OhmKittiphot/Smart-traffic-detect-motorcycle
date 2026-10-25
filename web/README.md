@@ -84,15 +84,3 @@ venv\Scripts\python web\run.py
 | `DJANGO_SECRET_KEY` | ถ้าไม่ตั้ง ระบบจะสร้างให้อัตโนมัติและเก็บไว้ที่ `web/.secret_key` |
 
 ถ้าจะเปิดให้เครื่องอื่นในเครือข่ายเข้าใช้ ควรวางไว้หลัง reverse proxy ที่มี HTTPS (เช่น Caddy หรือ nginx) แล้วตั้ง `DJANGO_HTTPS=1`
-
-## ทดสอบ (unit test)
-
-รันจากโฟลเดอร์รากของโปรเจกต์ ไม่ต้องใช้ GPU หรือโหลดโมเดล:
-
-```bash
-venv\Scripts\python web\manage.py test dashboard
-venv\Scripts\python -m unittest discover -s src/tests -t src
-```
-
-- `web/dashboard/tests/`: สิทธิ์ของแต่ละหน้าและ API, ค้นหาทะเบียน, ยืนยันเหตุการณ์, ลบรายการ, ตั้งค่า, เปลี่ยนรหัสผ่าน, ภาพหลักฐาน, การล้างข้อมูล และการเริ่ม/หยุดระบบตรวจจับ
-- `src/tests/`: การหาการฝ่าฝืน, วัดความเร็ว, tracker, การโหวตผล OCR, ชื่อจังหวัด และรูปแบบทะเบียน
