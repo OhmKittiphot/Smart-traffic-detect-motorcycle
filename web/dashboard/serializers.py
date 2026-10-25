@@ -131,7 +131,7 @@ class SourceKeySerializer(serializers.Serializer):
     source_key = serializers.CharField(max_length=300)
 
     def validate_source_key(self, key):
-        from .engine import source_keys
+        from .sources import source_keys
 
         if key not in source_keys():
             raise serializers.ValidationError("Unknown video source")

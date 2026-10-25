@@ -7,6 +7,7 @@ import warnings
 warnings.filterwarnings("ignore", category=DeprecationWarning)
 
 from app_config import AppConfig, configure_torch_runtime
+from desktop_viewer import DesktopViewer
 from detection_app import DetectionApp
 
 
@@ -68,8 +69,7 @@ if __name__ == "__main__":
     device, use_half = configure_torch_runtime()
 
     try:
-        app = DetectionApp(config, video_camera, device, use_half)
-        app.start()
+        DesktopViewer(DetectionApp(config, video_camera, device, use_half)).run()
     except KeyboardInterrupt:
         print("\nInterrupted. Exiting...")
     except Exception as e:

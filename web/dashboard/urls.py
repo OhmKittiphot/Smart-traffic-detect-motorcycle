@@ -1,44 +1,55 @@
 from django.contrib.auth.views import LogoutView
 from django.urls import path
 
-from . import views
+from .views import calibration, live, pages, records, settings, system
 
 urlpatterns = [
-    path("", views.dashboard, name="dashboard"),
-    path("search/", views.plate_search, name="plate_search"),
-    path("violations/", views.violations, name="violations"),
-    path("system/", views.system_status, name="system_status"),
-    path("login/", views.LoginView.as_view(), name="login"),
+    # Pages
+    path("", pages.dashboard, name="dashboard"),
+    path("search/", pages.plate_search, name="plate_search"),
+    path("violations/", pages.violations, name="violations"),
+    path("system/", pages.system_status, name="system_status"),
+    path("login/", pages.LoginView.as_view(), name="login"),
     path("logout/", LogoutView.as_view(), name="logout"),
-    path("stream/", views.stream, name="stream"),
-    path("snapshot/<int:pk>/", views.snapshot, name="snapshot"),
-    path("snapshot/<int:pk>/plate/", views.snapshot, {"field": "plate_snapshot"}, name="plate_snapshot"),
-    path("api/status/", views.StatusView.as_view(), name="api_status"),
-    path("api/stats/", views.StatsView.as_view(), name="api_stats"),
-    path("api/system/", views.SystemStatusView.as_view(), name="api_system"),
-    path("api/system/cameras/", views.CameraStatusView.as_view(), name="api_system_cameras"),
-    path("api/system/calibration/", views.SourceCalibrationView.as_view(), name="api_system_calibration"),
-    path("api/system/calibration/frame/", views.SourceCalibrationFrameView.as_view(),
+
+    # Live view
+    path("stream/", live.stream, name="stream"),
+    path("api/status/", live.StatusView.as_view(), name="api_status"),
+    path("api/vehicles/", live.VehicleListView.as_view(), name="api_vehicles"),
+    path("api/vehicles/clear/", live.VehicleClearView.as_view(), name="api_vehicles_clear"),
+    path("api/source/", live.SourceView.as_view(), name="api_source"),
+    path("api/pause/", live.PauseView.as_view(), name="api_pause"),
+    path("api/seek/", live.SeekView.as_view(), name="api_seek"),
+
+    # Records
+    path("snapshot/<int:pk>/", records.snapshot, name="snapshot"),
+    path("snapshot/<int:pk>/plate/", records.snapshot, {"field": "plate_snapshot"}, name="plate_snapshot"),
+    path("api/stats/", records.StatsView.as_view(), name="api_stats"),
+    path("api/violations/new/", records.NewViolationsView.as_view(), name="api_violations_new"),
+    path("api/vehicles/search/", records.PlateSearchView.as_view(), name="api_vehicles_search"),
+    path("api/vehicles/<int:pk>/review/", records.VehicleReviewView.as_view(), name="api_vehicle_review"),
+    path("api/vehicles/delete/", records.VehicleDeleteView.as_view(), name="api_vehicles_delete"),
+
+    # Speed calibration: current source (live view) and any source (system page)
+    path("api/calibration/", calibration.CalibrationView.as_view(), name="api_calibration"),
+    path("api/calibration/frame/", calibration.CalibrationFrameView.as_view(), name="api_calibration_frame"),
+    path("api/calibration/save/", calibration.CalibrationSaveView.as_view(), name="api_calibration_save"),
+    path("api/calibration/remove/", calibration.CalibrationRemoveView.as_view(), name="api_calibration_remove"),
+    path("api/system/calibration/", calibration.SourceCalibrationView.as_view(), name="api_system_calibration"),
+    path("api/system/calibration/frame/", calibration.SourceCalibrationFrameView.as_view(),
          name="api_system_calibration_frame"),
-    path("api/system/calibration/points/", views.SourceCalibrationPointsView.as_view(),
+    path("api/system/calibration/points/", calibration.SourceCalibrationPointsView.as_view(),
          name="api_system_calibration_points"),
-    path("api/system/calibration/remove/", views.SourceCalibrationRemoveView.as_view(),
+    path("api/system/calibration/remove/", calibration.SourceCalibrationRemoveView.as_view(),
          name="api_system_calibration_remove"),
-    path("api/settings/system/", views.SystemSettingsView.as_view(), name="api_settings_system"),
-    path("api/settings/cleanup/", views.SettingsCleanupView.as_view(), name="api_settings_cleanup"),
-    path("api/settings/preferences/", views.PreferencesView.as_view(), name="api_settings_preferences"),
-    path("api/settings/password/", views.PasswordView.as_view(), name="api_settings_password"),
-    path("api/violations/new/", views.NewViolationsView.as_view(), name="api_violations_new"),
-    path("api/vehicles/", views.VehicleListView.as_view(), name="api_vehicles"),
-    path("api/vehicles/search/", views.PlateSearchView.as_view(), name="api_vehicles_search"),
-    path("api/vehicles/<int:pk>/review/", views.VehicleReviewView.as_view(), name="api_vehicle_review"),
-    path("api/vehicles/delete/", views.VehicleDeleteView.as_view(), name="api_vehicles_delete"),
-    path("api/vehicles/clear/", views.VehicleClearView.as_view(), name="api_vehicles_clear"),
-    path("api/source/", views.SourceView.as_view(), name="api_source"),
-    path("api/pause/", views.PauseView.as_view(), name="api_pause"),
-    path("api/seek/", views.SeekView.as_view(), name="api_seek"),
-    path("api/calibration/", views.CalibrationView.as_view(), name="api_calibration"),
-    path("api/calibration/frame/", views.CalibrationFrameView.as_view(), name="api_calibration_frame"),
-    path("api/calibration/save/", views.CalibrationSaveView.as_view(), name="api_calibration_save"),
-    path("api/calibration/remove/", views.CalibrationRemoveView.as_view(), name="api_calibration_remove"),
+
+    # Settings pop-up
+    path("api/settings/system/", settings.SystemSettingsView.as_view(), name="api_settings_system"),
+    path("api/settings/cleanup/", settings.SettingsCleanupView.as_view(), name="api_settings_cleanup"),
+    path("api/settings/preferences/", settings.PreferencesView.as_view(), name="api_settings_preferences"),
+    path("api/settings/password/", settings.PasswordView.as_view(), name="api_settings_password"),
+
+    # System status
+    path("api/system/", system.SystemStatusView.as_view(), name="api_system"),
+    path("api/system/cameras/", system.CameraStatusView.as_view(), name="api_system_cameras"),
 ]

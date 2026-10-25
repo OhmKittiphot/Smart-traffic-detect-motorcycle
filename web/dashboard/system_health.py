@@ -10,7 +10,7 @@ from urllib.parse import urlsplit
 
 from django.conf import settings
 
-from .engine import list_live_sources, list_video_files
+from .sources import list_live_sources, list_video_files
 
 # Cameras are probed over the network, so results are reused for a while instead of on every poll
 _CAMERA_CHECK_EVERY_S = 30

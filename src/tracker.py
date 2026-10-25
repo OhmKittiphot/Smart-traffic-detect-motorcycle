@@ -1,15 +1,12 @@
-from collections import deque
-from typing import Deque, Dict, List, Tuple, Any, Optional
-from utils import bbox_distance, point_in_bbox, bbox_center
+from typing import Any, Dict, List, Optional, Tuple
 
-
-# Minimum head height relative to the motorcycle box for the head to count as that bike's rider.
-# Measured on the test video: real riders 0.18-0.37, heads of riders on bikes behind 0.05-0.07.
-MIN_HEAD_TO_BIKE_HEIGHT = 0.12
+from rider_counter import RiderCounter
+from utils import bbox_center, bbox_distance, point_in_bbox
 
 
 class MotorcycleTracker:
-    """Tracks motorcycles across frames: greedy matching on velocity-predicted position."""
+    """Tracks motorcycles across frames: greedy matching on velocity-predicted position. Each track keeps
+    what its report needs (photos, speeds, plate); riders and helmets are counted by self.riders."""
 
     def __init__(self, max_age_s: float, distance_threshold: float):
         self.max_age_s = max_age_s
@@ -19,19 +16,7 @@ class MotorcycleTracker:
         self.motorcycle_tracks: Dict[int, Dict[str, Any]] = {}
         self.bbox_to_track_id: Dict[Tuple[int, int, int, int], int] = {}
         self.latest_mc_detections: List[Tuple[Tuple[int, int, int, int], float]] = []
-
-        # (helmets, bare heads) per frame for each track; the median over a window smooths flicker
-        self.helmet_window = 10
-        self.helmet_min_samples = 3
-        self.helmet_history: Dict[int, Deque[Tuple[int, int]]] = {}
-        # Riders per frame for each track. A passenger is often hidden behind the driver, so a median
-        # undercounts; instead a count is trusted once it was seen in rider_min_frames frames of the window
-        self.rider_min_frames = 3
-        self.rider_history: Dict[int, Deque[int]] = {}
-        self.rider_max: Dict[int, int] = {}
-        # Smoothed rider classifier result per track (rider_classifier.summarize); when present it is used
-        # instead of the head counts above
-        self.rider_summary: Dict[int, Dict[str, Any]] = {}
+        self.riders = RiderCounter()
 
     def reset(self) -> None:
         """Clear all tracks so a new video loop starts with a clean session."""
@@ -39,24 +24,16 @@ class MotorcycleTracker:
         self.motorcycle_tracks.clear()
         self.bbox_to_track_id.clear()
         self.latest_mc_detections = []
-        self.helmet_history.clear()
-        self.rider_history.clear()
-        self.rider_max.clear()
-        self.rider_summary.clear()
+        self.riders.reset()
 
     def _finish_track(self, track_id: int) -> Dict[str, Any]:
         """Remove a track and return its final summary (helmet/rider status snapshotted first)."""
         meta = self.motorcycle_tracks.pop(track_id)
         meta["track_id"] = track_id
-        meta["helmet"] = self.get_helmet_status(track_id)
-        meta["riders"] = self.get_rider_count(track_id)
-        # A rider's head was detected on this bike in at least rider_min_frames frames
-        # (or the rider classifier gave a result for it)
-        meta["rider_seen"] = self.rider_max.get(track_id, 0) > 0 or track_id in self.rider_summary
-        self.helmet_history.pop(track_id, None)
-        self.rider_history.pop(track_id, None)
-        self.rider_max.pop(track_id, None)
-        self.rider_summary.pop(track_id, None)
+        meta["helmet"] = self.riders.helmet_status(track_id)
+        meta["riders"] = self.riders.rider_count(track_id)
+        meta["rider_seen"] = self.riders.rider_seen(track_id)
+        self.riders.forget(track_id)
         return meta
 
     def drain(self) -> List[Dict[str, Any]]:
@@ -205,80 +182,6 @@ class MotorcycleTracker:
         meta = self.motorcycle_tracks.get(track_id) if track_id is not None else None
         if meta is not None:
             meta.update(plate_text=plate_text, province_text=province_text, plate_conf=conf)
-
-    def _count_per_track(self, bboxes: List[Tuple[int, int, int, int]]) -> Dict[int, int]:
-        """Assign each box to the nearest motorcycle whose rider zone contains its center."""
-        counts = {track_id: 0 for track_id in self.bbox_to_track_id.values()}
-
-        for box in bboxes:
-            bc = bbox_center(box)
-            best_track_id = None
-            best_dist = None
-            for mc_bbox, track_id in self.bbox_to_track_id.items():
-                x1, y1, x2, y2 = mc_bbox
-                w, h = x2 - x1, y2 - y1
-                # Riders sit above the motorcycle box, so extend the search area upward
-                # Heads of the same bike sit within its width; a wide margin grabs heads from the bike behind
-                zone = (x1 - 0.05 * w, y1 - 1.0 * h, x2 + 0.05 * w, y2)
-                if not point_in_bbox(bc, zone):
-                    continue
-                # A rider's head is ~0.18-0.37 of the bike's height; a much smaller head inside the zone
-                # belongs to a rider on a bike further back
-                if (box[3] - box[1]) < MIN_HEAD_TO_BIKE_HEIGHT * h:
-                    continue
-                dist = bbox_distance(mc_bbox, box)
-                if best_dist is None or dist < best_dist:
-                    best_dist = dist
-                    best_track_id = track_id
-            if best_track_id is not None:
-                counts[best_track_id] += 1
-        return counts
-
-    def update_helmets(self, helmet_bboxes: List[Tuple[int, int, int, int]],
-                       head_bboxes: List[Tuple[int, int, int, int]],
-                       rider_bboxes: Optional[List[Tuple[int, int, int, int]]] = None) -> None:
-        """Record this frame's helmet / bare-head counts and rider count for every tracked motorcycle.
-        rider_bboxes are all heads (helmeted or not) kept at the lower rider_conf threshold."""
-        helmets = self._count_per_track(helmet_bboxes)
-        heads = self._count_per_track(head_bboxes)
-        riders = self._count_per_track(rider_bboxes) if rider_bboxes is not None else {
-            tid: helmets[tid] + heads[tid] for tid in helmets}
-
-        for track_id in helmets:
-            hist = self.helmet_history.setdefault(track_id, deque(maxlen=self.helmet_window))
-            hist.append((helmets[track_id], heads[track_id]))
-
-            r_hist = self.rider_history.setdefault(track_id, deque(maxlen=self.helmet_window))
-            r_hist.append(riders[track_id])
-            if len(r_hist) >= self.rider_min_frames:
-                # Highest count reached in at least rider_min_frames frames of the window
-                est = sorted(r_hist, reverse=True)[self.rider_min_frames - 1]
-                self.rider_max[track_id] = max(self.rider_max.get(track_id, 0), est)
-
-    def update_rider_summary(self, track_id: int, summary: Optional[Dict[str, Any]]) -> None:
-        """Store the rider classifier's smoothed result for a track (None = not enough frames yet)."""
-        if summary is not None and track_id in self.motorcycle_tracks:
-            self.rider_summary[track_id] = summary
-
-    def get_helmet_status(self, track_id: int) -> Optional[Tuple[int, int]]:
-        """Smoothed (helmets, bare heads) for a track, or None until enough frames were observed."""
-        summary = self.rider_summary.get(track_id)
-        if summary is not None:
-            return summary["riders"] - summary["no_helmet"], summary["no_helmet"]
-        hist = self.helmet_history.get(track_id)
-        if not hist or len(hist) < self.helmet_min_samples:
-            return None
-        helmets = sorted(h for h, _ in hist)[len(hist) // 2]
-        heads = sorted(b for _, b in hist)[len(hist) // 2]
-        return helmets, heads
-
-    def get_rider_count(self, track_id: int) -> int:
-        """Most riders seen on this track so far (counted as above). A moving motorcycle always has a
-        driver, so this is at least 1 even when no head was detected."""
-        summary = self.rider_summary.get(track_id)
-        if summary is not None:
-            return max(1, summary["riders"])
-        return max(1, self.rider_max.get(track_id, 0))
 
     def resolve_track_id(self, bbox: Tuple[int, int, int, int]) -> Optional[int]:
         """Resolve a track ID for a given license plate bounding box."""

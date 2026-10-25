@@ -616,6 +616,13 @@ a.filter:hover { color: var(--text); border-color: var(--border-strong); }
 .day-violation { background: var(--bad); }
 .day-label { height: 14px; font-size: 10px; line-height: 14px; color: var(--muted); white-space: nowrap; }
 .search-title { margin: 0 0 12px; }
+/* Back, above the violations page (staff) */
+.back-link { display: inline-flex; align-items: center; gap: 4px; margin: 0 0 12px -8px; padding-left: 6px;
+  color: var(--muted); text-decoration: none; }
+.back-link:hover { color: var(--text); }
+.back-link svg { transition: transform .15s ease; }
+.back-link:hover svg { transform: translateX(-2px); }
+@media (prefers-reduced-motion: reduce) { .back-link svg { transition: none; } }
 .sys-section { margin-bottom: 24px; }
 .sys-in-use { margin-left: 8px; }
 #storage-use { font-size: 12px; }

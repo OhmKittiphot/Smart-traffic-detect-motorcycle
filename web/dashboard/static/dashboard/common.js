@@ -82,6 +82,19 @@ window.Dashboard = (() => {
   // Speeds written into the page by the server (e.g. the speed limit) are in km/h
   document.addEventListener("DOMContentLoaded", units.refresh);
 
+  // ---------- Back (_back_link.html) ----------
+
+  // Coming from another page of this site: go back in the browser's history, so pages opened one after another
+  // go back the same way, e.g. stats › search › live. Its href (the live view) is for any other way in.
+  document.addEventListener("click", (ev) => {
+    if (!ev.target.closest("#back-link")) return;
+    const from = document.referrer ? new URL(document.referrer) : null;
+    if (from && from.origin === location.origin && from.pathname !== "/login/") {
+      ev.preventDefault();
+      history.back();
+    }
+  });
+
   // ---------- cells of a vehicle row (one row of /api/vehicles/) ----------
 
   function thumbCell(r) {

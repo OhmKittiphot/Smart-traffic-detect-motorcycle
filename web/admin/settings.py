@@ -173,7 +173,7 @@ AXES_FAILURE_LIMIT = 5
 AXES_COOLOFF_TIME = timedelta(minutes=15)
 AXES_LOCKOUT_PARAMETERS = [["username", "ip_address"]]
 AXES_RESET_ON_SUCCESS = True
-AXES_LOCKOUT_CALLABLE = "dashboard.views.lockout"
+AXES_LOCKOUT_CALLABLE = "dashboard.views.pages.lockout"
 # Only trust X-Forwarded-For when a reverse proxy sets it
 AXES_IPWARE_META_PRECEDENCE_ORDER = (
     ["HTTP_X_FORWARDED_FOR", "REMOTE_ADDR"] if _env_bool("DJANGO_BEHIND_PROXY") else ["REMOTE_ADDR"]

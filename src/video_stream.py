@@ -1,10 +1,12 @@
 import threading
 import time
-from typing import Optional
 from datetime import timedelta
+
 import cv2
 
+from frame_exchange import FrameExchange
 from hls import STALE_AFTER_S, format_age, is_hls_url, playlist_age_s
+from playback import LivePacer, Playback, RealtimeClock
 from utils import log_error, open_capture
 
 
@@ -13,156 +15,49 @@ _RECONNECT_MIN_S = 1.0
 _RECONNECT_MAX_S = 15.0
 # Consecutive grab failures on a file before it is treated as EOF (a corrupt frame also fails grab())
 _EOF_FAIL_STREAK = 30
-# Live-like file playback: skip up to this many frames with grab(); further behind, seek instead
-_MAX_GRAB_SKIP = 15
 # Longest wait for the processing thread before playback continues anyway
 _HOLD_TIMEOUT_S = 20.0
-_DROP_LOG_EVERY = 300
-# Paced live streams (HLS): a frame this far behind its slot restarts the pacing clock (stall / reconnect)
-_PACE_RESYNC_S = 2.0
 # How often a frozen HLS playlist is checked again while the camera is treated as offline
 _STALE_RECHECK_S = 15.0
 
 
 class VideoStream:
-    """Manages video acquisition from a video file or live RTSP camera feed in a background thread."""
+    """Reads a video file or a live camera (RTSP / HLS) in a background thread.
+
+    frames hands each frame to processing and display (FrameExchange); playback controls a video file
+    (Playback). This class owns the capture thread: opening, reconnecting, pacing and end of file.
+    """
 
     def __init__(self, video_camera: str, display_fps: float = 30.0, on_end=None, initial_generation: int = 0,
                  on_seek=None):
         self.video_camera = video_camera
         self.display_fps = display_fps
-        self.on_end = on_end
-        self.on_seek = on_seek
-        self.is_video_file = not video_camera.lower().startswith(("rtsp://", "http://", "https://"))
+        self.on_end = on_end     # called with the new generation when a file ended (back to the start, paused)
+        self.on_seek = on_seek   # called with the new generation after a seek
+        is_network = video_camera.lower().startswith(("rtsp://", "rtsps://", "http://", "https://"))
+        self.is_video_file = not is_network
         # HLS over http(s) delivers whole segments in bursts; frames are paced at the source fps instead
-        self._paced_live = not self.is_video_file and not video_camera.lower().startswith("rtsp://")
+        self._paced_live = is_network and video_camera.lower().startswith(("http://", "https://"))
         self._is_hls = is_hls_url(video_camera)
         # Why a live source shows no video (e.g. its playlist stopped updating), or None
-        self._offline_reason = None
+        self.offline_reason = None
+
+        # Start above the previous stream's generation when switching sources, so late results
+        # (OCR, YOLO) from the old source are discarded as stale
+        self.frames = FrameExchange(initial_generation)
+        self.playback = Playback()
+        self.source_fps = float(display_fps)
 
         self._running = False
         self._thread = None
-        self._error = None
-
-        self._paused = False
-        self._pause_lock = threading.Lock()
-
-        self._source_fps = float(display_fps)
-        self._video_pos_ms = 0.0
-        self._video_total_ms = 0.0
-        # Start above the previous stream's generation when switching sources, so late results
-        # (OCR, YOLO) from the old source are discarded as stale
-        self._media_generation = initial_generation
-
-        self._latest_frame = None
-        self._latest_frame_wall_t = 0.0
-        self._frame_for_proc = None
-        self._frame_for_proc_t = 0.0
-        self._frame_for_proc_gen = initial_generation
-
-        self.frame_lock = threading.Lock()
-        self.proc_lock = threading.Lock()
-        self.frame_ready = threading.Event()
-
+        self.error = None   # fatal error that stopped capture (e.g. unreadable video file), or None
         # Files: playback holds on the first frame (and after every seek) until the processing thread has
         # finished it, so the video never runs ahead of detection while models warm up
-        self._seek_request_ms = None
-        self._processed_gen = initial_generation - 1
         self._hold_gen = initial_generation if self.is_video_file else None
-        self._holding = False
-
-    @property
-    def source_fps(self) -> float:
-        return self._source_fps
-
-    @property
-    def media_generation(self) -> int:
-        with self.frame_lock:
-            return self._media_generation
-
-    @property
-    def error(self):
-        """Fatal error that stopped capture (e.g. unreadable video file), or None."""
-        return self._error
-
-    @property
-    def offline_reason(self):
-        """Short reason the live source is treated as offline, or None."""
-        return self._offline_reason
 
     @property
     def is_running(self) -> bool:
         return self._running
-
-    def last_frame_age(self) -> float:
-        """Seconds since the last frame was captured (inf before the first frame)."""
-        with self.frame_lock:
-            t = self._latest_frame_wall_t
-        return time.time() - t if t else float("inf")
-
-    @property
-    def holding(self) -> bool:
-        """True while playback waits for the processing thread (start of video / after a seek)."""
-        return self._holding
-
-    def get_position(self):
-        """(video_pos_ms, video_total_ms) for files."""
-        with self.frame_lock:
-            return self._video_pos_ms, self._video_total_ms
-
-    def seek(self, pos_ms: float) -> None:
-        """Jump to a position in a video file (applied by the capture thread, also while paused)."""
-        if not self.is_video_file:
-            return
-        with self.frame_lock:
-            total = self._video_total_ms
-            self._seek_request_ms = max(0.0, min(float(pos_ms), total - 500.0 if total > 1000 else total))
-
-    def mark_processed(self, generation: int) -> None:
-        """Called by the processing thread after it finished a frame of this generation."""
-        self._processed_gen = max(self._processed_gen, generation)
-
-    def _apply_seek(self, cap) -> bool:
-        """Perform a pending seek. Starts a new media generation, so tracks from before the jump are
-        dropped, and holds playback until the first frame after it has been processed."""
-        with self.frame_lock:
-            target, self._seek_request_ms = self._seek_request_ms, None
-            if target is None:
-                return False
-            self._media_generation += 1
-            cur_gen = self._media_generation
-            self._video_pos_ms = target
-        cap.set(cv2.CAP_PROP_POS_MSEC, target)
-        self._hold_gen = cur_gen
-        if self.on_seek:
-            try:
-                self.on_seek(cur_gen)
-            except Exception as e:
-                log_error("Capture", e)
-        return True
-
-    def _hold_for_processing(self, gen: int) -> None:
-        """Block (without advancing the video) until frame generation `gen` was processed."""
-        self._holding = True
-        deadline = time.time() + _HOLD_TIMEOUT_S
-        try:
-            while (self._running and self._processed_gen < gen and self._seek_request_ms is None
-                   and time.time() < deadline):
-                time.sleep(0.02)
-        finally:
-            self._holding = False
-
-    def is_paused(self) -> bool:
-        with self._pause_lock:
-            return self._paused
-
-    def toggle_pause(self, paused: Optional[bool] = None) -> bool:
-        """Flip pause, or set it when paused is given. Returns the new state."""
-        with self._pause_lock:
-            self._paused = (not self._paused) if paused is None else paused
-            paused = self._paused
-        print(f"[Video] {'PAUSED' if paused else 'RESUMED'}")
-        return paused
 
     def start(self):
         self._running = True
@@ -174,42 +69,28 @@ class VideoStream:
         if self._thread and self._thread.is_alive():
             self._thread.join(timeout=2.0)
 
-    def wait_for_first_frame(self, timeout: float = None):
+    def wait_for_first_frame(self, timeout: float = None) -> bool:
         start = time.time()
         while self._running:
-            with self.frame_lock:
-                if self._latest_frame is not None:
-                    return True
+            if self.frames.latest() is not None:
+                return True
             if timeout and (time.time() - start) > timeout:
                 return False
             time.sleep(0.05)
         return False
 
-    def get_display_data(self):
-        """Returns (latest_frame, video_pos_ms, video_total_ms)."""
-        with self.frame_lock:
-            return self._latest_frame, self._video_pos_ms, self._video_total_ms
-
-    def get_proc_data(self):
-        """Returns (frame_for_proc, frame_for_proc_t, frame_for_proc_gen)."""
-        with self.proc_lock:
-            return self._frame_for_proc, self._frame_for_proc_t, self._frame_for_proc_gen
-
-    def wait_frame_ready(self, timeout: float = 2.0) -> bool:
-        ready = self.frame_ready.wait(timeout=timeout)
-        self.frame_ready.clear()
-        return ready
+    # ----- opening the source -----
 
     def _fail(self, msg: str):
         print(f"[Video] {msg}")
-        self._error = msg
+        self.error = msg
         self._running = False
 
-    def _read_file_fps(self, cap) -> float:
+    def _read_fps(self, cap) -> float:
         source_fps = cap.get(cv2.CAP_PROP_FPS)
         if not source_fps or source_fps <= 0:
             source_fps = self.display_fps
-        self._source_fps = source_fps
+        self.source_fps = source_fps
         return source_fps
 
     def _sleep_while_running(self, seconds: float) -> None:
@@ -228,9 +109,9 @@ class VideoStream:
             if age is None or age < STALE_AFTER_S:
                 if logged:
                     print("[Capture] Live stream is updating again.")
-                self._offline_reason = None
+                self.offline_reason = None
                 return
-            self._offline_reason = f"Camera offline: no new video for {format_age(age)}"
+            self.offline_reason = f"Camera offline: no new video for {format_age(age)}"
             if not logged:
                 print(f"[Capture] Live stream not updating (last update {format_age(age)} ago); "
                       f"treating camera as offline, checking every {_STALE_RECHECK_S:.0f}s.")
@@ -249,6 +130,53 @@ class VideoStream:
             log_error("Capture", e)
         self._sleep_while_running(delay)
         return self._open()
+
+    # ----- file playback -----
+
+    def _apply_seek(self, cap) -> bool:
+        """Perform a pending seek. Starts a new media generation, so tracks from before the jump are
+        dropped, and holds playback until the first frame after it has been processed."""
+        target = self.playback.take_seek()
+        if target is None:
+            return False
+        generation = self.frames.new_generation()
+        cap.set(cv2.CAP_PROP_POS_MSEC, target)
+        self._hold_gen = generation
+        self._notify(self.on_seek, generation)
+        return True
+
+    def _rewind_at_end(self, cap) -> None:
+        """Like a video player: back to the first frame, paused, instead of looping."""
+        print("[Video] End of video. Back to the start, paused.")
+        cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
+        self.playback.rewind_paused()
+        self._notify(self.on_end, self.frames.new_generation())
+
+    @staticmethod
+    def _notify(callback, generation: int) -> None:
+        if callback:
+            try:
+                callback(generation)
+            except Exception as e:
+                log_error("Capture", e)
+
+    def _hold_for_processing(self, generation: int) -> None:
+        """Block (without advancing the video) until frame generation `generation` was processed."""
+        self.playback.holding = True
+        deadline = time.time() + _HOLD_TIMEOUT_S
+        try:
+            while (self._running and self.frames.processed_generation < generation
+                   and not self.playback.seek_pending and time.time() < deadline):
+                time.sleep(0.02)
+        finally:
+            self.playback.holding = False
+
+    @staticmethod
+    def _at_real_end(cap) -> bool:
+        total_frames = cap.get(cv2.CAP_PROP_FRAME_COUNT)
+        return total_frames > 0 and cap.get(cv2.CAP_PROP_POS_FRAMES) >= total_frames - 1
+
+    # ----- capture thread -----
 
     def _capture_fn(self):
         cap = None
@@ -270,42 +198,34 @@ class VideoStream:
                 except Exception:
                     pass
 
-    def _capture_loop(self, cap):
+    def _make_pacing(self, cap):
+        """(clock, pacer): a real-time clock for files, a pacer for HLS, neither for RTSP."""
         if self.is_video_file:
-            source_fps = self._read_file_fps(cap)
-            frame_interval = 1.0 / source_fps
+            source_fps = self._read_fps(cap)
             total_ms = cap.get(cv2.CAP_PROP_FRAME_COUNT) / source_fps * 1000.0
-            with self.frame_lock:
-                self._video_total_ms = max(0.0, total_ms)
+            self.playback.set_total(total_ms)
             duration_str = str(timedelta(milliseconds=int(max(0.0, total_ms)))).split('.')[0]
             print(f"[Video] Playback FPS: {source_fps:.1f} (source)  |  Duration: {duration_str}")
-        elif self._paced_live:
-            frame_interval = 1.0 / self._read_file_fps(cap)
-        else:
-            frame_interval = 0.0
-        pace_t = None   # paced live: wall time slot of the last frame
+            return RealtimeClock(1.0 / source_fps), None
+        if self._paced_live:
+            return None, LivePacer(1.0 / self._read_fps(cap))
+        return None, None
 
+    def _capture_loop(self, cap):
+        clock, pacer = self._make_pacing(cap)
         grab_fail_streak = 0
         frames_since_start = 0
         reconnect_delay = _RECONNECT_MIN_S
-
-        # Live-like playback for files: a wall clock decides which frame "is on air" now.
-        # When decoding/processing falls behind, frames are skipped instead of slowing the video.
-        clock_t0 = None       # wall time at the clock anchor
-        clock_ms0 = 0.0       # video position (ms) at the clock anchor
-        dropped = 0
-
         show_one_frame = False   # a seek while paused still shows (and detects) the new position
 
         while self._running:
-            if self.is_video_file and self._apply_seek(cap):
-                clock_t0 = None
+            if clock and self._apply_seek(cap):
+                clock.restart()
                 grab_fail_streak = 0
-                show_one_frame = self.is_paused()
+                show_one_frame = self.playback.is_paused()
 
-            # --- Pause: stop reading new frames when paused ---
-            if self.is_video_file and self.is_paused() and not show_one_frame:
-                clock_t0 = None   # re-anchor on resume so paused time is not "caught up"
+            if clock and self.playback.is_paused() and not show_one_frame:
+                clock.restart()   # re-anchor on resume so paused time is not "caught up"
                 time.sleep(0.05)
                 continue
             show_one_frame = False
@@ -315,70 +235,38 @@ class VideoStream:
                     print(f"[Capture] Source closed. Reopening in {reconnect_delay:.0f}s...")
                     cap = self._reopen(cap, reconnect_delay)
                     reconnect_delay = min(reconnect_delay * 2, _RECONNECT_MAX_S)
-                    if self.is_video_file and cap.isOpened():
-                        frame_interval = 1.0 / self._read_file_fps(cap)
-                    clock_t0 = None
+                    if clock:
+                        if cap.isOpened():
+                            clock.frame_interval = 1.0 / self._read_fps(cap)
+                        clock.restart()
                     continue
 
-                if self.is_video_file:
-                    pos_now = cap.get(cv2.CAP_PROP_POS_MSEC)
-                    if clock_t0 is None:
-                        clock_t0, clock_ms0 = time.time(), pos_now
-                    lag_frames = int(((time.time() - clock_t0) * 1000.0 - (pos_now - clock_ms0)) / 1000.0 / frame_interval)
-                    if lag_frames > _MAX_GRAB_SKIP:
-                        # Far behind: seeking is cheaper than decoding every skipped frame
-                        cap.set(cv2.CAP_PROP_POS_MSEC, clock_ms0 + (time.time() - clock_t0) * 1000.0)
-                        dropped += lag_frames
-                    elif lag_frames > 0:
-                        for _ in range(lag_frames):
-                            if not cap.grab():
-                                break
-                            dropped += 1
-                    if dropped >= _DROP_LOG_EVERY:
-                        print(f"[Video] Behind real time: dropped {dropped} frames")
-                        dropped = 0
+                if clock:
+                    clock.catch_up(cap)
 
                 if not cap.grab():
-                    if self.is_video_file:
-                        total_frames = cap.get(cv2.CAP_PROP_FRAME_COUNT)
-                        current_frame = cap.get(cv2.CAP_PROP_POS_FRAMES)
-                        at_real_end = total_frames > 0 and current_frame >= total_frames - 1
-                        grab_fail_streak += 1
-                        # Corrupt/undecodable frame mid-stream also fails grab(), so only
-                        # treat this as real EOF near the last frame or after repeated failures.
-                        if at_real_end or grab_fail_streak >= _EOF_FAIL_STREAK:
-                            if frames_since_start == 0:
-                                # A whole pass produced no frame: the file has nothing to show
-                                self._fail(f"No decodable frames in video file: {self.video_camera}")
-                                return
-                            # Like a video player: back to the first frame, paused, instead of looping
-                            print("[Video] End of video. Back to the start, paused.")
-                            cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
-                            with self.frame_lock:
-                                self._video_pos_ms = 0.0
-                                self._media_generation += 1
-                                cur_gen = self._media_generation
-                            with self._pause_lock:
-                                self._paused = True
-                            if self.on_end:
-                                try:
-                                    self.on_end(cur_gen)
-                                except Exception as e:
-                                    log_error("Capture", e)
-                            grab_fail_streak = 0
-                            frames_since_start = 0
-                            clock_t0 = None
-                            show_one_frame = True   # show (and detect) the first frame while paused
-                        else:
-                            time.sleep(0.05)
-                    else:
+                    if not clock:
                         print(f"[RTSP] Stream read failed. Reconnecting in {reconnect_delay:.0f}s...")
                         cap = self._reopen(cap, reconnect_delay)
                         reconnect_delay = min(reconnect_delay * 2, _RECONNECT_MAX_S)
+                        continue
+                    grab_fail_streak += 1
+                    # A corrupt / undecodable frame mid-file also fails grab(), so only treat it as the
+                    # end near the last frame or after repeated failures
+                    if not (self._at_real_end(cap) or grab_fail_streak >= _EOF_FAIL_STREAK):
+                        time.sleep(0.05)
+                        continue
+                    if frames_since_start == 0:
+                        # A whole pass produced no frame: the file has nothing to show
+                        self._fail(f"No decodable frames in video file: {self.video_camera}")
+                        return
+                    self._rewind_at_end(cap)
+                    grab_fail_streak = frames_since_start = 0
+                    clock.restart()
+                    show_one_frame = True   # show (and detect) the first frame while paused
                     continue
 
                 grab_fail_streak = 0
-
                 ret, frame = cap.retrieve()
                 if not ret or frame is None:
                     time.sleep(0.02)
@@ -389,42 +277,23 @@ class VideoStream:
                 reconnect_delay = _RECONNECT_MIN_S
                 frames_since_start += 1
 
-                pos_ms = 0.0
-                if self.is_video_file:
-                    pos_ms = cap.get(cv2.CAP_PROP_POS_MSEC)
-                    with self.frame_lock:
-                        self._video_pos_ms = pos_ms
+                pos_ms = cap.get(cv2.CAP_PROP_POS_MSEC) if clock else 0.0
+                if clock:
+                    self.playback.set_position(pos_ms)
+                generation = self.frames.publish(frame, pos_ms / 1000.0 if clock else time.time())
 
-                with self.frame_lock:
-                    self._latest_frame = frame
-                    self._latest_frame_wall_t = time.time()
-                    media_gen = self._media_generation
-
-                frame_t = pos_ms / 1000.0 if self.is_video_file else time.time()
-                with self.proc_lock:
-                    self._frame_for_proc = frame
-                    self._frame_for_proc_t = frame_t
-                    self._frame_for_proc_gen = media_gen
-
-                self.frame_ready.set()
-
-                if self._hold_gen is not None and media_gen >= self._hold_gen:
+                if self._hold_gen is not None and generation >= self._hold_gen:
                     self._hold_gen = None
-                    self._hold_for_processing(media_gen)
-                    clock_t0 = None   # start the playback clock from here, not from before the wait
+                    self._hold_for_processing(generation)
+                    if clock:
+                        clock.restart()   # start the playback clock from here, not from before the wait
 
             except Exception as e:
                 log_error("Capture", e)
                 time.sleep(0.5)
                 continue
 
-            # Hold each frame until its time on the wall clock (never sleep to "slow down" when behind)
-            if self.is_video_file and clock_t0 is not None:
-                sleep_time = clock_t0 + (pos_ms - clock_ms0) / 1000.0 - time.time()
-                if sleep_time > 0:
-                    time.sleep(min(sleep_time, 1.0))
-            elif self._paced_live:
-                now = time.time()
-                pace_t = now if pace_t is None or now - pace_t > _PACE_RESYNC_S else pace_t + frame_interval
-                if pace_t > now:
-                    time.sleep(pace_t - now)
+            if clock:
+                clock.wait_for(pos_ms)
+            elif pacer:
+                pacer.wait()

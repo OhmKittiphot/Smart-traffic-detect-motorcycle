@@ -1,0 +1,8 @@
+{% comment %}Staff: back to the page they came from, so live › search › stats goes back stats › search › live
+   (common.js); the live view when the page was opened directly. Admins start on these pages, so they have none{% endcomment %}
+{% if perms.dashboard.use_dashboard %}
+<a class="btn btn-sm btn-ghost back-link" id="back-link" href="{% url 'dashboard' %}">
+  <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><path d="M10 3 5 8l5 5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+  Back
+</a>
+{% endif %}

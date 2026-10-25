@@ -1,25 +1,20 @@
-import os
 import queue
 
-import cv2
 import numpy as np
 import torch
 
-from app_config import load_yolo_model
+from detectors import HeadDetector, MotorcycleDetector, PlateDetector, RiderClassification
 from ocr import plate_sharpness
 from report import print_motorcycle_reports
-from rider_classifier import RiderClassifier
-from rider_voting import RiderVoting
 from utils import log_error, merge_related_boxes
 
 
 class YoloPipeline:
-    """Handles YOLO model inference for license plates, motorcycles, and helmet detection."""
+    """What happens to each frame: detect motorcycles, plates and riders (detectors.py), track the
+    motorcycles, count riders, measure speeds, report the motorcycles that left, and send new plates to OCR."""
 
     def __init__(self, config, device, use_half, tracker, speed_estimator, ocr_manager, ocr_in_q, det_lock):
         self.config = config
-        self.device = device
-        self.use_half = use_half
         self.tracker = tracker
         self.speed_estimator = speed_estimator
         self.ocr_manager = ocr_manager
@@ -27,349 +22,104 @@ class YoloPipeline:
         self.det_lock = det_lock
 
         print("Loading YOLO models...")
-        self.model = load_yolo_model(config.plate_model_path, device, use_half)
-        self.plate_classes = self.find_plate_classes(self.model)
-
-        self.model_mc = None
-        self.mc_classes = None
-        path = config.motorcycle_model_path
-        if os.path.isfile(path):
-            try:
-                self.model_mc = load_yolo_model(path, device, use_half)
-                # Works for both the custom detector ({0: motorcycle}) and COCO models ({3: motorcycle})
-                self.mc_classes = [i for i, n in self.model_mc.names.items()
-                                   if n in ("motorcycle", "motorbike")] or None
-                print(f"[Motorcycle] Detector loaded: {path}")
-            except Exception as e:
-                self.model_mc = None
-                print(f"[Motorcycle] Model '{path}' not loaded ({e}).")
-        if self.model_mc is None:
-            print("[Motorcycle] No detector found. Motorcycle detection disabled.")
-
-        self.rider_cls = None
-        if os.path.isfile(config.rider_model_path):
-            try:
-                self.rider_cls = RiderClassifier(config.rider_model_path, device, use_half)
-                print(f"[Rider] Classifier loaded: {config.rider_model_path} (replaces the helmet model)")
-            except Exception as e:
-                print(f"[Rider] Classifier not loaded ({e}); using the helmet model.")
-        self.rider_voting = RiderVoting(
-            window=config.rider_vote_window,
-            min_frames=config.rider_vote_min_frames,
-            max_age_s=config.motorcycle_track_max_age_s,
-        )
-
-        self.model_helmet = None
-        if self.rider_cls is None:
-            try:
-                self.model_helmet = load_yolo_model(config.helmet_model_path, device, use_half)
-            except Exception as e:
-                print(f"[Helmet] Model not loaded ({e}). Helmet detection disabled.")
-
-        self.helmet_ids = set()
-        self.head_ids = set()
-        if self.model_helmet is not None:
-            norm = lambda s: str(s).lower().replace("_", " ").replace("-", " ").strip()
-            helmet_names = {norm(n) for n in config.helmet_class_names}
-            head_names = {norm(n) for n in config.no_helmet_class_names}
-            for cid, name in self.model_helmet.names.items():
-                if norm(name) in helmet_names:
-                    self.helmet_ids.add(int(cid))
-                elif norm(name) in head_names:
-                    self.head_ids.add(int(cid))
-            print(f"[Helmet] Model classes: {dict(self.model_helmet.names)}")
-            if not self.head_ids:
-                print("[Helmet] No bare-head/no-helmet class found; NO HELMET will never be reported.")
+        self.plates = PlateDetector(config, device, use_half)
+        self.motorcycles = MotorcycleDetector(config, device, use_half)
+        self.rider_classification = RiderClassification(config, device, use_half)
+        # The rider classifier replaces the helmet model for rider counts and helmet status
+        self.heads = HeadDetector(config, device, use_half, load=not self.rider_classification.available)
 
     def warmup(self, frame_shape=(1080, 1920, 3)):
         """Run every model once on a blank frame so CUDA kernels load before playback starts
         (the first real inference otherwise takes several seconds)."""
         frame = np.zeros(frame_shape, dtype=np.uint8)
-        plate_imgsz = self.config.plate_roi_imgsz if self.config.plate_search == "roi" else self.config.plate_imgsz
-        jobs = [(self.model, frame, plate_imgsz),
-                (self.model_mc, frame, self.config.detection_imgsz),
-                (self.model_helmet, frame[:400, :300], self.config.helmet_imgsz)]
-        with torch.inference_mode():
-            for model, img, imgsz in jobs:
-                if model is None:
-                    continue
-                try:
-                    model.predict(img, imgsz=imgsz, verbose=False, device=self.device,
-                                  quantize=self.config.inference_quantize)
-                except Exception as e:
-                    log_error("Warmup", e)
-            if self.rider_cls is not None:
-                try:
-                    self.rider_cls.predict_probs([frame[:300, :200]])
-                except Exception as e:
-                    log_error("Warmup", e)
+        for model in (self.plates, self.motorcycles, self.heads, self.rider_classification):
+            model.warmup(frame)
 
     def reset(self):
         """Drop per-track rider votes (track IDs restart with the media session)."""
-        self.rider_voting.reset()
-
-    @staticmethod
-    def crop_motorcycles(frame, mc_ids):
-        """Motorcycle crops (5% padding) for the rider classifier, with their track IDs."""
-        h, w = frame.shape[:2]
-        crops, tids = [], []
-        for (x1, y1, x2, y2), tid in mc_ids.items():
-            pad_w, pad_h = int((x2 - x1) * 0.05), int((y2 - y1) * 0.05)
-            crop = frame[max(0, y1 - pad_h):min(h, y2 + pad_h), max(0, x1 - pad_w):min(w, x2 + pad_w)]
-            if crop.shape[0] >= 24 and crop.shape[1] >= 24:
-                crops.append(crop)
-                tids.append(tid)
-        return crops, tids
-
-    def classify_riders(self, frame, mc_ids):
-        """Run the rider/helmet classifier on every tracked motorcycle and update its smoothed votes.
-        Returns {track_id: summary or None}."""
-        crops, tids = self.crop_motorcycles(frame, mc_ids)
-        if not crops:
-            return {}
-        with torch.inference_mode():
-            probs = self.rider_cls.predict_probs(crops)
-        with self.det_lock:
-            for tid, p in zip(tids, probs):
-                self.rider_voting.update(tid, p)
-            self.rider_voting.prune()
-            return {tid: self.rider_voting.get(tid) for tid in tids}
-
-    @staticmethod
-    def find_plate_classes(model):
-        """Class IDs that are whole plates. The Thai plate model also has 'letters' and 'province'
-        classes; those parts would otherwise be sent to OCR as plates of their own (None = every class)."""
-        if model is None:
-            return None
-        return [i for i, n in model.names.items() if n in ("license-plate", "license_plate", "plate")] or None
-
-    def crop_plate_rois(self, frame, mc_bboxes):
-        """Regions where each motorcycle's plate can be: the bike box, widened by plate_roi_pad because
-        in side and rear-quarter views the plate on the rear fender sits at or just past the box edge.
-        Each region is returned as (x1, y1, bike_height)."""
-        h, w = frame.shape[:2]
-        pad_x, pad_y = self.config.plate_roi_pad
-        crops, rois = [], []
-        for (mx1, my1, mx2, my2), _ in mc_bboxes:
-            mw, mh = mx2 - mx1, my2 - my1
-            if mh < self.config.plate_min_bike_h:
-                continue
-            rx1 = max(0, int(mx1 - pad_x * mw))
-            ry1 = max(0, int(my1 - pad_y * mh))
-            rx2 = min(w, int(mx2 + pad_x * mw))
-            ry2 = min(h, int(my2 + pad_y * mh))
-            crop = frame[ry1:ry2, rx1:rx2]
-            if crop.size:
-                crops.append(crop)
-                rois.append((rx1, ry1, mh))
-        return crops, rois
-
-    def detect_plates(self, frame, mc_bboxes):
-        """Plate boxes [x1, y1, x2, y2, conf] in frame coordinates."""
-        common = dict(conf=self.config.detection_conf, classes=self.plate_classes, verbose=False,
-                      device=self.device, quantize=self.config.inference_quantize)
-        if self.model is None:
-            return []
-        if self.config.plate_search != "roi" or self.model_mc is None:
-            results = self.model.predict(frame, imgsz=self.config.plate_imgsz, **common)
-            return [[*map(int, b.xyxy[0].tolist()), float(b.conf[0])] for r in results for b in r.boxes]
-
-        crops, rois = self.crop_plate_rois(frame, mc_bboxes)
-        if not crops:
-            return []   # no motorcycle close enough: no plate inference at all
-        boxes, scores = [], []
-        for r, (rx1, ry1, bike_h) in zip(self.model.predict(crops, imgsz=self.config.plate_roi_imgsz, **common), rois):
-            for b in r.boxes:
-                bx1, by1, bx2, by2 = map(int, b.xyxy[0].tolist())
-                # The model sometimes boxes a whole small bike, a wheel or the rider as a plate
-                if by2 - by1 > self.config.plate_max_bike_h_ratio * bike_h:
-                    continue
-                boxes.append((rx1 + bx1, ry1 + by1, rx1 + bx2, ry1 + by2))
-                scores.append(float(b.conf[0]))
-        # Regions of neighbouring bikes overlap, so one plate can be found twice
-        keep = self.suppress_overlapping_boxes(list(range(len(boxes))), scores, boxes_xyxy=boxes)
-        return [[*boxes[i], scores[i]] for i in keep]
-
-    @staticmethod
-    def crop_rider_rois(frame, mc_bboxes):
-        """Crop rider/head Region of Interest (ROI) for each detected motorcycle."""
-        h, w = frame.shape[:2]
-        rois = []
-        crops = []
-
-        for (mx1, my1, mx2, my2), _ in mc_bboxes:
-            mx1, mx2 = min(mx1, mx2), max(mx1, mx2)
-            my1, my2 = min(my1, my2), max(my1, my2)
-            mw = mx2 - mx1
-            mh = my2 - my1
-
-            # Expand horizontally (+-15%) and vertically upward (-85% mh) to capture rider head/helmet
-            rx1 = max(0, int(mx1 - 0.15 * mw))
-            ry1 = max(0, int(my1 - 0.85 * mh))
-            rx2 = min(w, int(mx2 + 0.15 * mw))
-            ry2 = min(h, int(my1 + 0.65 * mh))
-
-            if (rx2 - rx1) < 20 or (ry2 - ry1) < 20:
-                continue
-
-            crop = frame[ry1:ry2, rx1:rx2]
-            if crop.size == 0:
-                continue
-
-            crops.append(crop)
-            rois.append((rx1, ry1, rx2, ry2))
-
-        return crops, rois
-
-    @staticmethod
-    def suppress_overlapping_boxes(items, scores, iou_thresh=0.45, boxes_xyxy=None):
-        """Deduplicate overlapping boxes using NMS; returns the kept items.
-        items are the boxes themselves unless boxes_xyxy gives the boxes separately."""
-        if not items:
-            return []
-        boxes = boxes_xyxy if boxes_xyxy is not None else items
-        cv_boxes = [[x1, y1, x2 - x1, y2 - y1] for x1, y1, x2, y2 in boxes]
-        indices = cv2.dnn.NMSBoxes(cv_boxes, scores, score_threshold=0.0, nms_threshold=iou_thresh)
-        if len(indices) == 0:
-            return []
-        return [items[int(i)] for i in indices]
+        self.rider_classification.reset()
 
     def process_frame(self, frame, frame_t: float, frame_gen: int, current_media_gen: int):
-        """Runs the detection pipeline for a single frame."""
+        """Runs the detection pipeline for a single frame; returns the plates found with their cached OCR
+        text, [(box, text, conf)]."""
         with torch.inference_mode():
-            mc_bboxes = []
-            if self.model_mc is not None:
-                res_mc = self.model_mc.predict(
-                    frame,
-                    imgsz=self.config.detection_imgsz,
-                    classes=self.mc_classes,
-                    conf=self.config.detection_conf,
-                    verbose=False,
-                    device=self.device,
-                    quantize=self.config.inference_quantize,
-                )
-                for r_mc in res_mc:
-                    for box_mc in r_mc.boxes:
-                        mx1, my1, mx2, my2 = map(int, box_mc.xyxy[0].tolist())
-                        m_conf = float(box_mc.conf[0])
-                        mc_bboxes.append(((mx1, my1, mx2, my2), m_conf))
-
+            mc_bboxes = self.motorcycles.detect(frame)
             # Needs the motorcycles first: in "roi" mode plates are only searched inside them
-            plate_boxes = self.detect_plates(frame, mc_bboxes)
-
-            helmet_bboxes = []
-            head_bboxes = []
-            rider_bboxes = []
-            if self.model_helmet is not None and mc_bboxes:
-                crops, rois = self.crop_rider_rois(frame, mc_bboxes)
-                if crops:
-                    res_h = self.model_helmet.predict(
-                        crops,
-                        imgsz=self.config.helmet_imgsz,
-                        conf=min(self.config.helmet_conf, self.config.rider_conf),
-                        verbose=False,
-                        device=self.device,
-                        quantize=self.config.inference_quantize,
-                    )
-                    raw_boxes, raw_scores, raw_is_helmet = [], [], []
-
-                    for r_h, (rx1, ry1, _, _) in zip(res_h, rois):
-                        for box_h in r_h.boxes:
-                            bx1, by1, bx2, by2 = map(int, box_h.xyxy[0].tolist())
-                            score = float(box_h.conf[0])
-                            cls_h = int(box_h.cls[0])
-                            orig_box = (rx1 + bx1, ry1 + by1, rx1 + bx2, ry1 + by2)
-
-                            if cls_h in self.head_ids or cls_h in self.helmet_ids:
-                                raw_boxes.append(orig_box)
-                                raw_scores.append(score)
-                                raw_is_helmet.append(cls_h in self.helmet_ids)
-
-                    # Class-agnostic NMS: one head is one rider, even if the model scored it as both
-                    # Helmet and No-Helmet (or it appears in two overlapping bike crops)
-                    keep = self.suppress_overlapping_boxes(list(range(len(raw_boxes))), raw_scores,
-                                                           boxes_xyxy=raw_boxes)
-                    for i in keep:
-                        rider_bboxes.append(raw_boxes[i])
-                        if raw_scores[i] >= self.config.helmet_conf:
-                            (helmet_bboxes if raw_is_helmet[i] else head_bboxes).append(raw_boxes[i])
+            search_rois = self.config.plate_search == "roi" and self.motorcycles.available
+            plate_boxes = self.plates.detect(frame, mc_bboxes, search_rois)
+            heads = self.heads.detect(frame, mc_bboxes) if self.heads.available and mc_bboxes else None
 
         with self.det_lock:
             if frame_gen < current_media_gen:
-                return []
+                return []   # a seek or source switch happened meanwhile
             finished = self.tracker.update_tracks(mc_bboxes, frame_t)
             for mc_bb, tid in self.tracker.bbox_to_track_id.items():
                 self.tracker.record_snapshot(tid, frame, mc_bb)
-            if self.model_helmet is not None:
-                self.tracker.update_helmets(helmet_bboxes, head_bboxes, rider_bboxes)
+            if self.heads.available:
+                self.tracker.riders.update_heads(self.tracker.bbox_to_track_id, *(heads or ([], [], [])))
             mc_ids = dict(self.tracker.bbox_to_track_id)
 
         # Needs the track IDs, so it runs after tracking (outside the lock: the classifier is the slow part)
-        if self.rider_cls is not None and mc_ids:
-            summaries = self.classify_riders(frame, mc_ids)
-            with self.det_lock:
-                for tid, summary in summaries.items():
-                    self.tracker.update_rider_summary(tid, summary)
+        if self.rider_classification.available and mc_ids:
+            self._classify_riders(frame, mc_ids)
+        self._update_speeds(frame_t)
+        # Motorcycles that have left the scene: print their summary outside the lock
+        print_motorcycle_reports(finished, self.speed_estimator.calibrated, self.config.report_min_frames)
+        return self._read_plates(frame, frame_t, frame_gen, plate_boxes)
 
+    def _classify_riders(self, frame, mc_ids) -> None:
+        summaries = self.rider_classification.classify(frame, mc_ids, self.det_lock)
+        with self.det_lock:
+            for tid, summary in summaries.items():
+                if tid in self.tracker.motorcycle_tracks:
+                    self.tracker.riders.update_summary(tid, summary)
+
+    def _update_speeds(self, frame_t: float) -> None:
         with self.det_lock:
             if self.speed_estimator.calibrated:
                 for mc_bb, tid in self.tracker.bbox_to_track_id.items():
                     self.tracker.record_speed(tid, self.speed_estimator.update(tid, mc_bb, frame_t))
                 self.speed_estimator.prune(frame_t)
 
-        # Motorcycles that have left the scene: print their summary outside the lock
-        print_motorcycle_reports(finished, self.speed_estimator.calibrated, self.config.report_min_frames)
-
+    @staticmethod
+    def _plate_crops(frame, plate_boxes) -> list:
+        """[(box, crop)] of each plate, nearby fragments merged and with 10% padding around the crop."""
         h, w = frame.shape[:2]
-        all_boxes = [b for b in plate_boxes if (b[2] - b[0]) < w * 0.4 and (b[3] - b[1]) < h * 0.4]
-
-        bboxes_info = merge_related_boxes(all_boxes)
-
-        bboxes = []
-        for (x1, y1, x2, y2, _) in bboxes_info:
-            bw, bh = x2 - x1, y2 - y1
-            pad_w = int(bw * 0.10)
-            pad_h = int(bh * 0.10)
-            x1_p, y1_p = max(0, x1 - pad_w), max(0, y1 - pad_h)
-            x2_p, y2_p = min(w, x2 + pad_w), min(h, y2 + pad_h)
-
-            crop = frame[y1_p:y2_p, x1_p:x2_p]
+        boxes = [b for b in plate_boxes if (b[2] - b[0]) < w * 0.4 and (b[3] - b[1]) < h * 0.4]
+        crops = []
+        for x1, y1, x2, y2, _ in merge_related_boxes(boxes):
+            pad_w, pad_h = int((x2 - x1) * 0.10), int((y2 - y1) * 0.10)
+            crop = frame[max(0, y1 - pad_h):min(h, y2 + pad_h), max(0, x1 - pad_w):min(w, x2 + pad_w)]
             if crop.size > 0:
-                bboxes.append(((x1, y1, x2, y2), crop))
+                crops.append(((x1, y1, x2, y2), crop))
+        return crops
 
-        current_dets = []
-        if bboxes:
-            ocr_needed = []
-            with self.det_lock:
-                for (bb, cr) in bboxes:
-                    track_id = self.tracker.resolve_track_id(bb)
-                    # Evidence photo of the plate, also when OCR cannot read it
-                    self.tracker.record_plate_snapshot(track_id, cr, plate_sharpness(cr))
-                    cached_text, cached_conf = self.ocr_manager.get_cached_ocr(bb, frame_t, track_id=track_id)
-                    current_dets.append((bb, cached_text, cached_conf))
-                    if self.ocr_manager.should_ocr(track_id, bb, frame_t):
-                        self.ocr_manager.record_ocr_request(track_id, bb, frame_t)
-                        ocr_needed.append((bb, cr, track_id))
+    def _read_plates(self, frame, frame_t: float, frame_gen: int, plate_boxes) -> list:
+        """Attach each plate to its motorcycle, keep its photo, and send the plates that need a (new) read
+        to the OCR process. Returns [(box, cached text, cached conf)] for drawing."""
+        current_dets, ocr_needed = [], []
+        with self.det_lock:
+            for bb, crop in self._plate_crops(frame, plate_boxes):
+                track_id = self.tracker.resolve_track_id(bb)
+                # Evidence photo of the plate, also when OCR cannot read it
+                self.tracker.record_plate_snapshot(track_id, crop, plate_sharpness(crop))
+                cached_text, cached_conf = self.ocr_manager.get_cached_ocr(bb, frame_t, track_id=track_id)
+                current_dets.append((bb, cached_text, cached_conf))
+                if self.ocr_manager.should_ocr(track_id, bb, frame_t):
+                    self.ocr_manager.record_ocr_request(track_id, bb, frame_t)
+                    ocr_needed.append((bb, crop, track_id))
+            self.ocr_manager.prune_inactive_tracks(set(self.tracker.motorcycle_tracks.keys()), frame_t)
 
-                self.ocr_manager.prune_inactive_tracks(set(self.tracker.motorcycle_tracks.keys()), frame_t)
-
-            if ocr_needed:
-                payload = {
-                    "gen": frame_gen,
-                    "t": frame_t,
-                    "items": [
-                        (bb, cr.tobytes(), cr.shape, str(cr.dtype), tid)
-                        for bb, cr, tid in ocr_needed
-                    ],
-                }
-                try:
-                    self.ocr_in_q.put_nowait(payload)
-                except queue.Full:
-                    pass  # OCR is busy; these plates will be requested again on a later frame
-                except Exception as e:
-                    log_error("YOLO->OCR", e)
-        else:
-            with self.det_lock:
-                self.ocr_manager.prune_inactive_tracks(set(self.tracker.motorcycle_tracks.keys()), frame_t)
-
+        if ocr_needed:
+            payload = {
+                "gen": frame_gen,
+                "t": frame_t,
+                "items": [(bb, crop.tobytes(), crop.shape, str(crop.dtype), tid) for bb, crop, tid in ocr_needed],
+            }
+            try:
+                self.ocr_in_q.put_nowait(payload)
+            except queue.Full:
+                pass  # OCR is busy; these plates will be requested again on a later frame
+            except Exception as e:
+                log_error("YOLO->OCR", e)
         return current_dets

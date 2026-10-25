@@ -172,6 +172,19 @@ def merge_related_boxes(boxes: List[Tuple[int, int, int, int, float]]) -> List[T
     return [tuple(c) for c in clusters.values()]
 
 
+def suppress_overlapping_boxes(items, scores, iou_thresh=0.45, boxes_xyxy=None):
+    """Deduplicate overlapping boxes using NMS; returns the kept items.
+    items are the boxes themselves unless boxes_xyxy gives the boxes separately."""
+    if not items:
+        return []
+    boxes = boxes_xyxy if boxes_xyxy is not None else items
+    cv_boxes = [[x1, y1, x2 - x1, y2 - y1] for x1, y1, x2, y2 in boxes]
+    indices = cv2.dnn.NMSBoxes(cv_boxes, scores, score_threshold=0.0, nms_threshold=iou_thresh)
+    if len(indices) == 0:
+        return []
+    return [items[int(i)] for i in indices]
+
+
 def bbox_center(bbox: Tuple[float, float, float, float]) -> Tuple[float, float]:
     """Return the center (x, y) of a bounding box."""
     x1, y1, x2, y2 = bbox
