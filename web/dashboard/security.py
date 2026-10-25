@@ -37,7 +37,7 @@ class AdminOnlyMiddleware:
             return HttpResponseForbidden("This account is not allowed to use the dashboard.")
         if not user.is_authenticated:
             if path.startswith("/api/") or path.startswith("/stream/"):
-                return JsonResponse({"error": "authentication required"}, status=401)
+                return JsonResponse({"detail": "authentication required"}, status=401)
             return redirect_to_login(request.get_full_path())
         return self.get_response(request)
 

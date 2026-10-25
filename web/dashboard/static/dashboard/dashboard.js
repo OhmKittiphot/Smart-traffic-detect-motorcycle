@@ -42,8 +42,22 @@
       throw new Error("unauthenticated");
     }
     const data = await res.json().catch(() => ({}));
-    if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+    if (!res.ok) throw new Error(errorMessage(data) || `HTTP ${res.status}`);
     return data;
+  }
+
+  // The API answers errors as {"detail": "..."} or, for invalid input, {"<field>": ["..."]}
+  // (nested for lists, e.g. {"points": {"0": {"1": ["..."]}}}). Show the first message found.
+  function errorMessage(data) {
+    if (typeof data === "string") return data;
+    if (data && typeof data === "object") {
+      if (data.detail) return errorMessage(data.detail);
+      for (const value of Object.values(data)) {
+        const message = errorMessage(value);
+        if (message) return message;
+      }
+    }
+    return "";
   }
 
   // Build elements with textContent only: plate / province text comes from OCR and is never parsed as HTML

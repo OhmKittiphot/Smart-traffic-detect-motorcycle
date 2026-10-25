@@ -56,6 +56,7 @@ INSTALLED_APPS = [
     "django.contrib.messages",
     "django.contrib.staticfiles",
     "axes",
+    "rest_framework",
     "dashboard",
 ]
 
@@ -172,6 +173,17 @@ AXES_LOCKOUT_CALLABLE = "dashboard.views.lockout"
 AXES_IPWARE_META_PRECEDENCE_ORDER = (
     ["HTTP_X_FORWARDED_FOR", "REMOTE_ADDR"] if _env_bool("DJANGO_BEHIND_PROXY") else ["REMOTE_ADDR"]
 )
+
+# --- API (Django REST Framework) ---
+REST_FRAMEWORK = {
+    # Same login as the dashboard pages; POSTs need the CSRF token
+    "DEFAULT_AUTHENTICATION_CLASSES": ["rest_framework.authentication.SessionAuthentication"],
+    # Staff accounts only, like every dashboard page
+    "DEFAULT_PERMISSION_CLASSES": ["rest_framework.permissions.IsAdminUser"],
+    # JSON in and out; the API is only called by the dashboard page
+    "DEFAULT_RENDERER_CLASSES": ["rest_framework.renderers.JSONRenderer"],
+    "DEFAULT_PARSER_CLASSES": ["rest_framework.parsers.JSONParser"],
+}
 
 # --- Dashboard ---
 # Video files the admin can choose from (only files directly inside this folder are listed/accepted)
