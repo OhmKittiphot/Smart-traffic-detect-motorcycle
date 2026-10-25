@@ -3,6 +3,7 @@
 One DetectionService per process: models and the OCR process load once, and switching between the live
 camera and a video file only replaces the video stream. Finished motorcycles are saved as VehicleRecord.
 """
+import gc
 import logging
 import threading
 import time
@@ -47,6 +48,45 @@ def list_live_sources() -> dict:
     return itic_cameras.live_sources()
 
 
+def source_keys() -> set:
+    """Keys of every video source that can have a speed calibration (see DetectionService.source_key)."""
+    return ({"live:ip"} | {f"live:{key}" for key in list_live_sources()}
+            | {f"file:{name}" for name in list_video_files()})
+
+
+def source_capture_url(source_key: str) -> Optional[str]:
+    """Capture URL / file path of a source key ("live:ip", "live:<add-on key>", "file:<name>"), or None
+    when it is not configured. URLs only come from .env and the add-ons, never from a request."""
+    kind, _, name = source_key.partition(":")
+    if kind == "file":
+        path = resolve_video_file(name)
+        return str(path) if path else None
+    if name == "ip":
+        from app_config import AppConfig
+
+        return AppConfig.from_env().rtsp_url or None
+    extra = list_live_sources().get(name)
+    return extra[1] if extra else None
+
+
+def grab_frame(source_key: str) -> np.ndarray:
+    """One raw frame of a source, opened on its own, so a calibration can be drawn while detection is off.
+    It is the same full-size frame detection reads. Raises RuntimeError when the source sends nothing."""
+    from utils import open_capture
+
+    url = source_capture_url(source_key)
+    if not url:
+        raise RuntimeError("This video source is not configured")
+    cap = open_capture(url)
+    try:
+        ok, frame = cap.read() if cap.isOpened() else (False, None)
+    finally:
+        cap.release()
+    if not ok or frame is None:
+        raise RuntimeError("No video signal from this source")
+    return frame
+
+
 def _placeholder_frame(title: str, subtitle: str = "", detail: str = "") -> np.ndarray:
     """Dark 'No Signal'-style card with a timestamp, sized like a 720p camera frame."""
     h, w = 720, 1280
@@ -80,8 +120,12 @@ def _encode_jpeg(frame: np.ndarray) -> bytes:
     return buf.tobytes() if ok else b""
 
 
+def _health(state: str, label: str, detail: str = "") -> dict:
+    return {"state": state, "label": label, "detail": detail}
+
+
 class DetectionService:
-    STARTING, RUNNING, ERROR = "starting", "running", "error"
+    STARTING, RUNNING, ERROR, STOPPED = "starting", "running", "error", "stopped"
 
     def __init__(self):
         self.state = self.STARTING
@@ -141,8 +185,34 @@ class DetectionService:
             close_old_connections()
 
     def stop(self):
+        """Stop the workers (motorcycles still in view are reported first) and stop listening for reports."""
+        from report import remove_report_listener
+
         if self._app is not None:
             self._app.stop()
+        remove_report_listener(self._on_report)
+        self.state = self.STOPPED
+
+    def health(self) -> dict:
+        """Quick check for the system status page; nothing is started or changed."""
+        if self.state == self.STARTING:
+            return _health("starting", "Starting", "Loading models to GPU…")
+        if self.state == self.ERROR:
+            return _health("error", "Error", self.error)
+        if self.state == self.STOPPED:
+            return _health("standby", "Standby", "Stopping…")
+        problems = self._app.worker_problems()
+        if problems:
+            return _health("problem", "Problem", "; ".join(problems))
+        stream = self._app.video_stream
+        if not self.has_signal():
+            return _health("ok", "Healthy", "No video signal")
+        if stream.is_video_file and stream.is_paused():
+            return _health("ok", "Healthy", "Video paused")
+        fps = self._app.processing_fps()
+        if fps == 0 and not stream.holding:
+            return _health("problem", "Problem", "Video arrives but no frame is being processed")
+        return _health("ok", "Healthy", f"Processing {fps:.1f} fps")
 
     # ----- source control -----
 
@@ -278,6 +348,11 @@ class DetectionService:
         with self._app.det_lock:
             self._app.speed_estimator.clear_calibration()
 
+    def reload_calibration(self, source_key: str) -> None:
+        """Apply a calibration changed on the system status page, if it is the current source's."""
+        if self.state == self.RUNNING and source_key == self.source_key():
+            self._load_calibration()
+
     # ----- status & frames -----
 
     def has_signal(self) -> bool:
@@ -400,11 +475,73 @@ _service: Optional[DetectionService] = None
 _service_lock = threading.Lock()
 
 
+# Detection runs only while staff have the live view open: the page polls /api/status/ every second and
+# keeps /stream/ open. Once neither has been seen for this long, detection stops and the GPU is freed.
+IDLE_STOP_S = 60
+_IDLE_CHECK_EVERY_S = 5
+_last_viewer_t = 0.0
+_idle_watch: Optional[threading.Thread] = None
+
+
 def get_service() -> DetectionService:
-    """The process-wide service, started on first use."""
-    global _service
+    """The process-wide service for the live view, started if it is off. Only live-view requests call
+    this: each call counts as staff being on the live view (see IDLE_STOP_S)."""
+    global _service, _last_viewer_t, _idle_watch
     with _service_lock:
+        _last_viewer_t = time.time()
         if _service is None:
             _service = DetectionService()
             _service.start()
+        if _idle_watch is None:
+            _idle_watch = threading.Thread(target=_stop_when_idle, daemon=True, name="DetectionIdle")
+            _idle_watch.start()
         return _service
+
+
+def current_service() -> Optional[DetectionService]:
+    """The service while detection is on, else None. Never starts it (system status page)."""
+    return _service
+
+
+def engine_health() -> dict:
+    """State of detection for the system status page, checked without starting it."""
+    service = _service
+    if service is None:
+        return _health("standby", "Standby", "Starts when staff open the live view")
+    return service.health()
+
+
+def _stop_when_idle() -> None:
+    global _service
+    while True:
+        time.sleep(_IDLE_CHECK_EVERY_S)
+        with _service_lock:
+            service = _service
+            # A service still loading its models is left to finish, then stopped on a later check
+            idle = (service is not None and service.state != service.STARTING
+                    and time.time() - _last_viewer_t > IDLE_STOP_S)
+            if idle:
+                _service = None
+        if idle:
+            log.info("No one on the live view for %d s: stopping detection.", IDLE_STOP_S)
+            service.stop()
+            del service
+            _free_gpu_memory()
+
+
+def _free_gpu_memory() -> None:
+    """Return the stopped models' GPU memory (it is only released once nothing refers to them)."""
+    gc.collect()
+    try:
+        import torch
+
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+    except Exception as e:
+        log.warning("Could not free GPU memory: %s", e)
+
+
+def stop_service() -> None:
+    """Stop detection on server shutdown, if anyone logged in and started it."""
+    if _service is not None:
+        _service.stop()

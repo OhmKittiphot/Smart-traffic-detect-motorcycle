@@ -26,11 +26,11 @@ _STALE_RECHECK_S = 15.0
 class VideoStream:
     """Manages video acquisition from a video file or live RTSP camera feed in a background thread."""
 
-    def __init__(self, video_camera: str, display_fps: float = 30.0, on_loop=None, initial_generation: int = 0,
+    def __init__(self, video_camera: str, display_fps: float = 30.0, on_end=None, initial_generation: int = 0,
                  on_seek=None):
         self.video_camera = video_camera
         self.display_fps = display_fps
-        self.on_loop = on_loop
+        self.on_end = on_end
         self.on_seek = on_seek
         self.is_video_file = not video_camera.lower().startswith(("rtsp://", "http://", "https://"))
         # HLS over http(s) delivers whole segments in bursts; frames are paced at the source fps instead
@@ -284,7 +284,7 @@ class VideoStream:
         pace_t = None   # paced live: wall time slot of the last frame
 
         grab_fail_streak = 0
-        frames_since_loop = 0
+        frames_since_start = 0
         reconnect_delay = _RECONNECT_MIN_S
 
         # Live-like playback for files: a wall clock decides which frame "is on air" now.
@@ -345,24 +345,28 @@ class VideoStream:
                         # Corrupt/undecodable frame mid-stream also fails grab(), so only
                         # treat this as real EOF near the last frame or after repeated failures.
                         if at_real_end or grab_fail_streak >= _EOF_FAIL_STREAK:
-                            if frames_since_loop == 0:
-                                # A whole pass produced no frame: looping again would spin forever
+                            if frames_since_start == 0:
+                                # A whole pass produced no frame: the file has nothing to show
                                 self._fail(f"No decodable frames in video file: {self.video_camera}")
                                 return
-                            print("[Video] End of video. Looping...")
+                            # Like a video player: back to the first frame, paused, instead of looping
+                            print("[Video] End of video. Back to the start, paused.")
                             cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
                             with self.frame_lock:
                                 self._video_pos_ms = 0.0
                                 self._media_generation += 1
                                 cur_gen = self._media_generation
-                            if self.on_loop:
+                            with self._pause_lock:
+                                self._paused = True
+                            if self.on_end:
                                 try:
-                                    self.on_loop(cur_gen)
+                                    self.on_end(cur_gen)
                                 except Exception as e:
                                     log_error("Capture", e)
                             grab_fail_streak = 0
-                            frames_since_loop = 0
+                            frames_since_start = 0
                             clock_t0 = None
+                            show_one_frame = True   # show (and detect) the first frame while paused
                         else:
                             time.sleep(0.05)
                     else:
@@ -381,7 +385,7 @@ class VideoStream:
                 if reconnect_delay > _RECONNECT_MIN_S:
                     print("[Capture] Source recovered.")
                 reconnect_delay = _RECONNECT_MIN_S
-                frames_since_loop += 1
+                frames_since_start += 1
 
                 pos_ms = 0.0
                 if self.is_video_file:

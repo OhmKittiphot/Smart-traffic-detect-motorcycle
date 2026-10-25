@@ -26,24 +26,22 @@ class YoloPipeline:
         self.det_lock = det_lock
 
         print("Loading YOLO models...")
-        self.model = load_yolo_model(config.model_path, device, use_half) if config.enable_plate_ocr else None
-        if self.model is None:
-            print("[Plate] Plate detection + OCR disabled (ENABLE_PLATE_OCR=0).")
+        self.model = load_yolo_model(config.plate_model_path, device, use_half)
+        self.plate_classes = self.find_plate_classes(self.model)
 
         self.model_mc = None
         self.mc_classes = None
-        for path in dict.fromkeys((config.motorcycle_model_path, config.motorcycle_fallback_model_path)):
-            if not os.path.isfile(path):
-                continue
+        path = config.motorcycle_model_path
+        if os.path.isfile(path):
             try:
                 self.model_mc = load_yolo_model(path, device, use_half)
+                # Works for both the custom detector ({0: motorcycle}) and COCO models ({3: motorcycle})
+                self.mc_classes = [i for i, n in self.model_mc.names.items()
+                                   if n in ("motorcycle", "motorbike")] or None
+                print(f"[Motorcycle] Detector loaded: {path}")
             except Exception as e:
+                self.model_mc = None
                 print(f"[Motorcycle] Model '{path}' not loaded ({e}).")
-                continue
-            # Works for both the custom detector ({0: motorcycle}) and COCO models ({3: motorcycle})
-            self.mc_classes = [i for i, n in self.model_mc.names.items() if n in ("motorcycle", "motorbike")] or None
-            print(f"[Motorcycle] Detector loaded: {path}")
-            break
         if self.model_mc is None:
             print("[Motorcycle] No detector found. Motorcycle detection disabled.")
 
@@ -86,7 +84,8 @@ class YoloPipeline:
         """Run every model once on a blank frame so CUDA kernels load before playback starts
         (the first real inference otherwise takes several seconds)."""
         frame = np.zeros(frame_shape, dtype=np.uint8)
-        jobs = [(self.model, frame, self.config.plate_imgsz),
+        plate_imgsz = self.config.plate_roi_imgsz if self.config.plate_search == "roi" else self.config.plate_imgsz
+        jobs = [(self.model, frame, plate_imgsz),
                 (self.model_mc, frame, self.config.detection_imgsz),
                 (self.model_helmet, frame[:400, :300], self.config.helmet_imgsz)]
         with torch.inference_mode():
@@ -135,29 +134,39 @@ class YoloPipeline:
             self.rider_voting.prune()
             return {tid: self.rider_voting.get(tid) for tid in tids}
 
+    @staticmethod
+    def find_plate_classes(model):
+        """Class IDs that are whole plates. The Thai plate model also has 'letters' and 'province'
+        classes; those parts would otherwise be sent to OCR as plates of their own (None = every class)."""
+        if model is None:
+            return None
+        return [i for i, n in model.names.items() if n in ("license-plate", "license_plate", "plate")] or None
+
     def crop_plate_rois(self, frame, mc_bboxes):
-        """Regions where each motorcycle's plate can be: the bike box, widened because in side and
-        rear-quarter views the plate on the rear fender sits at or just past the box edge."""
+        """Regions where each motorcycle's plate can be: the bike box, widened by plate_roi_pad because
+        in side and rear-quarter views the plate on the rear fender sits at or just past the box edge.
+        Each region is returned as (x1, y1, bike_height)."""
         h, w = frame.shape[:2]
+        pad_x, pad_y = self.config.plate_roi_pad
         crops, rois = [], []
         for (mx1, my1, mx2, my2), _ in mc_bboxes:
             mw, mh = mx2 - mx1, my2 - my1
             if mh < self.config.plate_min_bike_h:
                 continue
-            rx1 = max(0, int(mx1 - 0.2 * mw))
-            ry1 = max(0, int(my1 - 0.1 * mh))
-            rx2 = min(w, int(mx2 + 0.2 * mw))
-            ry2 = min(h, int(my2 + 0.1 * mh))
+            rx1 = max(0, int(mx1 - pad_x * mw))
+            ry1 = max(0, int(my1 - pad_y * mh))
+            rx2 = min(w, int(mx2 + pad_x * mw))
+            ry2 = min(h, int(my2 + pad_y * mh))
             crop = frame[ry1:ry2, rx1:rx2]
             if crop.size:
                 crops.append(crop)
-                rois.append((rx1, ry1, rx2, ry2))
+                rois.append((rx1, ry1, mh))
         return crops, rois
 
     def detect_plates(self, frame, mc_bboxes):
         """Plate boxes [x1, y1, x2, y2, conf] in frame coordinates."""
-        common = dict(conf=self.config.detection_conf, verbose=False, device=self.device,
-                      quantize=self.config.inference_quantize)
+        common = dict(conf=self.config.detection_conf, classes=self.plate_classes, verbose=False,
+                      device=self.device, quantize=self.config.inference_quantize)
         if self.model is None:
             return []
         if self.config.plate_search != "roi" or self.model_mc is None:
@@ -168,9 +177,12 @@ class YoloPipeline:
         if not crops:
             return []   # no motorcycle close enough: no plate inference at all
         boxes, scores = [], []
-        for r, (rx1, ry1, _, _) in zip(self.model.predict(crops, imgsz=self.config.plate_roi_imgsz, **common), rois):
+        for r, (rx1, ry1, bike_h) in zip(self.model.predict(crops, imgsz=self.config.plate_roi_imgsz, **common), rois):
             for b in r.boxes:
                 bx1, by1, bx2, by2 = map(int, b.xyxy[0].tolist())
+                # The model sometimes boxes a whole small bike, a wheel or the rider as a plate
+                if by2 - by1 > self.config.plate_max_bike_h_ratio * bike_h:
+                    continue
                 boxes.append((rx1 + bx1, ry1 + by1, rx1 + bx2, ry1 + by2))
                 scores.append(float(b.conf[0]))
         # Regions of neighbouring bikes overlap, so one plate can be found twice
@@ -313,8 +325,7 @@ class YoloPipeline:
         bboxes_info = merge_related_boxes(all_boxes)
 
         bboxes = []
-        for (x1, y1, x2, y2, conf_yolo) in bboxes_info:
-            h, w = frame.shape[:2]
+        for (x1, y1, x2, y2, _) in bboxes_info:
             bw, bh = x2 - x1, y2 - y1
             pad_w = int(bw * 0.10)
             pad_h = int(bh * 0.10)

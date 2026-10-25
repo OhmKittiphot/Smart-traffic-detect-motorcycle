@@ -1,7 +1,6 @@
 import queue
 import time
 
-from province import extract_thai_province
 from utils import format_thai_plate, log_error
 
 
@@ -54,24 +53,9 @@ class OCRResultHandler:
                 except Exception as e:
                     log_error("OCR-Result", e)
 
-    def _handle_item(self, item, result_gen, frame_t: float):
-        track_id = None
-        if len(item) >= 6:
-            bbox, plate_text, plate_conf, province_text, province_conf, track_id = item[:6]
-        elif len(item) == 5:
-            bbox, plate_text, plate_conf, province_text, province_conf = item[:5]
-        elif len(item) == 3:
-            bbox, plate_text, plate_conf = item
-            province_text, province_conf = "", 0.0
-        else:
-            bbox, plate_text = item[:2]
-            plate_conf = 0.0
-            province_text, province_conf = "", 0.0
-
-        plate_text = str(plate_text or "").strip()
-        province_text = str(province_text or "").strip()
-        final_text = ""
-        final_conf = 0.0
+    def _handle_item(self, read, result_gen, frame_t: float):
+        """Vote one OCR worker read (see ocr.read_plate) into its track and record the plate."""
+        bbox, track_id = read["bbox"], read["track_id"]
 
         with self.det_lock:
             if result_gen is not None and result_gen != self.get_media_gen_fn():
@@ -80,31 +64,22 @@ class OCRResultHandler:
             if track_id is None:
                 track_id = self.tracker.resolve_track_id(bbox)
 
-            plate_text, plate_conf, province_text, province_conf = self.ocr_manager.aggregate_vote_result(
-                bbox=bbox,
-                plate_text=plate_text,
-                plate_conf=float(plate_conf) if plate_conf else 0.0,
-                province_text=province_text,
-                province_conf=float(province_conf) if province_conf else 0.0,
-                now=frame_t,
-                track_id=track_id,
-            )
+            series, number, plate_conf, province_text, province_conf = self.ocr_manager.aggregate_vote_result(
+                bbox=bbox, read=read, now=frame_t, track_id=track_id)
+            plate_text = " ".join(line for line in (series, number) if line)
 
             if plate_text and province_text:
                 final_text = f"{plate_text} {province_text}"
-                final_conf = min(plate_conf, province_conf) if province_conf > 0 else plate_conf
+                final_conf = min(plate_conf, province_conf)
             elif plate_text:
-                final_text = plate_text
-                final_conf = plate_conf
+                final_text, final_conf = plate_text, plate_conf
             else:
-                final_text = province_text
-                final_conf = province_conf
+                final_text, final_conf = province_text, province_conf
 
             if not (final_text and final_conf >= self.ocr_conf_threshold):
                 return
 
-            # The cache may keep an older, more confident read; take its plate/province too
-            final_text, final_conf, plate_text, province_text = self.ocr_manager.update_cache(
+            self.ocr_manager.update_cache(
                 bbox=bbox,
                 final_text=final_text,
                 final_conf=final_conf,
@@ -112,9 +87,9 @@ class OCRResultHandler:
                 track_id=track_id,
                 plate_text=plate_text,
                 province_text=province_text,
+                complete=bool(series and number),
             )
 
             # Nothing is printed here: the plate goes into the motorcycle's report, printed when it leaves
-            province = province_text or extract_thai_province(final_text)
             formatted_plate = format_thai_plate(plate_text, "") if plate_text else ""
-            self.tracker.record_plate(track_id, formatted_plate, province, final_conf)
+            self.tracker.record_plate(track_id, formatted_plate, province_text, final_conf)

@@ -1,0 +1,31 @@
+{# Top bar of every dashboard page #}
+{% load dashboard_tags %}
+<header class="topbar">
+  {% if perms.dashboard.use_dashboard %}
+  <a class="brand text-decoration-none" href="{% url 'dashboard' %}" title="Go to the live view"><span class="rec-dot" aria-hidden="true"></span><span>CCTV Control</span></a>
+  {% else %}
+  <div class="brand"><span class="rec-dot" aria-hidden="true"></span><span>CCTV Control</span></div>
+  {% endif %}
+  <div class="topbar-user">
+    <span class="muted">{{ user.get_username }} | </span>
+    <button type="button" class="btn btn-ghost btn-sm theme-btn" id="theme-btn" aria-label="Change theme">
+      <svg class="ic-auto" viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><circle cx="12" cy="12" r="8" fill="none" stroke="currentColor" stroke-width="2"/><path d="M12 4a8 8 0 0 1 0 16z" fill="currentColor"/></svg>
+      <svg class="ic-light" viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><circle cx="12" cy="12" r="4.5" fill="currentColor"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M4.9 19.1 7 17M17 7l2.1-2.1" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+      <svg class="ic-dark" viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path d="M20 14.5A8 8 0 1 1 9.5 4a6.5 6.5 0 0 0 10.5 10.5z" fill="currentColor"/></svg>
+      <span class="theme-label">Auto</span>
+    </button>
+    {% if perms.dashboard.view_records %}
+      {% nav_link 'violations' 'Violations stats' %}
+    {% endif %}
+    {% if perms.dashboard.view_system_status %}
+      {% nav_link 'system_status' 'System status' %}
+    {% endif %}
+    {% if perms.auth.view_user %}
+      {% nav_link 'admin:index' 'Manage users &amp; roles' %}
+    {% endif %}
+    <form method="post" action="{% url 'logout' %}">
+      {% csrf_token %}
+      <button type="submit" class="btn btn-ghost btn-sm">Log out</button>
+    </form>
+  </div>
+</header>

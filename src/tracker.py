@@ -16,7 +16,6 @@ class MotorcycleTracker:
         self.distance_threshold = distance_threshold
         self.next_mc_id = 1
 
-        # Internal state
         self.motorcycle_tracks: Dict[int, Dict[str, Any]] = {}
         self.bbox_to_track_id: Dict[Tuple[int, int, int, int], int] = {}
         self.latest_mc_detections: List[Tuple[Tuple[int, int, int, int], float]] = []
@@ -124,7 +123,6 @@ class MotorcycleTracker:
         mc_dets = self._dedupe_detections(mc_dets)
         self.latest_mc_detections = mc_dets
 
-        # Remove old tracks that haven't been seen recently
         finished = []
         for track_id in list(self.motorcycle_tracks.keys()):
             meta = self.motorcycle_tracks[track_id]
@@ -148,13 +146,11 @@ class MotorcycleTracker:
             assigned[track_id] = mc_dets[det_idx]
             used_dets.add(det_idx)
 
-        # Create new tracks for unmatched detections
         for det_idx, det in enumerate(mc_dets):
             if det_idx not in used_dets:
                 assigned[self.next_mc_id] = det
                 self.next_mc_id += 1
 
-        # Update track info for all assigned tracks
         for track_id, (bbox, conf) in assigned.items():
             # Update in place: summary fields (hits, speeds, plate) live for the whole track
             meta = self.motorcycle_tracks.setdefault(track_id, {"first_seen": now, "hits": 0, "speeds": []})
@@ -170,7 +166,6 @@ class MotorcycleTracker:
             meta["confidence"] = conf
             meta["hits"] += 1
 
-        # Map current bounding boxes to their assigned track IDs
         self.bbox_to_track_id = {bbox: track_id for track_id, (bbox, _) in assigned.items()}
         return finished
 
@@ -198,9 +193,9 @@ class MotorcycleTracker:
             meta["speeds"].append(speed)
 
     def record_plate(self, track_id: Optional[int], plate_text: str, province_text: str, conf: float) -> None:
-        """Keep the most confident plate read for the track's final report."""
+        """Keep the track's latest voted plate for its final report (each vote already weighs all recent reads)."""
         meta = self.motorcycle_tracks.get(track_id) if track_id is not None else None
-        if meta is not None and conf >= meta.get("plate_conf", 0.0):
+        if meta is not None:
             meta.update(plate_text=plate_text, province_text=province_text, plate_conf=conf)
 
     def _count_per_track(self, bboxes: List[Tuple[int, int, int, int]]) -> Dict[int, int]:

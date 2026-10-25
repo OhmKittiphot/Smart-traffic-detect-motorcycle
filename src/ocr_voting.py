@@ -1,100 +1,57 @@
-from collections import Counter
-import re
+from collections import Counter, defaultdict
+
+# Stands for a character that was read but is not valid at its place; it keeps the line's length
+# so reads of the same plate still line up character by character when they are voted on
+UNKNOWN = "?"
 
 
-def _iter_candidates(candidates):
-    if candidates is None:
-        return []
+def vote_line(reads):
+    """Vote one plate line over several reads of the same plate.
 
-    normalized = []
-    for item in candidates:
-        if isinstance(item, str):
-            text = item
-            score = 1.0
-        elif isinstance(item, tuple) and len(item) >= 2:
-            text, score = item[0], item[1]
-        else:
+    reads: (text, score, weight) per read, where text may hold UNKNOWN characters. The length with the
+    most total weight wins first, so a read that lost or gained a character cannot shift the others;
+    then each position takes the character with the most weight among the reads of that length.
+    Returns (text, confidence): confidence is how much those reads agree, averaged over the
+    positions, times the best score among them. The text holds UNKNOWN where no read was valid.
+    """
+    reads = [(text, score, weight) for text, score, weight in reads if text and weight > 0]
+    if not reads:
+        return "", 0.0
+
+    length_weight = Counter()
+    for text, _, weight in reads:
+        length_weight[len(text)] += weight
+    length = max(length_weight, key=length_weight.get)
+    same_length = [(text, score, weight) for text, score, weight in reads if len(text) == length]
+
+    chars, agreement = [], []
+    for i in range(length):
+        votes = defaultdict(float)
+        for text, _, weight in same_length:
+            if text[i] != UNKNOWN:
+                votes[text[i]] += weight
+        if not votes:
+            chars.append(UNKNOWN)
+            agreement.append(0.0)
             continue
+        best = max(votes, key=votes.get)
+        chars.append(best)
+        agreement.append(votes[best] / sum(weight for _, _, weight in same_length))
 
-        text = str(text or "").strip()
-        if not text:
-            continue
-
-        try:
-            score = float(score)
-        except Exception:
-            score = 1.0
-
-        normalized.append((text, score))
-    return normalized
-
-
-def _normalize_vote_text(text):
-    text = str(text or "").strip()
-    if not text:
-        return ""
-    return re.sub(r"\s+", "", text)
-
-
-def vote_characters_by_position(candidates):
-    """Choose the most frequent character at each index across OCR outputs."""
-    normalized = _iter_candidates(candidates)
-    if not normalized:
-        return ""
-
-    strings = [
-        (_normalize_vote_text(text), score)
-        for text, score in normalized
-        if _normalize_vote_text(text)
-    ]
-    if not strings:
-        return ""
-
-    max_len = max(len(text) for text, _ in strings)
-    if max_len == 0:
-        return ""
-
-    vote_chars = []
-    for idx in range(max_len):
-        counter = Counter()
-        weight = Counter()
-
-        for text, conf in strings:
-            if idx >= len(text):
-                continue
-            ch = text[idx]
-            counter[ch] += 1
-            weight[ch] += max(conf, 0.0)
-
-        if not counter:
-            continue
-
-        best_char = max(
-            counter.items(),
-            key=lambda kv: (kv[1], weight[kv[0]], kv[0])
-        )[0]
-        vote_chars.append(best_char)
-
-    return "".join(vote_chars)
+    best_score = max(score for _, score, _ in same_length)
+    return "".join(chars), sum(agreement) / length * best_score
 
 
 def vote_temporal_strings(candidates):
-    """Vote on a whole OCR string over time, preserving the full province chunk."""
-    normalized = _iter_candidates(candidates)
-    if not normalized:
-        return ""
-
+    """Pick the whole string read most often over time (ties go to the higher total confidence)."""
     counts = Counter()
     confidence = Counter()
-    for text, score in normalized:
-        key = str(text or "").strip()
-        if not key:
-            continue
-        counts[key] += 1
-        confidence[key] += max(float(score), 0.0)
+    for text, score in candidates:
+        text = str(text or "").strip()
+        if text:
+            counts[text] += 1
+            confidence[text] += max(float(score), 0.0)
 
     if not counts:
         return ""
-
-    winner, _ = max(counts.items(), key=lambda kv: (kv[1], confidence[kv[0]], kv[0]))
-    return winner
+    return max(counts, key=lambda text: (counts[text], confidence[text]))

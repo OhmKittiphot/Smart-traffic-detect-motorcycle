@@ -14,39 +14,45 @@ class AppConfig:
     rtsp_url: str
     video_file: str
 
-    # Motorcycle(+riders) detector from tools/train_detector.py; the COCO model below is used when it
-    # has not been trained yet (both work: classes are picked by the name "motorcycle")
-    motorcycle_model_path: str = "models/motorcycle_det.pt"
-    motorcycle_fallback_model_path: str = "models/yolov8n.pt"
-    # Single-class Thai motorcycle plate model (train.py plate)
-    model_path: str = "runs/detect/moto-plate/weights/best.pt"
-    helmet_model_path: str = "runs/detect/helmet-rider/weights/best.pt"
-    # Rider count / helmet classifier from tools/train_rider_classifier.py. When the file exists it
+    # Motorcycle detector: the stock COCO model (its class "motorcycle" is picked by name); it finds
+    # motorcycles on the wide, low-resolution iTIC CCTV views where models/motorcycle_det.pt found none
+    motorcycle_model_path: str = "models/yolo26n.pt"
+    # Thai motorcycle plate model
+    plate_model_path: str = "models/plate_det_th.pt"
+    helmet_model_path: str = "models/helmet_det.pt"
+    # Rider count / helmet classifier. When the file exists it
     # replaces the helmet model above for rider counting and helmet status
     rider_model_path: str = "models/rider_cls.pt"
+    # Fine-tuned plate text recognizer; PaddleOCR's stock Thai recognizer
+    # is used when this folder does not exist
+    plate_ocr_model_path: str = "models/plate_ocr_th"
     # Frames of classifier output averaged per motorcycle before its result is used
     rider_vote_window: int = 15
     rider_vote_min_frames: int = 3
 
-    # License plate detection + OCR; off = rider/helmet/speed only (no plate model, no OCR process)
-    enable_plate_ocr: bool = True
-
-    ###DEFAULT CONFIG VALUES###
     # Detection parameters
     detection_imgsz: int = 640
-    # Plates are small in wide shots; the plate model was trained at 960
-    plate_imgsz: int = 960
+    # Whole-frame plate search size ("frame" mode); the plate model was trained at 640 on plate close-ups
+    plate_imgsz: int = 640
     # Where to look for plates: "roi" = only inside each detected motorcycle, cropped from the full-size
     # frame (no plate search at all when no motorcycle is close enough); "frame" = the whole frame at
-    # plate_imgsz (also used when the motorcycle model is missing). On plate-dataset/test "frame" found
-    # 71% of plates and "roi" 54%, because the motorcycle model misses some bikes (67% with
-    # detection_imgsz 960). "roi" gains most once the plate model is trained on motorcycle crops.
+    # plate_imgsz (also used when the motorcycle model is missing). "roi" finds far more plates, and faster,
+    # because a plate is only ~30 px in a 1080p frame
     plate_search: str = "roi"
-    # Input size for each motorcycle region. Measured on plate-dataset/test: 320 found the most plates;
-    # larger sizes enlarge the plate past what the current plate model was trained on
-    plate_roi_imgsz: int = 320
-    # Motorcycles shorter than this (pixels) are too far away for a readable plate and are skipped
-    plate_min_bike_h: int = 40
+    # Input size for each motorcycle region: 640 enlarges the plate to the size the model was trained on
+    # (138 plates on the video vs 43 at 320)
+    plate_roi_imgsz: int = 640
+    # Fraction of the motorcycle box width/height added on each side of its plate search region.
+    # 0 = the box itself: on the video it found 138 plates vs 102 with (0.2, 0.1), whose larger region
+    # shrinks the plate
+    plate_roi_pad: tuple = (0.0, 0.0)
+    # Motorcycles shorter than this (pixels) are too far away for a readable plate and are skipped.
+    # On the 1080p video, OCR read nothing useful from bikes under ~220 px; skipping them cut plate search
+    # from 54 to 17 ms on frames with 5+ bikes (where playback lagged) and kept 93 of 95 plates >= 25 px tall
+    plate_min_bike_h: int = 200
+    # Plate boxes taller than this fraction of their motorcycle are dropped. On the video real plates
+    # were 0.09-0.17 of the bike height; boxes around a whole bike, wheel or rider were 0.23-0.48
+    plate_max_bike_h_ratio: float = 0.2
     detection_conf: float = 0.25
     helmet_conf: float = 0.25
     # Lower threshold for counting riders only: a passenger's head behind the driver often scores
@@ -64,10 +70,11 @@ class AppConfig:
     speed_limit_kmh: float = 80.0
     # A motorcycle's summary is printed when it leaves; tracks seen in fewer YOLO frames are ignored
     report_min_frames: int = 5
-    # When to 'lock' an OCR result and print it: minimum confidence (0-1)
-    ocr_lock_confidence: float = 0.90
-    # Number of consecutive updates (stable reads) required to consider a result stable
-    ocr_lock_stable_count: int = 3
+    # A track's plate is 'locked' (no more OCR) once its voted series and number came out the same
+    # on this many consecutive reads. On input/IMG_9122.MOV 3 locked a wrong series early; 5 did not
+    ocr_lock_stable_count: int = 5
+    # Minimum time between OCR requests for one motorcycle; each read is one more vote for its plate
+    ocr_request_interval_s: float = 0.1
     
     # Motorcycle tracking parameters
     # distance_threshold: max pixel distance between bbox centers to consider same motorcycle.
@@ -90,16 +97,10 @@ class AppConfig:
 
     @classmethod
     def from_env(cls) -> "AppConfig":
-        # Only the video source, model paths, plate OCR switch and speed calibration come from .env;
-        # everything else is set above.
+        # Only the video source comes from .env; everything else is set above.
         return cls(
             rtsp_url=os.getenv("RTSP_URL", ""),
             video_file=os.getenv("VIDEO_FILE", ""),
-            motorcycle_model_path=os.getenv("MOTORCYCLE_MODEL_PATH", cls.motorcycle_model_path),
-            rider_model_path=os.getenv("RIDER_MODEL_PATH", cls.rider_model_path),
-            enable_plate_ocr=os.getenv("ENABLE_PLATE_OCR", "1").strip().lower() in ("1", "true", "yes", "on"),
-            speed_calib_points=os.getenv("SPEED_CALIB_POINTS", ""),
-            speed_calib_world=os.getenv("SPEED_CALIB_WORLD", ""),
         )
 
     @property

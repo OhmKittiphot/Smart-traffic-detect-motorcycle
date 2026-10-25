@@ -1,0 +1,112 @@
+{% comment %}
+Plate search form, results table and the details / review dialog (search.js).
+Used by the search page and the violations page. violations_only: tick "Violations only" at the start;
+autofocus: focus the plate box (not on the violations page, where it would scroll past the statistics);
+browse: list every record while no plate is typed; plain_rows: no red / green row backgrounds; deletable: checkboxes and delete buttons, shown only
+to users with the delete_records permission (the API checks it too).
+{% endcomment %}
+  <h2 class="search-title">Plate search</h2>
+  <form id="search-form" class="search-form" role="search">
+    <label class="search-field search-plate">
+      <span>Plate</span>
+      <input type="text" id="search-q" name="q" maxlength="32" autocomplete="off"{% if autofocus %} autofocus{% endif %}
+             placeholder="e.g. 1กข987, or only 987">
+    </label>
+    <label class="search-field">
+      <span>Province <small class="muted">optional</small></span>
+      {# The value is the Thai name the records store #}
+      <select id="search-province" name="province">
+        <option value="">All provinces</option>
+        {% for thai, english in provinces %}<option value="{{ thai }}">{{ thai }} ({{ english }})</option>{% endfor %}
+      </select>
+    </label>
+    <label class="search-check">
+      <input type="checkbox" id="search-violations" name="violations_only"{% if violations_only %} checked{% endif %}><span>Violations only</span>
+    </label>
+    <button type="submit" class="btn btn-primary">Search</button>
+  </form>
+  <p class="search-help muted">
+    The series and the number are matched separately, so a plate the camera read only partly is still found
+    (6มก65 finds a plate read as 65), and look-alike characters (บ/ป, ด/ต, 3/8…) count as near matches.
+    Closest plates are listed first. Click a row to see its details{% if perms.dashboard.use_dashboard %} and confirm or reject the event{% endif %}.
+  </p>
+
+  <section class="table-panel search-results" aria-label="Search results">
+    <div class="table-head">
+      <h2 id="result-title">Results</h2>
+      <span class="form-msg" id="search-msg" role="status" aria-live="polite"></span>
+      {% if deletable and perms.dashboard.delete_records %}
+      {# Delete turns on selection mode and hides itself: checkboxes, All, Cancel and Delete selected take its place #}
+      <div class="bulk-actions" id="bulk-actions">
+        <button type="button" class="btn btn-sm btn-danger-ghost" id="delete-btn">Delete</button>
+        <div class="bulk-extra" id="bulk-extra" inert>
+          <button type="button" class="btn btn-sm btn-ghost" id="select-all-btn" aria-pressed="false"
+                  title="Select every record in this list, also those not loaded yet">All</button>
+          <button type="button" class="btn btn-sm btn-ghost" id="select-cancel">Cancel</button>
+          <button type="button" class="btn btn-sm btn-danger" id="delete-confirm" disabled>Delete selected</button>
+        </div>
+      </div>
+      {% endif %}
+    </div>
+    <div class="table-wrap">
+      <table class="vehicles{% if plain_rows %} plain-rows{% endif %}" id="results" data-filter="all"
+             data-browse="{% if browse %}true{% endif %}"
+             data-can-delete="{% if deletable and perms.dashboard.delete_records %}true{% endif %}">
+        <thead>
+          <tr>
+            {% if deletable and perms.dashboard.delete_records %}
+            <th class="check-col"><span class="check-wrap"></span></th>
+            {% endif %}
+            <th>Time</th><th>Photo</th><th>Plate</th><th>Province</th><th class="num">Riders</th>
+            <th>Helmet</th><th class="num">Speed</th><th>Status</th><th>Review</th><th>Source</th>
+          </tr>
+        </thead>
+        <tbody id="result-rows"></tbody>
+      </table>
+      <p class="empty muted" id="empty-msg">Type a plate to search the recorded motorcycles</p>
+      <button type="button" class="btn btn-sm load-more" id="load-more" hidden>Load more</button>
+    </div>
+  </section>
+
+<dialog id="detail-dialog" class="detail-dialog" aria-labelledby="detail-title">
+  <div class="detail-head">
+    <h3 id="detail-title"></h3>
+    <span id="detail-review" class="tag"></span>
+  </div>
+  <div class="detail-body">
+    <div class="detail-photo">
+      <img id="detail-img" alt="Evidence photo">
+      <p id="detail-nophoto" class="muted">No evidence photo</p>
+    </div>
+    <dl class="detail-list" id="detail-list"></dl>
+  </div>
+  {% if perms.dashboard.use_dashboard %}
+  <label class="detail-note">
+    <span>Note <small class="muted">optional, saved with the review</small></span>
+    <textarea id="detail-note" maxlength="255" rows="2"></textarea>
+  </label>
+  <p class="form-msg" id="detail-msg" role="status" aria-live="polite"></p>
+  {% endif %}
+  <div class="detail-actions">
+    {% if perms.dashboard.use_dashboard %}
+      <button type="button" class="btn btn-sm btn-ghost" id="review-undo">Undo review</button>
+    {% endif %}
+    <span class="spacer"></span>
+    <button type="button" class="btn" id="detail-close">Close</button>
+    {% if perms.dashboard.use_dashboard %}
+      <button type="button" class="btn btn-danger-ghost" id="review-reject">Reject</button>
+      <button type="button" class="btn btn-primary" id="review-confirm">Confirm event</button>
+    {% endif %}
+  </div>
+</dialog>
+
+{% if deletable and perms.dashboard.delete_records %}
+<dialog id="delete-dialog" class="confirm-dialog" aria-labelledby="delete-title">
+  <h3 id="delete-title"></h3>
+  <p class="muted">The records and their evidence photos are removed permanently. This cannot be undone.</p>
+  <form method="dialog" class="confirm-actions">
+    <button class="btn" value="cancel" autofocus>Cancel</button>
+    <button class="btn btn-danger" value="confirm">Delete</button>
+  </form>
+</dialog>
+{% endif %}

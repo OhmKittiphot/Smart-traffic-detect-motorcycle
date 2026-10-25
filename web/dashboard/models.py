@@ -51,6 +51,13 @@ class Violation(models.TextChoices):
     SPEEDING = "SPEEDING", "Speeding"
 
 
+class Review(models.TextChoices):
+    """An admin's verdict on a recorded event, set from the plate search page."""
+    PENDING = "pending", "Not reviewed"
+    CONFIRMED = "confirmed", "Confirmed"
+    REJECTED = "rejected", "Rejected"
+
+
 class VehicleRecord(models.Model):
     """A motorcycle that passed the camera (one row per finished track)."""
 
@@ -73,6 +80,12 @@ class VehicleRecord(models.Model):
     is_violation = models.BooleanField(default=False, db_index=True)
     # Path relative to MEDIA_ROOT
     snapshot = models.CharField(max_length=255, blank=True)
+
+    review = models.CharField(max_length=10, choices=Review.choices, default=Review.PENDING, db_index=True)
+    review_note = models.CharField(max_length=255, blank=True)
+    reviewed_at = models.DateTimeField(null=True, blank=True)
+    reviewed_by = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL,
+                                    related_name="+")
 
     class Meta:
         ordering = ["-id"]
@@ -99,3 +112,19 @@ class AuditLog(models.Model):
 
     def __str__(self):
         return f"{self.created_at:%Y-%m-%d %H:%M:%S} {self.user} {self.action}"
+
+
+class Access(models.Model):
+    """No table: only holds the permissions that open the dashboard's own pages.
+    They are given to groups (roles) in Django admin and checked with user.has_perm() in middleware.py."""
+
+    class Meta:
+        managed = False
+        default_permissions = ()
+        permissions = [
+            ("use_dashboard", "Can use the live view, change the video source and review events"),
+            ("view_records", "Can search records and view violation statistics"),
+            ("view_system_status", "Can view camera and system status"),
+            ("manage_calibration", "Can change the distances of, or remove, saved speed calibrations"),
+            ("delete_records", "Can delete vehicle records and their evidence photos"),
+        ]

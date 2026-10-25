@@ -71,7 +71,7 @@ MIDDLEWARE = [
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
     # Headers first, so they also apply to the redirects / 401s of the access check below
     "dashboard.security.SecurityHeadersMiddleware",
-    "dashboard.security.AdminOnlyMiddleware",
+    "dashboard.middleware.PagePermissionMiddleware",
     # Must be last: blocks requests from locked-out users / IPs
     "axes.middleware.AxesMiddleware",
 ]
@@ -81,8 +81,8 @@ AUTHENTICATION_BACKENDS = [
     "django.contrib.auth.backends.ModelBackend",
 ]
 
-ROOT_URLCONF = "cctv_admin.urls"
-WSGI_APPLICATION = "cctv_admin.wsgi.application"
+ROOT_URLCONF = "admin.urls"
+WSGI_APPLICATION = "admin.wsgi.application"
 
 TEMPLATES = [
     {
@@ -178,8 +178,8 @@ AXES_IPWARE_META_PRECEDENCE_ORDER = (
 REST_FRAMEWORK = {
     # Same login as the dashboard pages; POSTs need the CSRF token
     "DEFAULT_AUTHENTICATION_CLASSES": ["rest_framework.authentication.SessionAuthentication"],
-    # Staff accounts only, like every dashboard page
-    "DEFAULT_PERMISSION_CLASSES": ["rest_framework.permissions.IsAdminUser"],
+    # Logged in; which API a user may call is checked with has_perm in dashboard.middleware, like the pages
+    "DEFAULT_PERMISSION_CLASSES": ["rest_framework.permissions.IsAuthenticated"],
     # JSON in and out; the API is only called by the dashboard page
     "DEFAULT_RENDERER_CLASSES": ["rest_framework.renderers.JSONRenderer"],
     "DEFAULT_PARSER_CLASSES": ["rest_framework.parsers.JSONParser"],

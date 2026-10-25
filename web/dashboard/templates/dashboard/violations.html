@@ -1,0 +1,62 @@
+{% extends "dashboard/base.html" %}
+{% load static %}
+{% block title %}Violations · CCTV Control{% endblock %}
+{% block body %}
+{% include "dashboard/_topbar.html" %}
+
+<main class="search-page">
+  <section class="violation-stats" aria-labelledby="stats-title">
+    <div class="table-head">
+      <h2 id="stats-title">Violation statistics</h2>
+      <span class="stats-meta muted" id="stats-meta"></span>
+      <span class="form-msg" id="stats-msg" role="status" aria-live="polite"></span>
+    </div>
+    {# Laid out like a table in a paper: heavy rules above and below, a light rule between figures and charts #}
+    <div class="stats-board">
+      <div class="kpis">
+        <div class="kpi">
+          <span class="kpi-label">Violations today</span>
+          <span class="kpi-value" id="st-today"><span class="value-loading" aria-label="Loading"></span></span>
+          <span class="kpi-note" id="st-today-note"></span>
+        </div>
+        <div class="kpi">
+          <span class="kpi-label">Last 7 days</span>
+          <span class="kpi-value" id="st-week"><span class="value-loading" aria-label="Loading"></span></span>
+          <span class="kpi-spark" id="st-week-spark" aria-hidden="true"></span>
+        </div>
+        <div class="kpi">
+          <span class="kpi-label" id="st-range-label">Last 30 days</span>
+          <span class="kpi-value" id="st-violation"><span class="value-loading" aria-label="Loading"></span></span>
+          <span class="kpi-meter" aria-hidden="true"><span id="st-rate-bar"></span></span>
+          <span class="kpi-note" id="st-rate"></span>
+        </div>
+        <div class="kpi">
+          <span class="kpi-label">Not reviewed yet</span>
+          <span class="kpi-value" id="st-pending"><span class="value-loading" aria-label="Loading"></span></span>
+          <span class="kpi-meter kpi-meter-ok" aria-hidden="true"><span id="st-review-bar"></span></span>
+          <span class="kpi-note" id="st-confirmed"></span>
+        </div>
+      </div>
+      <div class="stats-charts">
+        <figure class="chart-panel">
+          <div class="chart-title">Violations by type</div>
+          <div id="by-type" class="hbars"><p class="chart-loading"><span class="value-loading" aria-label="Loading"></span></p></div>
+        </figure>
+        <figure class="chart-panel">
+          <div class="chart-title">Motorcycles per day
+            <span class="chart-legend"><span class="key key-bad"></span>Violations <span class="key key-total"></span>All motorcycles</span>
+          </div>
+          <div id="per-day" class="day-chart"><p class="chart-loading"><span class="value-loading" aria-label="Loading"></span></p></div>
+        </figure>
+      </div>
+    </div>
+  </section>
+
+  {% include "dashboard/_plate_search.html" with violations_only=True browse=True plain_rows=True deletable=True %}
+</main>
+
+<meta name="csrf-token" content="{{ csrf_token }}">
+<script src="{% static 'dashboard/common.js' %}" defer></script>
+<script src="{% static 'dashboard/stats.js' %}" defer></script>
+<script src="{% static 'dashboard/search.js' %}" defer></script>
+{% endblock %}

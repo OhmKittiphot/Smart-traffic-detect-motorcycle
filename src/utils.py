@@ -44,7 +44,6 @@ def format_thai_plate(plate_text: str, province_text: str) -> str:
     plate_chars = match.group(1)
     digits = match.group(2)
     
-    # Validate plate_chars structure
     is_valid = False
     
     if len(plate_chars) == 2:
@@ -63,7 +62,6 @@ def format_thai_plate(plate_text: str, province_text: str) -> str:
         if is_first_valid and is_rest_thai:
             is_valid = True
     
-    # Build formatted string
     if is_valid:
         formatted = plate_chars
         if province_text:
@@ -72,7 +70,6 @@ def format_thai_plate(plate_text: str, province_text: str) -> str:
             formatted += f" {digits}"
         return formatted
     else:
-        # Fallback: return original with province
         return f"{plate_text} {province_text}" if province_text else plate_text
 
 

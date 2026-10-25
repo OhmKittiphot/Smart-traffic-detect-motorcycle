@@ -5,7 +5,7 @@
   const ROWS_EVERY_MS = 2000;
   const SEEK_STEP_MS = 10000;
   const MAX_ROWS = 300;
-  const csrf = document.querySelector('meta[name="csrf-token"]').content;
+  const { api, el, thumbCell, helmetCell, statusCell, openSnapshotsFrom } = window.Dashboard;
 
   const $ = (id) => document.getElementById(id);
   const streamImg = $("stream");
@@ -29,50 +29,6 @@
   let dragging = false;
 
   // ---------- helpers ----------
-
-  async function api(url, options = {}) {
-    const res = await fetch(url, {
-      credentials: "same-origin",
-      headers: { "X-CSRFToken": csrf, "Content-Type": "application/json" },
-      ...options,
-    });
-    if (res.status === 401 || res.status === 403) {
-      // Session expired or logged out elsewhere
-      window.location.href = "/login/";
-      throw new Error("unauthenticated");
-    }
-    const data = await res.json().catch(() => ({}));
-    if (!res.ok) throw new Error(errorMessage(data) || `HTTP ${res.status}`);
-    return data;
-  }
-
-  // The API answers errors as {"detail": "..."} or, for invalid input, {"<field>": ["..."]}
-  // (nested for lists, e.g. {"points": {"0": {"1": ["..."]}}}). Show the first message found.
-  function errorMessage(data) {
-    if (typeof data === "string") return data;
-    if (data && typeof data === "object") {
-      if (data.detail) return errorMessage(data.detail);
-      for (const value of Object.values(data)) {
-        const message = errorMessage(value);
-        if (message) return message;
-      }
-    }
-    return "";
-  }
-
-  // Build elements with textContent only: plate / province text comes from OCR and is never parsed as HTML
-  function el(tag, attrs = {}, ...children) {
-    const node = document.createElement(tag);
-    for (const [k, v] of Object.entries(attrs)) {
-      if (k === "class") node.className = v;
-      else node.setAttribute(k, v);
-    }
-    for (const c of children) {
-      if (c == null) continue;
-      node.append(c instanceof Node ? c : document.createTextNode(String(c)));
-    }
-    return node;
-  }
 
   function showMsg(text, kind) {
     formMsg.textContent = text;
@@ -114,15 +70,12 @@
     badge.textContent = label;
     $("source-text").textContent = s.source;
     $("fps").textContent = s.fps.toFixed(1);
-    $("calib").textContent = s.speed_calibrated ? "· Speed calibrated" : "· Speed not calibrated";
-    calibBtn.disabled = s.state !== "running" || !s.signal;
-    calibBtn.title = calibBtn.disabled ? "Needs a video signal" : "";
+    renderCalibration(s);
 
     applyBtn.disabled = busy || s.state !== "running";
 
     // Loading: models loading, playback held for the GPU, or detection falling behind
     loadingEl.hidden = !s.loading;
-    $("loading-text").textContent = s.loading;
 
     const isFile = s.mode === "file" && s.state === "running" && s.total_ms > 0;
     seekbar.hidden = !isFile;
@@ -167,37 +120,21 @@
 
   async function pollStatus() {
     try {
-      renderStatus(await api("/api/status/"));
+      const s = await api("/api/status/");
+      renderStatus(s);
+      window.FpsChart.push(s.state === "running" ? s.fps : null);
     } catch (e) { /* keep last state; next poll retries */ }
   }
 
   // ---------- vehicle table ----------
 
-  function helmetCell(r) {
-    if (r.helmet == null) return el("span", { class: "muted" }, "Unknown");
-    const parts = [];
-    if (r.helmet) parts.push(el("span", { class: "tag tag-ok" }, `Helmet ${r.helmet}`));
-    if (r.no_helmet) parts.push(el("span", { class: "tag tag-bad" }, `No helmet ${r.no_helmet}`));
-    return parts.length ? el("span", {}, ...parts) : el("span", { class: "muted" }, "Unknown");
-  }
-
-  function statusCell(r) {
-    if (!r.violation) return el("span", { class: "tag tag-ok" }, "Normal");
-    return el("span", {}, ...r.violations.map((v) => el("span", { class: "tag tag-bad" }, v)));
-  }
-
   function buildRow(r, isNew) {
     const tr = el("tr", { class: (r.violation ? "row-bad" : "row-ok") + (isNew ? " is-new" : "") });
     tr.dataset.id = r.id;
 
-    const thumb = r.snapshot
-      ? el("button", { type: "button", class: "thumb-btn", "data-snap": r.id, "aria-label": "View evidence photo" },
-          el("img", { class: "thumb", src: `/snapshot/${r.id}/`, alt: "", loading: "lazy" }))
-      : el("span", { class: "muted" }, "—");
-
     tr.append(
       el("td", { class: "time-cell" }, r.time, el("small", {}, r.date)),
-      el("td", {}, thumb),
+      el("td", {}, thumbCell(r)),
       el("td", { class: "plate" }, r.plate || el("span", { class: "muted" }, "Unreadable")),
       el("td", {}, r.province || "—"),
       el("td", { class: "num" }, r.riders ?? "—"),
@@ -237,7 +174,7 @@
   document.querySelector(".filters").addEventListener("click", (ev) => {
     const btn = ev.target.closest(".filter");
     if (!btn) return;
-    for (const b of document.querySelectorAll(".filter")) {
+    for (const b of document.querySelectorAll(".filters .filter")) {
       b.classList.toggle("is-active", b === btn);
       b.setAttribute("aria-selected", b === btn ? "true" : "false");
     }
@@ -246,13 +183,7 @@
   });
 
   // Evidence snapshot preview
-  const dialog = $("snap-dialog");
-  rowsEl.addEventListener("click", (ev) => {
-    const btn = ev.target.closest("[data-snap]");
-    if (!btn) return;
-    $("snap-img").src = `/snapshot/${btn.dataset.snap}/`;
-    dialog.showModal();
-  });
+  openSnapshotsFrom(rowsEl);
 
   // Delete all records (after confirmation)
   const clearDialog = $("clear-dialog");
@@ -293,7 +224,7 @@
     }
     busy = true;
     applyBtn.disabled = true;
-    showMsg("Switching source…");
+    showMsg("Switching source…", "busy");
     try {
       const s = await api("/api/source/", {
         method: "POST",
@@ -331,7 +262,6 @@
     // Show the jump right away; the server holds playback until the new frame is processed
     Object.assign(playback, { pos: posMs, playing: false, at: performance.now() });
     loadingEl.hidden = false;
-    $("loading-text").textContent = "Processing frame…";
     drawPosition();
     try {
       await api("/api/seek/", { method: "POST", body: JSON.stringify({ pos_ms: posMs }) });
@@ -387,159 +317,49 @@
   streamImg.addEventListener("error", () => setTimeout(reloadStream, 2000));
 
   // ---------- speed calibration ----------
-  // Points are kept in frame pixels (the image's natural size), the same units the server uses.
+  // Yellow button: not calibrated yet; green: calibrated (click to redraw). Reset removes the calibration.
 
-  const SVG_NS = "http://www.w3.org/2000/svg";
-  const POINT_NAMES = ["far-left", "far-right", "near-right", "near-left"];
   const calibBtn = $("calib-btn");
-  const calibDialog = $("calib-dialog");
-  const calibImg = $("calib-img");
-  const calibSvg = $("calib-svg");
-  const calibW = $("calib-w");
-  const calibL = $("calib-l");
-  const calibMsg = $("calib-msg");
-  const calibSave = $("calib-save");
-  const calibRemove = $("calib-remove");
-  let calibPts = [];
-  let dragIndex = -1;
+  const calibReset = $("calib-reset");
+  const resetDialog = $("calib-reset-dialog");
 
-  function calibStatus(text, kind) {
-    calibMsg.textContent = text;
-    calibMsg.className = "form-msg" + (kind ? " is-" + kind : "");
+  function renderCalibration(s) {
+    calibBtn.disabled = s.state !== "running" || !s.signal;
+    calibBtn.classList.toggle("btn-ok", s.speed_calibrated);
+    calibBtn.classList.toggle("btn-warn", !s.speed_calibrated);
+    calibBtn.textContent = s.speed_calibrated ? "Speed calibrated" : "Calibrate speed";
+    calibBtn.title = calibBtn.disabled ? "Needs a video signal"
+      : s.speed_calibrated ? "Click to redraw the calibration" : "Speed is not measured until calibrated";
+    calibReset.hidden = !s.speed_calibrated || s.state !== "running";
   }
-
-  function svgEl(tag, attrs) {
-    const node = document.createElementNS(SVG_NS, tag);
-    for (const [k, v] of Object.entries(attrs)) node.setAttribute(k, v);
-    return node;
-  }
-
-  function drawCalib() {
-    const w = calibImg.naturalWidth || 1;
-    const r = Math.max(6, w / 130);
-    calibSvg.replaceChildren();
-    if (calibPts.length > 1) {
-      const pts = calibPts.map((p) => p.join(",")).join(" ");
-      calibSvg.append(svgEl(calibPts.length === 4 ? "polygon" : "polyline", {
-        points: pts, fill: calibPts.length === 4 ? "rgba(59,130,246,0.18)" : "none",
-        stroke: "#facc15", "stroke-width": 2, "vector-effect": "non-scaling-stroke",
-      }));
-    }
-    calibPts.forEach(([x, y], i) => {
-      const g = svgEl("g", { class: "pt", "data-i": i });
-      g.append(svgEl("circle", { cx: x, cy: y, r, fill: "#e5484d", stroke: "#fff", "stroke-width": 2,
-        "vector-effect": "non-scaling-stroke" }));
-      const label = svgEl("text", { x: x + r * 1.3, y: y - r * 1.3, fill: "#fff", "font-size": r * 2.6,
-        "font-weight": 700, stroke: "#000", "stroke-width": 3, "paint-order": "stroke",
-        "vector-effect": "non-scaling-stroke" });
-      label.textContent = String(i + 1);
-      g.append(label);
-      calibSvg.append(g);
-    });
-    $("calib-next").textContent = calibPts.length < 4
-      ? `Click point ${calibPts.length + 1}: ${POINT_NAMES[calibPts.length]}` : "";
-    updateCalibSave();
-  }
-
-  function updateCalibSave() {
-    const ok = calibPts.length === 4 && Number(calibW.value) > 0 && Number(calibL.value) > 0;
-    calibSave.disabled = !ok;
-  }
-
-  // Pointer position in frame pixels
-  function svgPoint(ev) {
-    const pt = calibSvg.createSVGPoint();
-    pt.x = ev.clientX;
-    pt.y = ev.clientY;
-    const p = pt.matrixTransform(calibSvg.getScreenCTM().inverse());
-    const clamp = (v, max) => Math.round(Math.max(0, Math.min(max, v)) * 10) / 10;
-    return [clamp(p.x, calibImg.naturalWidth), clamp(p.y, calibImg.naturalHeight)];
-  }
-
-  calibSvg.addEventListener("pointerdown", (ev) => {
-    const g = ev.target.closest(".pt");
-    if (g) {
-      dragIndex = Number(g.dataset.i);
-      g.classList.add("is-dragging");
-      calibSvg.setPointerCapture(ev.pointerId);
-    } else if (calibPts.length < 4) {
-      calibPts.push(svgPoint(ev));
-      drawCalib();
-    }
-    ev.preventDefault();
-  });
-  calibSvg.addEventListener("pointermove", (ev) => {
-    if (dragIndex < 0) return;
-    calibPts[dragIndex] = svgPoint(ev);
-    drawCalib();
-  });
-  const endDrag = () => { dragIndex = -1; };
-  calibSvg.addEventListener("pointerup", endDrag);
-  calibSvg.addEventListener("pointercancel", endDrag);
-
-  $("calib-undo").addEventListener("click", () => { calibPts.pop(); drawCalib(); });
-  $("calib-clear-pts").addEventListener("click", () => { calibPts = []; drawCalib(); });
-  calibW.addEventListener("input", updateCalibSave);
-  calibL.addEventListener("input", updateCalibSave);
-
-  function loadCalibFrame() {
-    return new Promise((resolve, reject) => {
-      calibImg.onload = () => {
-        calibSvg.setAttribute("viewBox", `0 0 ${calibImg.naturalWidth} ${calibImg.naturalHeight}`);
-        resolve();
-      };
-      calibImg.onerror = () => reject(new Error("Could not load a frame from the video"));
-      calibImg.src = `/api/calibration/frame/?t=${Date.now()}`;
-    });
-  }
-
-  $("calib-refresh").addEventListener("click", async () => {
-    try { await loadCalibFrame(); drawCalib(); } catch (e) { calibStatus(e.message, "error"); }
-  });
 
   calibBtn.addEventListener("click", async () => {
-    calibStatus("");
     try {
-      const [c] = await Promise.all([api("/api/calibration/"), loadCalibFrame()]);
-      $("calib-source").textContent = c.source;
-      calibPts = c.points ? c.points.map((p) => [p[0], p[1]]) : [];
-      calibW.value = c.width_m ?? "";
-      calibL.value = c.length_m ?? "";
-      calibRemove.hidden = !c.points;
-      drawCalib();
-      calibDialog.showModal();
+      const c = await api("/api/calibration/");
+      window.CalibrationEditor.open({
+        ...c,
+        frameUrl: "/api/calibration/frame/",
+        save: (body) => api("/api/calibration/save/", { method: "POST", body: JSON.stringify(body) }),
+        onSaved: () => { showMsg("Speed calibration saved", "ok"); pollStatus(); },
+      });
     } catch (e) {
       showMsg(e.message, "error");
     }
   });
 
-  $("calib-cancel").addEventListener("click", () => calibDialog.close());
-
-  calibSave.addEventListener("click", async () => {
-    calibSave.disabled = true;
-    calibStatus("Saving…");
-    try {
-      await api("/api/calibration/save/", {
-        method: "POST",
-        body: JSON.stringify({ points: calibPts, width_m: Number(calibW.value), length_m: Number(calibL.value) }),
-      });
-      calibDialog.close();
-      showMsg("Speed calibration saved", "ok");
-      pollStatus();
-    } catch (e) {
-      calibStatus(e.message, "error");
-      updateCalibSave();
-    }
+  calibReset.addEventListener("click", () => {
+    $("calib-reset-source").textContent = $("source-text").textContent;
+    resetDialog.returnValue = "";
+    resetDialog.showModal();
   });
-
-  calibRemove.addEventListener("click", async () => {
+  resetDialog.addEventListener("close", async () => {
+    if (resetDialog.returnValue !== "confirm") return;
     try {
       await api("/api/calibration/remove/", { method: "POST", body: "{}" });
-      calibDialog.close();
-      showMsg("Speed calibration removed", "ok");
+      showMsg("Speed calibration reset", "ok");
       pollStatus();
     } catch (e) {
-      calibStatus(e.message, "error");
+      showMsg(e.message, "error");
     }
   });
 

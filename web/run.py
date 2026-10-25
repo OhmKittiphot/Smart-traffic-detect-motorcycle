@@ -4,6 +4,7 @@
 
 Then open http://127.0.0.1:8000 and log in with an admin account
 (create one first with: venv\Scripts\python web\manage.py createsuperuser).
+Detection (models, video stream) runs only while staff have the live view open.
 Always use the project's venv: the detection models and Django are installed there.
 """
 import multiprocessing as mp
@@ -19,7 +20,7 @@ def main():
     # Model paths in AppConfig are relative to the project root
     os.chdir(PROJECT_DIR)
     sys.path.insert(0, str(WEB_DIR))
-    os.environ.setdefault("DJANGO_SETTINGS_MODULE", "cctv_admin.settings")
+    os.environ.setdefault("DJANGO_SETTINGS_MODULE", "admin.settings")
     for stream in (sys.stdout, sys.stderr):
         try:
             # Line-buffered so pipeline messages show up immediately when output is piped to a log
@@ -44,10 +45,8 @@ def main():
     from django.conf import settings
     from waitress import serve
 
-    from cctv_admin.wsgi import application
-    from dashboard.engine import get_service
-
-    service = get_service()   # loads models in the background while the server starts
+    from admin.wsgi import application
+    from dashboard.engine import stop_service   # detection starts from the live view, not here
 
     host = os.getenv("DASHBOARD_HOST", "127.0.0.1")
     port = int(os.getenv("DASHBOARD_PORT", "8000"))
@@ -62,7 +61,7 @@ def main():
         serve(application, host=host, port=port, threads=24, ident="cctv",
               channel_timeout=60, connection_limit=200)
     finally:
-        service.stop()
+        stop_service()
 
 
 if __name__ == "__main__":

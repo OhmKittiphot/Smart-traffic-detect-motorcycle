@@ -9,6 +9,11 @@ def add_report_listener(fn: Callable[[Dict[str, Any], bool], None]) -> None:
     _report_listeners.append(fn)
 
 
+def remove_report_listener(fn: Callable[[Dict[str, Any], bool], None]) -> None:
+    if fn in _report_listeners:
+        _report_listeners.remove(fn)
+
+
 def median_speed(meta: Dict[str, Any]) -> Optional[float]:
     """Median of the smoothed readings; robust to a few bad frames at the edges of the view."""
     speeds = meta.get("speeds") or []

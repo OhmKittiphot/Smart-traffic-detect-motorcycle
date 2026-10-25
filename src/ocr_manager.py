@@ -1,6 +1,8 @@
+import math
 from typing import Dict, List, Tuple, Any, Optional
 
-from ocr_voting import vote_characters_by_position, vote_temporal_strings
+from ocr import is_valid_number, is_valid_series
+from ocr_voting import vote_line, vote_temporal_strings
 
 
 class OCRManager:
@@ -10,24 +12,22 @@ class OCRManager:
         self,
         cache_ttl_s: float = 5.0,
         cache_distance: float = 120.0,
-        lock_confidence: float = 0.90,
-        lock_stable_count: int = 3,
-        ocr_request_interval_s: float = 0.3,
+        lock_stable_count: int = 5,
+        ocr_request_interval_s: float = 0.1,
     ):
         self.cache_ttl_s = cache_ttl_s
         self.cache_distance = cache_distance
-        self.lock_confidence = lock_confidence
         self.lock_stable_count = lock_stable_count
         self.ocr_request_interval_s = ocr_request_interval_s
 
         # track_id-bound state
         self.track_cache: Dict[int, Dict[str, Any]] = {}
-        self.track_vote_history: Dict[int, List[Tuple[str, str, float, float, float]]] = {}
+        self.track_vote_history: Dict[int, List[Tuple[Dict[str, Any], float]]] = {}   # (read, time)
         self.track_last_request_time: Dict[int, float] = {}
 
         # Fallback bbox-bound state (used when track_id is not available)
         self.bbox_cache: Dict[Tuple[int, int, int, int], Tuple[str, float, float]] = {}
-        self.bbox_vote_history: Dict[Tuple[int, int, int, int], List[Tuple[str, str, float, float, float]]] = {}
+        self.bbox_vote_history: Dict[Tuple[int, int, int, int], List[Tuple[Dict[str, Any], float]]] = {}
         self.bbox_last_request_time: Dict[Tuple[int, int, int, int], float] = {}
 
     def reset(self) -> None:
@@ -132,13 +132,13 @@ class OCRManager:
         track_id: Optional[int] = None,
         plate_text: str = "",
         province_text: str = "",
-    ) -> Tuple[str, float, str, str]:
-        """Update the cache with a new OCR result.
-        Returns the accepted (final_text, conf, plate_text, province_text), all from the same read."""
+        complete: bool = False,
+    ) -> None:
+        """Update the cache with a new voted OCR result; complete = both the series and the number are known."""
         # Always maintain bbox fallback cache
         for k in [k for k, v in self.bbox_cache.items() if k != bbox and now - v[2] > self.cache_ttl_s]:
             del self.bbox_cache[k]
-        old_bbox_text, old_bbox_conf, _ = self.bbox_cache.get(bbox, ("", 0.0, 0))
+        _, old_bbox_conf, _ = self.bbox_cache.get(bbox, ("", 0.0, 0))
         if final_conf >= old_bbox_conf:
             self.bbox_cache[bbox] = (final_text, final_conf, now)
 
@@ -156,80 +156,56 @@ class OCRManager:
                 stable_count = old_entry.get("stable_count", 0) + 1
             else:
                 stable_count = 1
-            is_locked = (final_conf >= self.lock_confidence) or (stable_count >= self.lock_stable_count)
+            # A single read can be confidently wrong, so only lock once the vote is complete and stopped changing
+            is_locked = complete and stable_count >= self.lock_stable_count
 
-            if old_entry is None or final_conf >= old_entry.get("confidence", 0.0):
-                self.track_cache[track_id] = {
-                    "plate_text": plate_text,
-                    "province_text": province_text,
-                    "final_text": final_text,
-                    "confidence": final_conf,
-                    "vote_count": vote_count,
-                    "is_locked": is_locked,
-                    "last_seen": now,
-                    "last_vote_text": final_text,
-                    "stable_count": stable_count,
-                }
-                return final_text, final_conf, plate_text, province_text
-            else:
-                old_entry["last_seen"] = now
-                old_entry["vote_count"] = vote_count
-                old_entry["last_vote_text"] = final_text
-                old_entry["stable_count"] = stable_count
-                old_entry["is_locked"] = old_entry.get("is_locked", False) or is_locked
-                return (old_entry["final_text"], old_entry["confidence"],
-                        old_entry.get("plate_text", ""), old_entry.get("province_text", ""))
-
-        return final_text, final_conf, plate_text, province_text
+            # The voted result already weighs every read of the track, so it replaces the previous one
+            self.track_cache[track_id] = {
+                "plate_text": plate_text,
+                "province_text": province_text,
+                "final_text": final_text,
+                "confidence": final_conf,
+                "vote_count": vote_count,
+                "is_locked": is_locked,
+                "last_seen": now,
+                "last_vote_text": final_text,
+                "stable_count": stable_count,
+            }
 
     def aggregate_vote_result(
         self,
         bbox: Tuple[int, int, int, int],
-        plate_text: str,
-        plate_conf: float,
-        province_text: str,
-        province_conf: float,
+        read: Dict[str, Any],
         now: float,
         track_id: Optional[int] = None,
-    ) -> Tuple[str, float, str, float]:
-        """Aggregate OCR results over time using voting, bound to track_id (or bbox fallback)."""
+    ) -> Tuple[str, str, float, str, float]:
+        """Vote the plate over the recent reads of this track (or of this bbox when there is no track_id).
+
+        read is one OCR worker result. Each read counts with its recognition score times the square
+        root of the plate's sharpness, so close, sharp frames outweigh small or blurred ones.
+        Returns (series, number, plate_conf, province, province_conf); a line that did not vote out
+        valid is "" (plate_conf then covers only the valid one).
+        """
         cutoff = now - self.cache_ttl_s
+        histories, key = (self.track_vote_history, track_id) if track_id is not None else (self.bbox_vote_history, bbox)
+        history = [entry for entry in histories.get(key, []) if entry[1] >= cutoff]
+        history.append((read, now))
+        histories[key] = history[-30:]
+        for k in [k for k, h in histories.items() if k != key and h[-1][1] < cutoff]:
+            del histories[k]
 
-        if track_id is not None:
-            history = self.track_vote_history.setdefault(track_id, [])
-            history.append((plate_text, province_text, plate_conf, province_conf, now))
-            history = [entry for entry in history if entry[4] >= cutoff and (entry[0] or entry[1])]
-            if len(history) > 30:
-                history = history[-30:]
-            self.track_vote_history[track_id] = history
+        def line_reads(line):
+            return [(r[line][0], r[line][1], r[line][1] * math.sqrt(r["sharpness"])) for r, _ in history]
 
-            for k in [k for k, h in self.track_vote_history.items() if k != track_id and (not h or h[-1][4] < cutoff)]:
-                del self.track_vote_history[k]
-        else:
-            history = self.bbox_vote_history.setdefault(bbox, [])
-            history.append((plate_text, province_text, plate_conf, province_conf, now))
-            history = [entry for entry in history if entry[4] >= cutoff and (entry[0] or entry[1])]
-            self.bbox_vote_history[bbox] = history
+        series, series_conf = vote_line(line_reads("series"))
+        number, number_conf = vote_line(line_reads("number"))
+        series = series if is_valid_series(series) else ""
+        number = number if is_valid_number(number) else ""
+        plate_conf = min([conf for text, conf in ((series, series_conf), (number, number_conf)) if text], default=0.0)
 
-            for k in [k for k, h in self.bbox_vote_history.items() if k != bbox and (not h or h[-1][4] < cutoff)]:
-                del self.bbox_vote_history[k]
-
-        plate_candidates = [(text, conf) for text, _, conf, _, _ in history if text]
-        province_candidates = [(text, conf) for _, text, _, conf, _ in history if text]
-
-        voted_plate = vote_characters_by_position(plate_candidates) if plate_candidates else ""
-        voted_province = vote_temporal_strings(province_candidates) if province_candidates else ""
-
-        if not voted_plate and not voted_province:
-            return "", 0.0, "", 0.0
-
-        plate_out = voted_plate if voted_plate else plate_text
-        plate_out_conf = max((conf for _, conf in plate_candidates), default=plate_conf)
-
-        province_out = voted_province if voted_province else province_text
-        province_out_conf = max((conf for _, conf in province_candidates), default=province_conf)
-
-        return plate_out, plate_out_conf, province_out, province_out_conf
+        province = vote_temporal_strings([r["province"] for r, _ in history])
+        province_conf = max((r["province"][1] for r, _ in history if r["province"][0] == province), default=0.0)
+        return series, number, plate_conf, province, province_conf
 
     def prune_inactive_tracks(self, active_track_ids: set, now: float) -> None:
         """Prune track cache and vote history for tracks that are no longer active and have exceeded TTL."""

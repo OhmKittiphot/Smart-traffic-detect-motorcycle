@@ -38,12 +38,11 @@ class DetectionApp:
         if torch.cuda.is_available():
             torch.cuda.empty_cache()
 
-        # IPC Queues and Process for OCR
         self.ocr_in_q = mp.Queue(maxsize=2)
         self.ocr_out_q = mp.Queue(maxsize=2)
-        self.ocr_proc = mp.Process(target=ocr_worker, args=(self.ocr_in_q, self.ocr_out_q), daemon=True)
+        self.ocr_proc = mp.Process(target=ocr_worker, args=(self.ocr_in_q, self.ocr_out_q, config.plate_ocr_model_path),
+                                   daemon=True)
 
-        # Core sub-components
         self.tracker = MotorcycleTracker(
             max_age_s=config.motorcycle_track_max_age_s,
             distance_threshold=config.motorcycle_track_distance
@@ -51,8 +50,8 @@ class DetectionApp:
         self.ocr_manager = OCRManager(
             cache_ttl_s=config.ocr_cache_ttl_s,
             cache_distance=config.ocr_cache_distance,
-            lock_confidence=config.ocr_lock_confidence,
             lock_stable_count=config.ocr_lock_stable_count,
+            ocr_request_interval_s=config.ocr_request_interval_s,
         )
         self.speed_estimator = SpeedEstimator()
         self._init_speed_calibration()
@@ -62,22 +61,19 @@ class DetectionApp:
         self._proc_gen = 0
         self._stop_event = threading.Event()
 
-        # Video capture stream
         self.video_stream = VideoStream(
             video_camera=self.video_camera,
             display_fps=self.config.display_fps,
-            on_loop=self._on_video_loop,
+            on_end=self._on_video_end,
             on_seek=self._on_video_seek,
         )
 
-        # Interactive calibration controller
         self.calibration_controller = CalibrationController(
             speed_estimator=self.speed_estimator,
             on_pause=self._on_calib_pause,
             on_resume=self._on_calib_resume
         )
 
-        # YOLO detection pipeline
         self.yolo_pipeline = YoloPipeline(
             config=self.config,
             device=self.device,
@@ -89,7 +85,6 @@ class DetectionApp:
             det_lock=self.det_lock
         )
 
-        # OCR result worker
         self.ocr_handler = OCRResultHandler(
             ocr_out_q=self.ocr_out_q,
             ocr_manager=self.ocr_manager,
@@ -105,6 +100,7 @@ class DetectionApp:
         self._last_proc_t = None
         self._source_lock = threading.Lock()
         self._workers_started = False
+        self._worker_threads = []
 
     def _init_speed_calibration(self):
         calib = parse_calibration(self.config.speed_calib_points, self.config.speed_calib_world)
@@ -126,7 +122,7 @@ class DetectionApp:
             self.video_stream.toggle_pause()
 
     def _report_remaining(self):
-        """Print reports for motorcycles still in view (end of video loop / shutdown)."""
+        """Print reports for motorcycles still in view (end of video / shutdown)."""
         print_motorcycle_reports(self.tracker.drain(), self.speed_estimator.calibrated,
                                  self.config.report_min_frames)
 
@@ -141,7 +137,8 @@ class DetectionApp:
         self.latest_detections = []
         self._last_proc_t = None
 
-    def _on_video_loop(self, _cur_gen: int):
+    def _on_video_end(self, _cur_gen: int):
+        # Motorcycles still in view at the last frame are reported before playback restarts
         with self.det_lock:
             self._reset_media_session()
 
@@ -229,17 +226,26 @@ class DetectionApp:
         self.video_stream.seek(pos_ms)
 
     def start_workers(self):
-        """Start OCR, capture and processing in the background (no window). Returns once OCR is ready."""
-        if self.config.enable_plate_ocr:
-            self.ocr_proc.start()
-            self._wait_for_ocr()
+        # Start OCR, capture and processing in the background (no window). Returns once OCR is ready.
+        self.ocr_proc.start()
+        self._wait_for_ocr()
         print("Warming up models...")
         self.yolo_pipeline.warmup()
         self.video_stream.start()
-        threading.Thread(target=self._yolo_fn, daemon=True, name="YOLO").start()
-        if self.config.enable_plate_ocr:
-            threading.Thread(target=self.ocr_handler.run_loop, daemon=True, name="OCR-Result").start()
+        self._worker_threads = [threading.Thread(target=self._yolo_fn, daemon=True, name="YOLO"),
+                                threading.Thread(target=self.ocr_handler.run_loop, daemon=True, name="OCR-Result")]
+        for thread in self._worker_threads:
+            thread.start()
         self._workers_started = True
+
+    def worker_problems(self) -> list:
+        """What has stopped working among the background workers (empty when all are fine)."""
+        problems = [f"{t.name} thread stopped" for t in self._worker_threads if not t.is_alive()]
+        if self._workers_started and not self.ocr_proc.is_alive():
+            problems.append(f"OCR process exited (code {self.ocr_proc.exitcode})")
+        if self.video_stream.error:
+            problems.append(self.video_stream.error)
+        return problems
 
     def switch_source(self, video_camera: str):
         """Replace the video source while models and the OCR process keep running."""
@@ -253,7 +259,7 @@ class DetectionApp:
             self.video_stream = VideoStream(
                 video_camera=video_camera,
                 display_fps=self.config.display_fps,
-                on_loop=self._on_video_loop,
+                on_end=self._on_video_end,
                 on_seek=self._on_video_seek,
                 initial_generation=old.media_generation + 1,
             )
