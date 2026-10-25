@@ -62,6 +62,15 @@
     $("engine-detail").textContent = health.detail;
   }
 
+  // Space used by the evidence photos (limited by MEDIA_MAX_MB, see dashboard/storage.py) and the database
+  function renderStorage(s) {
+    const share = s.photos_limit ? Math.round((s.photos / s.photos_limit) * 100) : 0;
+    const line = $("storage-use");
+    line.textContent = `Photos ${bytes(s.photos)} of ${bytes(s.photos_limit)} (${share}%) · database ${bytes(s.database)}`
+      + ` · ${bytes(s.disk_free)} free on disk`;
+    line.classList.toggle("is-warning", share >= 90);
+  }
+
   function renderRecords(records) {
     $("records").textContent = `${records.today} / ${records.total}`;
     $("last-record").textContent = `Last detection: ${time(records.last_detected_at)}`;
@@ -175,6 +184,28 @@
   $("dist-form").addEventListener("submit", saveDistances);
   $("dist-cancel").addEventListener("click", () => distDialog.close());
 
+  // ---------- models card ----------
+  // The list is cut to the height of the other cards; the button only shows when something is cut off
+
+  const modelCard = $("model-card");
+  const modelList = $("model-list");
+  const modelToggle = $("model-toggle");
+  const modelCount = modelToggle.textContent;
+  modelToggle.hidden = modelList.scrollHeight <= modelList.clientHeight;
+  function setModelsOpen(open) {
+    modelCard.classList.toggle("is-open", open);
+    modelToggle.setAttribute("aria-expanded", String(open));
+    modelToggle.textContent = open ? "Show less" : modelCount;
+  }
+  modelToggle.addEventListener("click", () => setModelsOpen(!modelCard.classList.contains("is-open")));
+  // Opened, the card covers the table below it: a click elsewhere or Esc closes it
+  document.addEventListener("click", (ev) => {
+    if (modelCard.classList.contains("is-open") && !modelCard.contains(ev.target)) setModelsOpen(false);
+  });
+  document.addEventListener("keydown", (ev) => {
+    if (ev.key === "Escape" && modelCard.classList.contains("is-open")) setModelsOpen(false);
+  });
+
   // ---------- polling ----------
 
   async function refresh() {
@@ -182,20 +213,26 @@
       const data = await api("/api/system/");
       renderEngine(data.engine);
       renderRecords(data.records);
+      renderStorage(data.storage);
       sourcesByKey.clear();
       renderCameras(data.cameras, data.cameras_checked_at);
       renderFiles(data.video_files);
       for (const tbody of [$("camera-rows"), $("file-rows")]) tbody.removeAttribute("aria-busy");
+      // The page is locked until the first status arrives (see system.html)
+      $("system-page").inert = false;
+      $("system-page").removeAttribute("aria-busy");
       $("sys-msg").textContent = "";
     } catch (e) {
       $("sys-msg").textContent = `Could not load status: ${e.message}`;
     }
   }
 
+  // No requests while the tab is hidden; refreshed as soon as it is shown again
   async function poll() {
-    await refresh();
+    if (!document.hidden) await refresh();
     setTimeout(poll, POLL_MS);
   }
+  document.addEventListener("visibilitychange", () => { if (!document.hidden) refresh(); });
 
   poll();
 })();

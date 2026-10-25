@@ -1,16 +1,9 @@
-{% comment %}
-Plate search form, results table and the details / review dialog (search.js).
-Used by the search page and the violations page. violations_only: tick "Violations only" at the start;
-autofocus: focus the plate box (not on the violations page, where it would scroll past the statistics);
-browse: list every record while no plate is typed; plain_rows: no red / green row backgrounds; deletable: checkboxes and delete buttons, shown only
-to users with the delete_records permission (the API checks it too).
-{% endcomment %}
   <h2 class="search-title">Plate search</h2>
   <form id="search-form" class="search-form" role="search">
     <label class="search-field search-plate">
       <span>Plate</span>
-      <input type="text" id="search-q" name="q" maxlength="32" autocomplete="off"{% if autofocus %} autofocus{% endif %}
-             placeholder="e.g. 1กข987, or only 987">
+      <input type="text" id="search-q" name="q" maxlength="300" autocomplete="off"{% if autofocus %} autofocus{% endif %}
+             placeholder="e.g. 1กข987">
     </label>
     <label class="search-field">
       <span>Province <small class="muted">optional</small></span>
@@ -23,17 +16,46 @@ to users with the delete_records permission (the API checks it too).
     <label class="search-check">
       <input type="checkbox" id="search-violations" name="violations_only"{% if violations_only %} checked{% endif %}><span>Violations only</span>
     </label>
-    <button type="submit" class="btn btn-primary">Search</button>
+    <button type="submit" class="btn btn-primary search-btn">
+      <svg viewBox="0 0 16 16" width="15" height="15" aria-hidden="true"><circle cx="6.5" cy="6.5" r="5" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="m10.5 10.5 4 4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+      Search
+    </button>
   </form>
-  <p class="search-help muted">
-    The series and the number are matched separately, so a plate the camera read only partly is still found
-    (6มก65 finds a plate read as 65), and look-alike characters (บ/ป, ด/ต, 3/8…) count as near matches.
-    Closest plates are listed first. Click a row to see its details{% if perms.dashboard.use_dashboard %} and confirm or reject the event{% endif %}.
-  </p>
+  <p class="search-help muted">Plates matching the search | separate several plates with commas(,)</p>
 
   <section class="table-panel search-results" aria-label="Search results">
     <div class="table-head">
       <h2 id="result-title">Results</h2>
+      <div class="source-menu" id="source-menu">
+        <input type="hidden" id="search-source" value="">
+        <button type="button" class="source-btn" aria-haspopup="true" aria-expanded="false" aria-controls="source-list">
+          <span class="source-btn-label">All sources</span>
+          <svg viewBox="0 0 16 16" width="12" height="12" aria-hidden="true"><path d="m4 6 4 4 4-4" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </button>
+        <div class="source-list" id="source-list" hidden>
+          <button type="button" class="source-item" data-value="" data-label="All sources" aria-pressed="true">All sources</button>
+          {% for mode, items in sources.items %}
+          {% if mode == "live" %}{% firstof "Live cameras" as group %}{% else %}{% firstof "Video files" as group %}{% endif %}
+          <div class="source-group">
+            <div class="source-group-head">
+              <button type="button" class="source-toggle" aria-expanded="false" aria-label="Show each of the {{ group|lower }}">
+                <svg viewBox="0 0 16 16" width="12" height="12" aria-hidden="true"><path d="m6 4 4 4-4 4" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+              </button>
+              <button type="button" class="source-item" data-value="{{ mode }}" data-label="All {{ group|lower }}" aria-pressed="false">
+                {{ group }} <span class="source-count">{{ items|length }}</span>
+              </button>
+            </div>
+            <div class="source-children" hidden>
+              {% for value, label in items %}
+              <button type="button" class="source-item" data-value="{{ value }}" data-label="{{ label }}" aria-pressed="false">{{ label }}</button>
+              {% empty %}
+              <span class="source-none muted">None</span>
+              {% endfor %}
+            </div>
+          </div>
+          {% endfor %}
+        </div>
+      </div>
       <span class="form-msg" id="search-msg" role="status" aria-live="polite"></span>
       {% if deletable and perms.dashboard.delete_records %}
       {# Delete turns on selection mode and hides itself: checkboxes, All, Cancel and Delete selected take its place #}

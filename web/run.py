@@ -47,6 +47,10 @@ def main():
 
     from admin.wsgi import application
     from dashboard.engine import stop_service   # detection starts from the live view, not here
+    from dashboard.storage import start_cleanup_thread
+
+    # Old records and photos are removed now and every few hours (limits in .env, see dashboard/storage.py)
+    start_cleanup_thread()
 
     host = os.getenv("DASHBOARD_HOST", "127.0.0.1")
     port = int(os.getenv("DASHBOARD_PORT", "8000"))

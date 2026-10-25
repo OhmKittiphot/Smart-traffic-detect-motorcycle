@@ -4,9 +4,10 @@ from pathlib import Path
 
 import cv2
 from django.conf import settings
+from django.contrib.auth import update_session_auth_hash
 from django.contrib.auth.views import LoginView
 from django.core.cache import cache
-from django.db.models import Count, Q
+from django.db.models import Count, Max, Q
 from django.db.models.functions import TruncDate
 from django.http import FileResponse, Http404, HttpResponse, StreamingHttpResponse
 from django.shortcuts import get_object_or_404, render
@@ -14,14 +15,17 @@ from django.utils import timezone
 from django.views.decorators.http import require_GET
 from rest_framework import status
 from rest_framework.response import Response
+from rest_framework.throttling import ScopedRateThrottle
 from rest_framework.views import APIView
 
-from . import system_health
+from . import storage, system_health
 from .engine import (current_service, engine_health, get_service, grab_frame, list_live_sources,
                      list_video_files)
-from .models import AuditLog, CameraSettings, Review, SpeedCalibration, VehicleRecord, Violation
-from .plate_search import normalize_query, rank_plates
-from .serializers import (CalibrationSerializer, PlateSearchSerializer, ReviewSerializer, SeekSerializer,
+from .models import (AuditLog, CameraSettings, Review, SpeedCalibration, SystemSettings, UserPreferences,
+                     VehicleRecord, Violation)
+from .plate_search import normalize_query, rank_plates, split_queries
+from .serializers import (CalibrationSerializer, PasswordChangeSerializer, PauseSerializer, PlateSearchSerializer,
+                          PreferencesSerializer, ReviewSerializer, SeekSerializer, SystemSettingsSerializer,
                           VehicleDeleteSerializer,
                           SourceDistancesSerializer, SourceKeySerializer, SourceSerializer,
                           VehicleQuerySerializer, VehicleRecordSerializer)
@@ -33,6 +37,8 @@ _MAX_NEW_ROWS = 200
 _SEARCH_MIN_SCORE = 0.6
 _SEARCH_MAX_PLATES = 300
 _SEARCH_MAX_ROWS = 300
+# Violations sent per poll for the in-page notifications (the others are only counted)
+_MAX_NOTIFY_ROWS = 3
 # Rows per page when the violations page lists every record (no plate typed)
 _BROWSE_PAGE_ROWS = 100
 # Violation statistics cover this many days, today included
@@ -69,17 +75,29 @@ def lockout(request, original_response=None, credentials=None):
 
 @require_GET
 def dashboard(request):
-    get_service()   # start detection if it is not running yet (e.g. a session from before a restart)
-    from app_config import AppConfig
-
-    config = AppConfig.from_env()
+    get_service(request.session.session_key)   # start detection if it is not running yet
+    prefs = UserPreferences.load(request.user)
     return render(request, "dashboard/dashboard.html", {
         "video_files": list_video_files(),
         "live_sources": [(key, label) for key, (label, _) in list_live_sources().items()],
         "saved": CameraSettings.load(),
-        "speed_limit": config.speed_limit_kmh,
-        "max_riders": config.max_riders,
+        "rules": SystemSettings.load(),
+        "prefs": prefs,
+        "prefs_data": PreferencesSerializer(prefs).data,
     })
+
+
+def _source_options():
+    """{"live": [...], "file": [...]} of (value, label) for the source dropdown: the IP camera and the add-on
+    cameras, the files in the input folder, and any other source records were saved from (e.g. a file
+    since removed). The value is "<source_mode>:<source_name>", as the records store it and as
+    PlateSearchSerializer.source takes it (add-on cameras are saved under their label, the IP camera as "")."""
+    names = {"live": {"", *(label for label, _ in list_live_sources().values())}, "file": set(list_video_files())}
+    for mode, name in VehicleRecord.objects.order_by().values_list("source_mode", "source_name").distinct():
+        names.setdefault(mode, set()).add(name)
+    label = lambda mode, name: name or ("IP camera (RTSP)" if mode == "live" else "Video file")
+    return {mode: [(f"{mode}:{name}", label(mode, name)) for name in sorted(found, key=lambda n: (n != "", n.lower()))]
+            for mode, found in names.items()}
 
 
 def _province_names():
@@ -94,13 +112,14 @@ def _province_names():
 @require_GET
 def plate_search(request):
     """Plate search on its own."""
-    return render(request, "dashboard/search.html", {"provinces": _province_names()})
+    return render(request, "dashboard/search.html", {"provinces": _province_names(), "sources": _source_options()})
 
 
 @require_GET
 def violations(request):
     """Violation statistics, with the plate search under them."""
-    return render(request, "dashboard/violations.html", {"provinces": _province_names()})
+    return render(request, "dashboard/violations.html",
+                  {"provinces": _province_names(), "sources": _source_options()})
 
 
 def _detection_models(config):
@@ -126,7 +145,9 @@ def system_status(request):
     """Admin: camera and system health (it only checks detection, it never starts it)."""
     from app_config import AppConfig
 
-    return render(request, "dashboard/system.html", {"models": _detection_models(AppConfig.from_env())})
+    models = _detection_models(AppConfig.from_env())
+    return render(request, "dashboard/system.html",
+                  {"models": models, "models_missing": sum(not m["found"] for m in models)})
 
 
 # ---------- API used by the dashboard page (Django REST Framework) ----------
@@ -135,7 +156,7 @@ def system_status(request):
 class StatusView(APIView):
     def get(self, request):
         """Engine state, playback position and today's vehicle counts (polled every second)."""
-        data = get_service().status()
+        data = get_service(request.session.session_key).status()
         today = timezone.localtime().replace(hour=0, minute=0, second=0, microsecond=0)
         records = VehicleRecord.objects.filter(detected_at__gte=today)
         total = records.count()
@@ -159,13 +180,39 @@ class VehicleListView(APIView):
         return Response({"rows": VehicleRecordSerializer(records, many=True).data})
 
 
-def _plate_matches(q, province, violations_only) -> list:
-    """Records whose plate looks like q, best match first (see plate_search.py)."""
-    records = VehicleRecord.objects.exclude(plate_text="").select_related("reviewed_by")
-    if violations_only:
+class NewViolationsView(APIView):
+    def get(self, request):
+        """Violations recorded after ?after=<id>, for the in-page notifications on every page: the newest few
+        as rows, and how many there are. With after=0 only the id to start from is sent, so violations
+        from before the page opened are not announced."""
+        query = VehicleQuerySerializer(data=request.query_params)
+        query.is_valid(raise_exception=True)
+        after = query.validated_data["after"]
+        last_id = VehicleRecord.objects.aggregate(last=Max("id"))["last"] or 0
+        if after == 0:
+            return Response({"last_id": last_id, "total": 0, "rows": []})
+        new = VehicleRecord.objects.filter(id__gt=after, is_violation=True)
+        return Response({"last_id": last_id, "total": new.count(),
+                         "rows": VehicleRecordSerializer(new[:_MAX_NOTIFY_ROWS], many=True).data})
+
+
+def _filtered(records, filters):
+    """records narrowed by the list's filters (validated PlateSearchSerializer data)."""
+    if filters["violations_only"]:
         records = records.filter(is_violation=True)
-    if province:
-        records = records.filter(province_text=province)
+    if filters["province"]:
+        records = records.filter(province_text=filters["province"])
+    if filters["source"]:
+        mode, one_source, name = filters["source"].partition(":")
+        records = records.filter(source_mode=mode)
+        if one_source:   # "<mode>:<name>" is one camera or file; "<mode>" alone is the whole group
+            records = records.filter(source_name=name)
+    return records
+
+
+def _plate_matches(q, filters) -> list:
+    """Records whose plate looks like q, best match first (see plate_search.py)."""
+    records = _filtered(VehicleRecord.objects.exclude(plate_text="").select_related("reviewed_by"), filters)
     # Score each distinct plate once; a plate seen many times is still one comparison
     plates = records.order_by().values_list("plate_text", flat=True).distinct()
     scores = rank_plates(q, plates, _SEARCH_MIN_SCORE)
@@ -178,14 +225,9 @@ def _plate_matches(q, province, violations_only) -> list:
     return matches
 
 
-def _all_records(province, violations_only):
+def _all_records(filters):
     """Every record (unreadable plates too), newest first: the list shown before a plate is typed."""
-    records = VehicleRecord.objects.select_related("reviewed_by")
-    if violations_only:
-        records = records.filter(is_violation=True)
-    if province:
-        records = records.filter(province_text=province)
-    return records
+    return _filtered(VehicleRecord.objects.select_related("reviewed_by"), filters)
 
 
 class PlateSearchView(APIView):
@@ -194,10 +236,10 @@ class PlateSearchView(APIView):
         newest first, a page at a time (next_before: the "before" of the next page, or null)."""
         query = PlateSearchSerializer(data=request.query_params)
         query.is_valid(raise_exception=True)
-        q, province, violations_only, before = (query.validated_data[f]
-                                                for f in ("q", "province", "violations_only", "before"))
+        filters = query.validated_data
+        q, before = filters["q"], filters["before"]
         if not q:
-            records = _all_records(province, violations_only)
+            records = _all_records(filters)
             total = records.count()
             if before:
                 records = records.filter(id__lt=before)
@@ -206,9 +248,10 @@ class PlateSearchView(APIView):
             return Response({"query": "", "total": total, "next_before": next_before,
                              "rows": VehicleRecordSerializer(page, many=True).data})
 
-        matches = _plate_matches(q, province, violations_only)
+        matches = _plate_matches(q, filters)
         rows = VehicleRecordSerializer(matches[:_SEARCH_MAX_ROWS], many=True).data
-        return Response({"query": normalize_query(q), "total": len(matches), "next_before": None, "rows": rows})
+        query = ", ".join(normalize_query(plate) for plate in split_queries(q))
+        return Response({"query": query, "total": len(matches), "next_before": None, "rows": rows})
 
 
 class VehicleReviewView(APIView):
@@ -227,32 +270,10 @@ class VehicleReviewView(APIView):
         return Response(VehicleRecordSerializer(record).data)
 
 
-def _delete_records(ids) -> int:
-    """Delete these vehicle records and their evidence photos; returns how many were deleted.
-    Exactly the given rows go, so records saved meanwhile (and their photos) stay."""
-    media_root = Path(settings.MEDIA_ROOT).resolve()
-    ids = list(ids)
-    deleted = 0
-    for i in range(0, len(ids), 500):   # stay under SQLite's limit on query parameters
-        chunk = VehicleRecord.objects.filter(id__in=ids[i:i + 500])
-        for snap in chunk.exclude(snapshot="").values_list("snapshot", flat=True):
-            path = (media_root / snap).resolve()
-            if media_root in path.parents:   # paths come from our own DB, but never touch anything else
-                path.unlink(missing_ok=True)
-        deleted += chunk.delete()[0]
-    # Remove day folders left empty
-    snap_root = media_root / "snapshots"
-    if snap_root.is_dir():
-        for folder in snap_root.iterdir():
-            if folder.is_dir() and not any(folder.iterdir()):
-                folder.rmdir()
-    return deleted
-
-
 class VehicleClearView(APIView):
     def post(self, request):
-        """Delete every vehicle record and its evidence snapshot (live view)."""
-        deleted = _delete_records(VehicleRecord.objects.values_list("id", flat=True))
+        """Delete every vehicle record and its evidence snapshot (live view; needs delete_records)."""
+        deleted = storage.delete_records(VehicleRecord.objects.values_list("id", flat=True))
         _audit(request, "clear_vehicles", f"{deleted} records")
         return Response({"deleted": deleted})
 
@@ -267,10 +288,10 @@ class VehicleDeleteView(APIView):
         if not data["all"]:
             ids = data["ids"]
         elif data["q"]:
-            ids = [r.id for r in _plate_matches(data["q"], data["province"], data["violations_only"])]
+            ids = [r.id for r in _plate_matches(data["q"], data)]
         else:
-            ids = _all_records(data["province"], data["violations_only"]).values_list("id", flat=True)
-        deleted = _delete_records(ids)
+            ids = _all_records(data).values_list("id", flat=True)
+        deleted = storage.delete_records(ids)
         which = "whole list" if data["all"] else "selected"
         _audit(request, "delete_vehicles", f"{deleted} records ({which})")
         return Response({"deleted": deleted})
@@ -305,10 +326,12 @@ class SourceView(APIView):
 
 class PauseView(APIView):
     def post(self, request):
-        """Pause or resume the video file."""
+        """Pause or resume the video file: {"paused": true/false} sets it, {} flips it."""
+        serializer = PauseSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
         service = get_service()
         try:
-            paused = service.toggle_pause()
+            paused = service.toggle_pause(serializer.validated_data.get("paused"))
         except RuntimeError as e:
             return _conflict(e)
         _audit(request, "pause" if paused else "resume", service.describe_source())
@@ -483,6 +506,58 @@ class SourceCalibrationRemoveView(APIView):
         return Response({"source_key": key})
 
 
+class SystemSettingsView(APIView):
+    def post(self, request):
+        """Admin: change the violation rules and the retention limits. New rules apply at once when
+        detection is on; new limits apply at the next clean-up."""
+        system = SystemSettings.load()
+        serializer = SystemSettingsSerializer(system, data=request.data)
+        serializer.is_valid(raise_exception=True)
+        changed = [f"{name}={value}" for name, value in serializer.validated_data.items()
+                   if getattr(system, name) != value]
+        system = serializer.save(updated_by=request.user)
+        service = current_service()
+        if service is not None:
+            service.apply_rules(system.max_riders, float(system.speed_limit_kmh))
+        if changed:
+            _audit(request, "system_settings", ", ".join(changed))
+        return Response(SystemSettingsSerializer(system).data)
+
+
+class SettingsCleanupView(APIView):
+    def post(self, request):
+        """Admin: apply the retention limits now instead of waiting for the next scheduled clean-up."""
+        result = storage.clean_up()
+        _audit(request, "storage_cleanup",
+               f"{result['records_deleted']} records, photos of {result['photos_removed']} records")
+        return Response(result)
+
+
+class PreferencesView(APIView):
+    def post(self, request):
+        """Save this account's preferences; the Settings pop-up sends only the fields its page shows."""
+        serializer = PreferencesSerializer(UserPreferences.load(request.user), data=request.data, partial=True)
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+        return Response(serializer.data)
+
+
+class PasswordView(APIView):
+    # Limits guessing the current password from a session left open
+    throttle_classes = [ScopedRateThrottle]
+    throttle_scope = "password"
+
+    def post(self, request):
+        """Change the password of the logged-in account; this session stays logged in, others end."""
+        serializer = PasswordChangeSerializer(data=request.data, context={"user": request.user})
+        serializer.is_valid(raise_exception=True)
+        request.user.set_password(serializer.validated_data["new_password"])
+        request.user.save(update_fields=["password"])
+        update_session_auth_hash(request, request.user)
+        _audit(request, "change_password")
+        return Response({"ok": True})
+
+
 class StatsView(APIView):
     def get(self, request):
         """Violation statistics for the search page: totals, violations by type and per day."""
@@ -511,6 +586,20 @@ class StatsView(APIView):
             "per_day": [{"date": d.strftime("%d/%m"),
                          "total": per_day.get(d, {}).get("total", 0),
                          "violation": per_day.get(d, {}).get("violation", 0)} for d in days],
+        })
+
+
+class CameraStatusView(APIView):
+    def get(self, request):
+        """Admin: only whether each live camera answers, for the camera notifications (notify.js).
+        Uses the same check as the system status page, so it is cheap to ask often."""
+        from app_config import AppConfig
+
+        cameras, checked_at = system_health.cameras(AppConfig.from_env().rtsp_url)
+        return Response({
+            "cameras": [{"key": c["key"], "label": c["label"], "state": c["state"], "detail": c["detail"]}
+                        for c in cameras],
+            "checked_at": datetime.fromtimestamp(checked_at, tz=timezone.get_current_timezone()),
         })
 
 
@@ -548,6 +637,7 @@ class SystemStatusView(APIView):
             "cameras": cameras,
             "cameras_checked_at": datetime.fromtimestamp(checked_at, tz=timezone.get_current_timezone()),
             "video_files": files,
+            "storage": storage.usage(),
             "records": {
                 "total": records.count(),
                 "today": records.filter(detected_at__gte=today).count(),
@@ -564,23 +654,31 @@ class SystemStatusView(APIView):
 def stream(request):
     """MJPEG stream of the annotated video (or the No Signal card)."""
     session = request.session
+    viewer = session.session_key
     interval = 1.0 / settings.STREAM_FPS
 
     def frames():
         last = None
-        next_check = time.time() + 30
+        last_sent_t = 0.0
+        next_check = time.time() + 1
+        # Each frame is followed by the next part's header: browsers draw a frame only once that header
+        # arrives, so a paused video's single frame would otherwise stay black
+        part_head = b"--frame\r\nContent-Type: image/jpeg\r\n\r\n"
+        yield part_head
         while True:
-            # A stream outlives its page; stop it once the session has expired or the user logged out
+            # A stream outlives its page; stop it once the session has expired or the user logged out.
+            # Checked every second so it cannot restart detection just after logout stopped it
             if time.time() >= next_check:
-                next_check = time.time() + 30
+                next_check = time.time() + 1
                 if not session.exists(session.session_key) or session.get_expiry_date() <= timezone.now():
                     return
             # Looked up every frame: an open stream keeps detection on, and follows it if it restarted
-            jpeg = get_service().jpeg()
-            if jpeg and jpeg is not last:
-                last = jpeg
-                yield (b"--frame\r\nContent-Type: image/jpeg\r\nContent-Length: "
-                       + str(len(jpeg)).encode() + b"\r\n\r\n" + jpeg + b"\r\n")
+            jpeg = get_service(viewer).jpeg()
+            # An unchanged frame (paused video) is sent again every second: the server only notices a
+            # closed page when it writes, and a stream that never writes would hold its thread forever
+            if jpeg and (jpeg is not last or time.time() - last_sent_t >= 1.0):
+                last, last_sent_t = jpeg, time.time()
+                yield jpeg + b"\r\n" + part_head
             time.sleep(interval)
 
     response = StreamingHttpResponse(frames(), content_type="multipart/x-mixed-replace; boundary=frame")
@@ -589,12 +687,14 @@ def stream(request):
 
 
 @require_GET
-def snapshot(request, pk: int):
-    record = VehicleRecord.objects.filter(pk=pk).only("snapshot").first()
-    if record is None or not record.snapshot:
+def snapshot(request, pk: int, field: str = "snapshot"):
+    """An evidence photo: the motorcycle (field "snapshot") or its licence plate ("plate_snapshot")."""
+    record = VehicleRecord.objects.filter(pk=pk).only(field).first()
+    photo = getattr(record, field) if record is not None else ""
+    if not photo:
         raise Http404
     media_root = Path(settings.MEDIA_ROOT).resolve()
-    path = (media_root / record.snapshot).resolve()
+    path = (media_root / photo).resolve()
     # Paths come from our own DB, but never serve anything outside MEDIA_ROOT
     if media_root not in path.parents or not path.is_file():
         raise Http404

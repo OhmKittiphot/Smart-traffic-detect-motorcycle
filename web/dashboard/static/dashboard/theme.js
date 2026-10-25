@@ -1,8 +1,8 @@
 "use strict";
 
 // Light / dark theme. Loaded in <head> without defer so the theme is set before the page is drawn.
-// The choice ("auto", "light" or "dark") is a per-browser preference kept in localStorage;
-// "auto" follows the clock: light from 06:00 to 18:00, dark otherwise.
+// The choice ("auto", "light" or "dark") is made with the button in the Settings pop-up (#theme-btn) and is a
+// per-browser preference kept in localStorage; "auto" follows the clock: light from 06:00 to 18:00, dark otherwise.
 (() => {
   const KEY = "cctv-theme";
   const CHOICES = ["auto", "light", "dark"];
@@ -64,8 +64,7 @@
   function updateButton(pref) {
     const btn = document.getElementById("theme-btn");
     if (btn) {
-      const label = btn.querySelector(".theme-label");
-      if (label) label.textContent = LABELS[pref];
+      btn.querySelector(".theme-label").textContent = LABELS[pref];
       btn.title = pref === "auto"
         ? `Theme: Auto (light ${DAY_START}:00–${DAY_END}:00, now ${root.dataset.theme}). Click to change.`
         : `Theme: ${LABELS[pref]}. Click to change.`;
@@ -81,7 +80,7 @@
     apply(readPref());
     ready = true;
     const btn = document.getElementById("theme-btn");
-    if (!btn) return;
+    if (!btn) return;   // the login page has no Settings pop-up
     btn.addEventListener("click", () => {
       const next = CHOICES[(CHOICES.indexOf(readPref()) + 1) % CHOICES.length];
       savePref(next);

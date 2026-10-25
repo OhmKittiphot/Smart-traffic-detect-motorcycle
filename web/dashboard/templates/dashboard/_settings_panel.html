@@ -1,0 +1,143 @@
+{% comment %}data-units: how this account sees speeds and distances (Dashboard.units in common.js); only staff
+   with the live view choose it, everyone else sees metric{% endcomment %}
+<div id="settings-panel" class="settings-pop" popover aria-labelledby="settings-title" data-units="{% if live_view %}{{ prefs.units }}{% else %}metric{% endif %}">
+  <div class="settings-pop-head">
+    <h2 id="settings-title">Settings</h2>
+    <button type="button" class="btn btn-ghost btn-sm" popovertarget="settings-panel" popovertargetaction="hide" aria-label="Close settings">✕</button>
+  </div>
+
+  {% if system %}
+  <form class="settings-form" data-api="{% url 'api_settings_system' %}" data-ok="Saved">
+    <fieldset>
+      <legend>Violation rules</legend>
+      <label class="settings-row">
+        <span>Speed limit <small>0 = not checked</small></span>
+        <span class="input-unit"><input type="number" name="speed_limit_kmh" min="0" max="300" step="1" value="{{ system.speed_limit_kmh }}" required><span>km/h</span></span>
+      </label>
+      <label class="settings-row">
+        <span>Riders allowed</span>
+        <span class="input-unit"><input type="number" name="max_riders" min="1" max="10" step="1" value="{{ system.max_riders }}" required><span>people</span></span>
+      </label>
+    </fieldset>
+    <fieldset>
+      <legend>Keep data </legend>
+      <label class="settings-row">
+        <span>Records</span>
+        <span class="input-unit"><input type="number" name="record_retention_days" min="1" max="3650" step="1" value="{{ system.record_retention_days }}" required><span>days</span></span>
+      </label>
+      <label class="settings-row">
+        <span>Photos <small>normal / rejected</small></span>
+        <span class="input-unit"><input type="number" name="photo_retention_days" min="1" max="3650" step="1" value="{{ system.photo_retention_days }}" required><span>days</span></span>
+      </label>
+      <label class="settings-row">
+        <span>Photo space</span>
+        <span class="input-unit"><input type="number" name="media_max_mb" min="100" max="1000000" step="1" value="{{ system.media_max_mb }}" required><span>MB</span></span>
+      </label>
+    </fieldset>
+    <div class="settings-actions">
+      <button type="submit" class="btn btn-sm btn-primary">Save</button>
+      <button type="button" class="btn btn-sm" id="cleanup-btn" data-api="{% url 'api_settings_cleanup' %}">Clean up now</button>
+    </div>
+    <p class="form-msg" role="status" aria-live="polite">{% if system.updated_by %}<span class="muted">Changed by {{ system.updated_by.get_username }}, {{ system.updated_at|date:"d/m H:i" }}</span>{% endif %}</p>
+  </form>
+  {% endif %}
+
+  {% comment %}This account's preferences: saved as soon as something changes, and applied at once.
+     The theme button is not a field: theme.js keeps the theme in this browser instead{% endcomment %}
+  <form class="settings-form" data-api="{% url 'api_settings_preferences' %}" data-ok="Saved" data-autosave>
+    <fieldset>
+      <legend>Display</legend>
+      <div class="settings-row">
+        <span>Theme</span>
+        {# Each click: Auto → Light → Dark (theme.js) #}
+        <button type="button" class="btn btn-sm theme-btn" id="theme-btn" aria-label="Change theme">
+          <svg class="ic-auto" viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><circle cx="12" cy="12" r="8" fill="none" stroke="currentColor" stroke-width="2"/><path d="M12 4a8 8 0 0 1 0 16z" fill="currentColor"/></svg>
+          <svg class="ic-light" viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><circle cx="12" cy="12" r="4.5" fill="currentColor"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M4.9 19.1 7 17M17 7l2.1-2.1" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+          <svg class="ic-dark" viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path d="M20 14.5A8 8 0 1 1 9.5 4a6.5 6.5 0 0 0 10.5 10.5z" fill="currentColor"/></svg>
+          <span class="theme-label">Auto</span>
+        </button>
+      </div>
+      {% if live_view %}
+      <label class="settings-row">
+        <span>Units</span>
+        <select name="units">
+          {% for value, label in units %}<option value="{{ value }}" {% if prefs.units == value %}selected{% endif %}>{{ label }}</option>{% endfor %}
+        </select>
+      </label>
+      {% endif %}
+    </fieldset>
+    {% if live_view %}
+    <fieldset>
+      <legend>Live view</legend>
+      <label class="settings-row">
+        <span>Table shows</span>
+        <select name="table_filter">
+          <option value="all" {% if prefs.table_filter == "all" %}selected{% endif %}>All</option>
+          <option value="normal" {% if prefs.table_filter == "normal" %}selected{% endif %}>Normal only</option>
+          <option value="violation" {% if prefs.table_filter == "violation" %}selected{% endif %}>Violations only</option>
+        </select>
+      </label>
+      <label class="settings-row">
+        <span>Skip back / forward</span>
+        <select name="seek_step_s">
+          {% for s in seek_steps %}<option value="{{ s }}" {% if prefs.seek_step_s == s %}selected{% endif %}>{{ s }} s</option>{% endfor %}
+        </select>
+      </label>
+      <label class="settings-row">
+        <span>Speed chart</span>
+        <input type="checkbox" class="switch" name="show_fps_chart" {% if prefs.show_fps_chart %}checked{% endif %}>
+      </label>
+    </fieldset>
+    {% endif %}
+    {% if records or cameras %}
+    <fieldset>
+      <legend>Notifications</legend>
+      {% if records %}
+      <label class="settings-row">
+        <span>New violations </span>
+        <input type="checkbox" class="switch" name="violation_notify" {% if prefs.violation_notify %}checked{% endif %}>
+      </label>
+      {% endif %}
+      {% if cameras %}
+      <label class="settings-row">
+        <span>Live camera status <small>offline / back online</small></span>
+        <input type="checkbox" class="switch" name="camera_notify" {% if prefs.camera_notify %}checked{% endif %}>
+      </label>
+      {% endif %}
+    </fieldset>
+    {% endif %}
+    <p class="form-msg" role="status" aria-live="polite"></p>
+  </form>
+
+  <details class="settings-password">
+    <summary>Change password</summary>
+    <form class="settings-form" data-api="{% url 'api_settings_password' %}" data-ok="Password changed" data-reset>
+      {# For password managers only; not sent #}
+      <input type="text" value="{{ user.get_username }}" autocomplete="username" aria-hidden="true" hidden>
+      <label class="settings-row"><span>Current</span><input type="password" name="old_password" autocomplete="current-password" required></label>
+      <label class="settings-row"><span>New</span><input type="password" name="new_password" autocomplete="new-password" required></label>
+      <label class="settings-row"><span>New again</span><input type="password" name="confirm_password" autocomplete="new-password" required></label>
+      <p class="muted settings-note">Other devices logged in as {{ user.get_username }} are logged out.</p>
+      <div class="settings-actions">
+        <button type="submit" class="btn btn-sm btn-primary">Change password</button>
+      </div>
+      <p class="form-msg" role="status" aria-live="polite"></p>
+    </form>
+  </details>
+
+  <form class="settings-logout" method="post" action="{% url 'logout' %}">
+    {% csrf_token %}
+    <button type="submit" class="btn btn-sm btn-ghost logout-btn">
+      <svg viewBox="0 0 16 16" width="15" height="15" aria-hidden="true"><path d="M6 2.5H3.5a1 1 0 0 0-1 1v9a1 1 0 0 0 1 1H6M10.5 11l3-3-3-3M13.5 8H6" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      Log out <span class="muted">{{ user.get_username }}</span>
+    </button>
+  </form>
+</div>
+
+{% comment %}In-page notifications (notify.js), bottom right of every page: new violations (data-on: switched on)
+   and, for admins, live cameras going offline or coming back (data-camera-api; data-cameras: switched on){% endcomment %}
+{% if records or cameras %}
+<div id="toasts" class="toasts" role="status" aria-live="polite"
+     data-on="{% if records and prefs.violation_notify %}true{% endif %}"
+     {% if cameras %}data-camera-api="{% url 'api_system_cameras' %}" data-cameras="{% if prefs.camera_notify %}true{% endif %}"{% endif %}></div>
+{% endif %}

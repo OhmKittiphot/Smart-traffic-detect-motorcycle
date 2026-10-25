@@ -27,6 +27,70 @@ class CameraSettings(models.Model):
         return obj
 
 
+class SystemSettings(models.Model):
+    """Settings Admins change on the settings page (a single row, pk=1).
+
+    The retention limits start from .env (settings.py); the violation rules start from src/app_config.py."""
+
+    speed_limit_kmh = models.PositiveSmallIntegerField(default=80)   # 0 = speed is not a violation
+    max_riders = models.PositiveSmallIntegerField(default=2)
+    record_retention_days = models.PositiveIntegerField()
+    photo_retention_days = models.PositiveIntegerField()
+    media_max_mb = models.PositiveIntegerField()
+    updated_at = models.DateTimeField(auto_now=True)
+    updated_by = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL)
+
+    class Meta:
+        verbose_name = verbose_name_plural = "System settings"
+
+    @classmethod
+    def load(cls) -> "SystemSettings":
+        obj, _ = cls.objects.get_or_create(pk=1, defaults={
+            "record_retention_days": settings.RECORD_RETENTION_DAYS,
+            "photo_retention_days": settings.PHOTO_RETENTION_DAYS,
+            "media_max_mb": settings.MEDIA_MAX_MB,
+        })
+        return obj
+
+
+class TableFilter(models.TextChoices):
+    ALL = "all", "All"
+    NORMAL = "normal", "Normal"
+    VIOLATION = "violation", "Violation"
+
+
+class Units(models.TextChoices):
+    """How speeds and distances are shown. They are always stored in metric; the page converts them."""
+    METRIC = "metric", "Metric (km/h, m)"
+    IMPERIAL = "imperial", "Imperial (mph, ft)"
+
+
+# Choices of UserPreferences.seek_step_s
+SEEK_STEPS_S = (5, 10, 15, 30)
+
+
+class UserPreferences(models.Model):
+    """How the live view looks and behaves for one staff account."""
+
+    user = models.OneToOneField(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="preferences")
+    table_filter = models.CharField(max_length=10, choices=TableFilter.choices, default=TableFilter.ALL)
+    seek_step_s = models.PositiveSmallIntegerField(default=10)   # << / >> buttons and the arrow keys
+    show_fps_chart = models.BooleanField(default=True)
+    # A pop-up on any dashboard page when a new violation is recorded (notify.js)
+    violation_notify = models.BooleanField(default=False)
+    # Admins: a pop-up when a live camera goes offline or comes back (notify.js)
+    camera_notify = models.BooleanField(default=True)
+    units = models.CharField(max_length=8, choices=Units.choices, default=Units.METRIC)
+
+    class Meta:
+        verbose_name = verbose_name_plural = "User preferences"
+
+    @classmethod
+    def load(cls, user) -> "UserPreferences":
+        obj, _ = cls.objects.get_or_create(user=user)
+        return obj
+
+
 class SpeedCalibration(models.Model):
     """Ground-plane speed calibration of one video source (each camera view needs its own).
 
@@ -80,6 +144,8 @@ class VehicleRecord(models.Model):
     is_violation = models.BooleanField(default=False, db_index=True)
     # Path relative to MEDIA_ROOT
     snapshot = models.CharField(max_length=255, blank=True)
+    # Sharpest crop of the licence plate, when one was found (path relative to MEDIA_ROOT)
+    plate_snapshot = models.CharField(max_length=255, blank=True)
 
     review = models.CharField(max_length=10, choices=Review.choices, default=Review.PENDING, db_index=True)
     review_note = models.CharField(max_length=255, blank=True)
@@ -127,4 +193,5 @@ class Access(models.Model):
             ("view_system_status", "Can view camera and system status"),
             ("manage_calibration", "Can change the distances of, or remove, saved speed calibrations"),
             ("delete_records", "Can delete vehicle records and their evidence photos"),
+            ("manage_settings", "Can change the violation rules and how long records are kept"),
         ]

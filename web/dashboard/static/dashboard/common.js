@@ -48,6 +48,40 @@ window.Dashboard = (() => {
     return node;
   }
 
+  // ---------- units ----------
+  // Speeds and distances come from the server in metric (km/h, m). Staff may choose to see them in
+  // imperial (Settings, data-units on #settings-panel); only what the page shows is converted.
+
+  const KMH_PER_MPH = 1.609344;
+  const M_PER_FT = 0.3048;
+
+  const units = {
+    imperial: () => document.getElementById("settings-panel")?.dataset.units === "imperial",
+    speedText: (kmh) => units.imperial() ? `${Math.round(kmh / KMH_PER_MPH)} mph` : `${Math.round(kmh)} km/h`,
+    // A speed that is redrawn when the units are changed (see refresh)
+    speed: (kmh) => kmh == null ? null : el("span", { "data-kmh": kmh }, units.speedText(kmh)),
+    lengthUnit: () => units.imperial() ? "ft" : "m",
+    // A length in metres as shown in an input, and back
+    toShown: (m) => units.imperial() ? Math.round(m / M_PER_FT * 100) / 100 : m,
+    // Rounded to the millimetre, so the largest length shown (1640.42 ft) is not just over the 500 m limit
+    toMetres: (shown) => units.imperial() ? Math.round(shown * M_PER_FT * 1000) / 1000 : shown,
+    refresh() {
+      for (const node of document.querySelectorAll("[data-kmh]")) {
+        node.textContent = units.speedText(Number(node.dataset.kmh));
+      }
+    },
+  };
+
+  // Units changed in Settings: redraw every speed on the page at once
+  document.addEventListener("settings:preferences", (ev) => {
+    const panel = document.getElementById("settings-panel");
+    if (!panel || !ev.detail.units || ev.detail.units === panel.dataset.units) return;
+    panel.dataset.units = ev.detail.units;
+    units.refresh();
+  });
+  // Speeds written into the page by the server (e.g. the speed limit) are in km/h
+  document.addEventListener("DOMContentLoaded", units.refresh);
+
   // ---------- cells of a vehicle row (one row of /api/vehicles/) ----------
 
   function thumbCell(r) {
@@ -55,6 +89,17 @@ window.Dashboard = (() => {
       ? el("button", { type: "button", class: "thumb-btn", "data-snap": r.id, "aria-label": "View evidence photo" },
           el("img", { class: "thumb", src: `/snapshot/${r.id}/`, alt: "", loading: "lazy" }))
       : el("span", { class: "muted" }, "—");
+  }
+
+  // Plate text, with the plate photo beside it when one was saved (opens larger like the evidence photo)
+  function plateCell(r) {
+    const text = r.plate || el("span", { class: "muted" }, "Unreadable");
+    if (!r.plate_snapshot) return text;
+    const src = `/snapshot/${r.id}/plate/`;
+    return el("span", { class: "plate-with-photo" },
+      el("button", { type: "button", class: "thumb-btn", "data-snap": r.id, "data-snap-src": src,
+        "aria-label": "View plate photo" }, el("img", { class: "plate-thumb", src, alt: "", loading: "lazy" })),
+      text);
   }
 
   function helmetCell(r) {
@@ -76,10 +121,10 @@ window.Dashboard = (() => {
     container.addEventListener("click", (ev) => {
       const btn = ev.target.closest("[data-snap]");
       if (!btn) return;
-      document.getElementById("snap-img").src = `/snapshot/${btn.dataset.snap}/`;
+      document.getElementById("snap-img").src = btn.dataset.snapSrc || `/snapshot/${btn.dataset.snap}/`;
       dialog.showModal();
     });
   }
 
-  return { api, el, thumbCell, helmetCell, statusCell, openSnapshotsFrom };
+  return { api, el, units, thumbCell, plateCell, helmetCell, statusCell, openSnapshotsFrom };
 })();

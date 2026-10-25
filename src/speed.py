@@ -65,8 +65,11 @@ class SpeedEstimator:
         wx, wy = self._to_world((x1 + x2) / 2.0, float(y2))
 
         st = self._tracks.get(track_id)
+        # The same moment again (a repeated frame) adds nothing; restarting would throw the history away
+        if st is not None and t == st["last_t"]:
+            return st["speed"]
         # Time going backwards means the video looped: restart this track's history
-        if st is None or t <= st["last_t"]:
+        if st is None or t < st["last_t"]:
             st = {"raw": deque(maxlen=self.smooth_n), "hist": deque(), "speed": None, "last_t": t}
             self._tracks[track_id] = st
         st["last_t"] = t

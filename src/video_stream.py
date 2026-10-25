@@ -1,5 +1,6 @@
 import threading
 import time
+from typing import Optional
 from datetime import timedelta
 import cv2
 
@@ -155,9 +156,10 @@ class VideoStream:
         with self._pause_lock:
             return self._paused
 
-    def toggle_pause(self) -> bool:
+    def toggle_pause(self, paused: Optional[bool] = None) -> bool:
+        """Flip pause, or set it when paused is given. Returns the new state."""
         with self._pause_lock:
-            self._paused = not self._paused
+            self._paused = (not self._paused) if paused is None else paused
             paused = self._paused
         print(f"[Video] {'PAUSED' if paused else 'RESUMED'}")
         return paused

@@ -5,6 +5,9 @@ an edit distance in which swapping two characters that look alike on a plate (�
 less than swapping two different ones; a '?' stored in a plate (a character OCR could not read) matches
 anything at a small cost. A part only one side has is left out, because OCR often reads the number line
 alone: '6มก65' finds '65', and '690' finds '6ขน 690'.
+
+Several plates can be searched at once, separated by commas ('1กข987, 2847'); a stored plate then scores
+its best match against any of them.
 """
 import re
 
@@ -24,6 +27,8 @@ UNKNOWN_COST = 0.25
 PARTIAL_WEIGHT = 0.9
 # Shorter queries would match nearly every plate
 MIN_QUERY_LENGTH = 2
+# Plates searched at once (comma-separated)
+MAX_QUERIES = 10
 
 _THAI_DIGITS = str.maketrans("๐๑๒๓๔๕๖๗๘๙", "0123456789")
 
@@ -36,6 +41,11 @@ def normalize(text: str) -> str:
 def normalize_query(text: str) -> str:
     """What the user typed, as plate characters; '?' is not a wildcard there, so it is dropped too."""
     return normalize(text).replace(UNKNOWN, "")
+
+
+def split_queries(text: str) -> list:
+    """The plates in a search, split at commas, without blanks or repeats: '1กข987, 2847,' -> ['1กข987', '2847']."""
+    return list(dict.fromkeys(part.strip() for part in str(text).split(",") if part.strip()))
 
 
 def split_plate(text: str) -> tuple:
@@ -96,11 +106,13 @@ def similarity(query: tuple, plate: tuple) -> float:
 
 
 def rank_plates(query: str, plates, min_score: float) -> dict:
-    """{plate: score} of the plates scoring at least min_score."""
-    query = tuple(part.replace(UNKNOWN, "") for part in split_plate(query))
+    """{plate: score} of the plates scoring at least min_score. query may hold several plates separated by
+    commas; each plate scores its best match against any of them."""
+    queries = [tuple(part.replace(UNKNOWN, "") for part in split_plate(q)) for q in split_queries(query)]
     scores = {}
     for plate in plates:
-        score = similarity(query, split_plate(plate))
+        parts = split_plate(plate)
+        score = max(similarity(q, parts) for q in queries)
         if score >= min_score:
             scores[plate] = score
     return scores

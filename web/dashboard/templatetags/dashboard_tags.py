@@ -3,7 +3,27 @@ from django import template
 from django.urls import reverse
 from django.utils.html import format_html, format_html_join
 
+from dashboard.models import SEEK_STEPS_S, SystemSettings, Units, UserPreferences
+
 register = template.Library()
+
+
+@register.inclusion_tag("dashboard/_settings_panel.html", takes_context=True)
+def settings_panel(context):
+    """The top bar's Settings pop-up, with only what the logged-in account may change, and the box the
+    notifications of new violations appear in."""
+    user = context["request"].user
+    return {
+        "user": user,
+        "csrf_token": context.get("csrf_token"),   # for the Log out form
+        "system": SystemSettings.load() if user.has_perm("dashboard.manage_settings") else None,
+        "prefs": UserPreferences.load(user),
+        "live_view": user.has_perm("dashboard.use_dashboard"),
+        "records": user.has_perm("dashboard.view_records"),
+        "cameras": user.has_perm("dashboard.view_system_status"),
+        "seek_steps": SEEK_STEPS_S,
+        "units": Units.choices,
+    }
 
 
 @register.simple_tag(takes_context=True)

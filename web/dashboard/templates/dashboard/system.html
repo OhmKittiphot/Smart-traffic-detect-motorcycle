@@ -5,7 +5,8 @@
 {% include "dashboard/_topbar.html" %}
 
 {# data-can-calibrate: the calibration Calibrate / Edit / Remove buttons are shown (the API checks the permission too) #}
-<main class="search-page system-page" id="system-page"
+{# inert: nothing on the page can be clicked or focused until system.js has loaded the status (the top bar can) #}
+<main class="search-page system-page" id="system-page" inert aria-busy="true"
       data-can-calibrate="{% if perms.dashboard.manage_calibration %}true{% endif %}">
   <div class="table-head">
     <h2>System status</h2>
@@ -18,19 +19,24 @@
       <span class="stat-value" id="engine-state"><span class="skeleton skeleton-value" aria-label="Loading"></span></span>
       <span class="muted" id="engine-detail"><span class="skeleton skeleton-line"></span></span>
     </div>
-    <div class="stat">
-      <span class="stat-label">Models</span>
-      <dl class="model-list">
+    {# As tall as the other cards; "Show all" (system.js) opens this card alone, over what is below it #}
+    <div class="model-slot">
+    <div class="stat model-card" id="model-card">
+      <span class="stat-label">Models{% if models_missing %} <span class="tag tag-bad">{{ models_missing }} missing</span>{% endif %}</span>
+      <dl class="model-list" id="model-list">
         {% for m in models %}
           <dt>{{ m.file }}</dt>
           <dd><b>{{ m.name }}</b>: {{ m.purpose }}{% if not m.found %} <span class="tag tag-bad">file missing</span>{% endif %}</dd>
         {% endfor %}
       </dl>
+      <button type="button" class="link-btn" id="model-toggle" aria-controls="model-list" aria-expanded="false" hidden>Show all {{ models|length }}</button>
+    </div>
     </div>
     <div class="stat">
       <span class="stat-label">Records today / total</span>
       <span class="stat-value" id="records"><span class="skeleton skeleton-value" aria-label="Loading"></span></span>
       <span class="muted" id="last-record"><span class="skeleton skeleton-line"></span></span>
+      <span class="muted" id="storage-use"><span class="skeleton skeleton-line"></span></span>
     </div>
     <div class="stat">
       <span class="stat-label">Violations not reviewed</span>

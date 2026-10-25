@@ -26,6 +26,11 @@ def _env_bool(name: str, default: bool = False) -> bool:
     return os.getenv(name, "1" if default else "0").strip().lower() in ("1", "true", "yes", "on")
 
 
+def _env_int(name: str, default: int) -> int:
+    value = os.getenv(name, "").strip()
+    return int(value) if value.isdigit() else default
+
+
 def _env_list(name: str, default: str = "") -> list:
     return [v.strip() for v in os.getenv(name, default).split(",") if v.strip()]
 
@@ -183,6 +188,9 @@ REST_FRAMEWORK = {
     # JSON in and out; the API is only called by the dashboard page
     "DEFAULT_RENDERER_CLASSES": ["rest_framework.renderers.JSONRenderer"],
     "DEFAULT_PARSER_CLASSES": ["rest_framework.parsers.JSONParser"],
+    # Views with a throttle_scope: the password change checks the current password, which django-axes
+    # (login form only) does not guard
+    "DEFAULT_THROTTLE_RATES": {"password": "10/hour"},
 }
 
 # --- Dashboard ---
@@ -195,6 +203,18 @@ NO_SIGNAL_AFTER_S = 5.0
 LOADING_LAG_S = 1.0
 STREAM_FPS = 12
 STREAM_MAX_WIDTH = 1280
+
+# --- Storage (dashboard/storage.py): evidence photos and records are kept within these limits ---
+# Longest side and JPEG quality of a saved motorcycle photo (plate photos are kept at their own small size)
+SNAPSHOT_MAX_SIDE = _env_int("SNAPSHOT_MAX_SIDE", 720)
+SNAPSHOT_JPEG_QUALITY = 82
+# Records older than this are deleted with their photos, except confirmed violations
+RECORD_RETENTION_DAYS = _env_int("RECORD_RETENTION_DAYS", 90)
+# Normal motorcycles and rejected events lose their photos after this (the records stay)
+PHOTO_RETENTION_DAYS = _env_int("PHOTO_RETENTION_DAYS", 7)
+# Most space the photos may take; the oldest photos that are not evidence go first
+MEDIA_MAX_MB = _env_int("MEDIA_MAX_MB", 2048)
+CLEANUP_EVERY_H = 6
 
 LOGGING = {
     "version": 1,

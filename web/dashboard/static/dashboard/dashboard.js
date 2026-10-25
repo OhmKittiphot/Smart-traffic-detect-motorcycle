@@ -3,9 +3,11 @@
 (() => {
   const STATUS_EVERY_MS = 1000;
   const ROWS_EVERY_MS = 2000;
-  const SEEK_STEP_MS = 10000;
+  // This account's live view preferences, rendered into the page by the view and changed from the
+  // Settings pop-up (see "preferences" below)
+  const prefs = JSON.parse(document.getElementById("prefs").textContent);
   const MAX_ROWS = 300;
-  const { api, el, thumbCell, helmetCell, statusCell, openSnapshotsFrom } = window.Dashboard;
+  const { api, el, units, thumbCell, plateCell, helmetCell, statusCell, openSnapshotsFrom } = window.Dashboard;
 
   const $ = (id) => document.getElementById(id);
   const streamImg = $("stream");
@@ -17,6 +19,9 @@
   const seekbar = $("seekbar");
   const seekInput = $("seek");
   const loadingEl = $("loading");
+  const pauseOverlay = $("pause-overlay");
+  const playFlash = $("play-flash");
+  const videoFrame = document.querySelector(".video-frame");
   const formMsg = $("form-msg");
   const rowsEl = $("vehicle-rows");
   const table = $("vehicles");
@@ -79,6 +84,8 @@
 
     const isFile = s.mode === "file" && s.state === "running" && s.total_ms > 0;
     seekbar.hidden = !isFile;
+    pauseOverlay.hidden = !(isFile && s.paused && !s.loading);
+    videoFrame.classList.toggle("is-file", isFile);
     if (isFile) {
       playback.pos = s.pos_ms;
       playback.total = s.total_ms;
@@ -118,28 +125,40 @@
     $("pos-text").textContent = fmtTime(pos);
   }
 
+  // True after a status poll failed, e.g. while the server restarts
+  let serverLost = false;
+
   async function pollStatus() {
+    if (document.hidden) return;   // a hidden tab does not keep detection on (see engine.IDLE_STOP_S)
     try {
       const s = await api("/api/status/");
+      // The browser gives no event when the server closes the video stream: the picture just freezes
+      // on its last frame. So reopen the stream once the server answers again
+      if (serverLost) {
+        serverLost = false;
+        reloadStream();
+      }
       renderStatus(s);
-      window.FpsChart.push(s.state === "running" ? s.fps : null);
-    } catch (e) { /* keep last state; next poll retries */ }
+      window.FpsChart.push(s.state === "running" ? s.fps : null, s.state === "running" && s.paused);
+    } catch (e) {
+      serverLost = true;   // keep last state; next poll retries
+    }
   }
 
   // ---------- vehicle table ----------
 
-  function buildRow(r, isNew) {
-    const tr = el("tr", { class: (r.violation ? "row-bad" : "row-ok") + (isNew ? " is-new" : "") });
+  function buildRow(r) {
+    const tr = el("tr", { class: r.violation ? "row-bad" : "row-ok" });
     tr.dataset.id = r.id;
 
     tr.append(
       el("td", { class: "time-cell" }, r.time, el("small", {}, r.date)),
       el("td", {}, thumbCell(r)),
-      el("td", { class: "plate" }, r.plate || el("span", { class: "muted" }, "Unreadable")),
+      el("td", { class: "plate" }, plateCell(r)),
       el("td", {}, r.province || "—"),
       el("td", { class: "num" }, r.riders ?? "—"),
       el("td", {}, helmetCell(r)),
-      el("td", { class: "num" }, r.speed != null ? `${Math.round(r.speed)} km/h` : "—"),
+      el("td", { class: "num" }, units.speed(r.speed) ?? "—"),
       el("td", {}, statusCell(r)),
     );
     return tr;
@@ -149,11 +168,21 @@
     if (!rows.length) return;
     // API returns newest first; keep that order at the top of the table
     const frag = document.createDocumentFragment();
-    for (const r of rows) frag.append(buildRow(r, isNew));
+    for (const r of rows) frag.append(buildRow(r));
+    const oldFirst = rowsEl.firstElementChild;
     rowsEl.prepend(frag);
+    if (isNew && oldFirst) printRows(oldFirst.offsetTop - rowsEl.firstElementChild.offsetTop);
     lastId = Math.max(lastId, ...rows.map((r) => r.id));
     while (rowsEl.children.length > MAX_ROWS) rowsEl.lastElementChild.remove();
     updateEmpty();
+  }
+
+  // New rows come out from under the sticky header like a receipt from a printer: the table body starts
+  // moved up by their height and slides down. Skipped when the table is scrolled, so it does not jump.
+  function printRows(height) {
+    if (!height || table.parentElement.scrollTop > 0 || matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+    rowsEl.animate([{ transform: `translateY(${-height}px)` }, { transform: "none" }],
+                   { duration: 450, easing: "cubic-bezier(.25, .8, .3, 1)" });
   }
 
   function updateEmpty() {
@@ -165,30 +194,35 @@
   }
 
   async function pollVehicles() {
+    if (document.hidden) return;   // caught up on return (see visibilitychange)
     try {
       const data = await api(`/api/vehicles/?after=${lastId}`);
       addRows(data.rows, lastId > 0);
     } catch (e) { /* retry next tick */ }
   }
 
+  function selectFilter(filter) {
+    for (const b of document.querySelectorAll(".filters .filter")) {
+      const on = b.dataset.filter === filter;
+      b.classList.toggle("is-active", on);
+      b.setAttribute("aria-selected", on ? "true" : "false");
+    }
+    table.dataset.filter = filter;
+    updateEmpty();
+  }
+
   document.querySelector(".filters").addEventListener("click", (ev) => {
     const btn = ev.target.closest(".filter");
-    if (!btn) return;
-    for (const b of document.querySelectorAll(".filters .filter")) {
-      b.classList.toggle("is-active", b === btn);
-      b.setAttribute("aria-selected", b === btn ? "true" : "false");
-    }
-    table.dataset.filter = btn.dataset.filter;
-    updateEmpty();
+    if (btn) selectFilter(btn.dataset.filter);
   });
 
   // Evidence snapshot preview
   openSnapshotsFrom(rowsEl);
 
-  // Delete all records (after confirmation)
+  // Delete all records (after confirmation); the button is only there with the delete_records permission
   const clearDialog = $("clear-dialog");
   const clearBtn = $("clear-btn");
-  clearBtn.addEventListener("click", () => {
+  clearBtn?.addEventListener("click", () => {
     clearDialog.returnValue = "";
     clearDialog.showModal();
   });
@@ -210,8 +244,21 @@
   // ---------- source control ----------
 
   function reloadStream() {
+    if (document.hidden) return;
     streamImg.src = `/stream/?t=${Date.now()}`;
   }
+
+  // Close the stream and stop polling while the tab is hidden, so detection stops and frees the GPU;
+  // reopen and catch up on return
+  document.addEventListener("visibilitychange", () => {
+    if (document.hidden) {
+      streamImg.removeAttribute("src");
+    } else {
+      reloadStream();
+      pollStatus();
+      pollVehicles();
+    }
+  });
 
   form.addEventListener("change", syncFormState);
 
@@ -247,10 +294,20 @@
 
   // ---------- playback control (video files) ----------
 
+  // Play a CSS animation again from the start, also when it is still running
+  function restartAnimation(node, cls) {
+    node.classList.remove(cls);
+    void node.offsetWidth;   // reflow, so adding the class back starts the animation over
+    node.classList.add(cls);
+  }
+
   async function togglePause() {
     try {
       const r = await api("/api/pause/", { method: "POST", body: "{}" });
       playBtn.classList.toggle("is-paused", r.paused);
+      pauseOverlay.hidden = !r.paused;   // pops in when shown
+      if (!r.paused) restartAnimation(playFlash, "is-shown");
+      restartAnimation(playBtn, "is-bumped");
       pollStatus();
     } catch (e) {
       showMsg(e.message, "error");
@@ -292,8 +349,10 @@
   }
 
   playBtn.addEventListener("click", togglePause);
-  $("back-btn").addEventListener("click", () => skip(-SEEK_STEP_MS));
-  $("fwd-btn").addEventListener("click", () => skip(SEEK_STEP_MS));
+  // Clicking on a video file plays / pauses it, like a video player
+  videoFrame.addEventListener("click", () => { if (!seekbar.hidden) togglePause(); });
+  $("back-btn").addEventListener("click", () => skip(-prefs.seek_step_s * 1000));
+  $("fwd-btn").addEventListener("click", () => skip(prefs.seek_step_s * 1000));
 
   seekInput.addEventListener("input", () => {
     dragging = true;
@@ -309,8 +368,16 @@
     if (seekbar.hidden || ev.altKey || ev.ctrlKey || ev.metaKey) return;
     if (ev.target.closest("input, select, textarea, button, dialog")) return;
     if (ev.key === " ") { ev.preventDefault(); togglePause(); }
-    else if (ev.key === "ArrowLeft") { ev.preventDefault(); skip(-SEEK_STEP_MS); }
-    else if (ev.key === "ArrowRight") { ev.preventDefault(); skip(SEEK_STEP_MS); }
+    else if (ev.key === "ArrowLeft") { ev.preventDefault(); skip(-prefs.seek_step_s * 1000); }
+    else if (ev.key === "ArrowRight") { ev.preventDefault(); skip(prefs.seek_step_s * 1000); }
+  });
+
+  // Leaving the live view pauses a playing video file, so it does not run on while no one watches.
+  // keepalive lets the request finish after the page is gone
+  window.addEventListener("pagehide", () => {
+    if (seekbar.hidden || !playback.playing) return;
+    api("/api/pause/", { method: "POST", body: JSON.stringify({ paused: true }), keepalive: true })
+      .catch(() => {});
   });
 
   // The MJPEG connection drops if the server restarts; reconnect after a short wait
@@ -360,6 +427,45 @@
       pollStatus();
     } catch (e) {
       showMsg(e.message, "error");
+    }
+  });
+
+  // ---------- preferences ----------
+  // Saved in the Settings pop-up (settings.js): applied at once, as the page would show them after a reload
+
+  // The speed chart slides open / closed: its height (and the grid gap above it) grows from or shrinks to 0
+  const fpsChart = $("fps-chart");
+  let chartShown = !fpsChart.hidden;
+
+  function showChart(show) {
+    if (show === chartShown) return;
+    chartShown = show;
+    for (const a of fpsChart.getAnimations()) a.cancel();   // switched again mid-way: start over
+    fpsChart.hidden = false;
+    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+      fpsChart.hidden = !show;
+      return;
+    }
+    const cs = getComputedStyle(fpsChart);
+    const open = { height: `${fpsChart.offsetHeight}px`, paddingTop: cs.paddingTop, paddingBottom: cs.paddingBottom,
+                   borderTopWidth: cs.borderTopWidth, borderBottomWidth: cs.borderBottomWidth, marginTop: "0px", opacity: 1 };
+    const closed = { height: "0px", paddingTop: "0px", paddingBottom: "0px", borderTopWidth: "0px",
+                     borderBottomWidth: "0px", marginTop: `-${getComputedStyle(fpsChart.parentElement).rowGap}`, opacity: 0 };
+    fpsChart.style.overflow = "hidden";
+    const anim = fpsChart.animate(show ? [closed, open] : [open, closed], { duration: 250, easing: "ease" });
+    anim.onfinish = () => {
+      fpsChart.style.overflow = "";
+      if (!show) fpsChart.hidden = true;
+    };
+  }
+
+  document.addEventListener("settings:preferences", (ev) => {
+    Object.assign(prefs, ev.detail);
+    selectFilter(prefs.table_filter);
+    showChart(prefs.show_fps_chart);
+    for (const [id, way] of [["back-btn", "Back"], ["fwd-btn", "Forward"]]) {
+      $(id).title = `${way} ${prefs.seek_step_s} seconds (${way === "Back" ? "←" : "→"})`;
+      $(id).setAttribute("aria-label", `${way} ${prefs.seek_step_s} seconds`);
     }
   });
 

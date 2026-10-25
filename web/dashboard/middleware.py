@@ -7,8 +7,14 @@ from django.shortcuts import redirect
 class PagePermissionMiddleware:
     # Open without the check: Django admin checks its own permissions
     allowed_paths = ["/login/", "/logout/", "/admin/", "/static/"]
-    # Permission needed per path prefix (first match wins); every other page needs use_dashboard
+    # Permission needed per path prefix (first match wins; None = any logged-in user);
+    # every other page needs use_dashboard
     path_permissions = [
+        ("/api/settings/system/", "dashboard.manage_settings"),
+        ("/api/settings/cleanup/", "dashboard.manage_settings"),
+        ("/api/settings/password/", None),
+        ("/api/settings/preferences/", None),   # each account's own; the pop-up shows only what applies to it
+        ("/api/violations/new/", "dashboard.view_records"),
         ("/system/", "dashboard.view_system_status"),
         ("/api/system/calibration/", "dashboard.manage_calibration"),
         ("/api/system/", "dashboard.view_system_status"),
@@ -16,6 +22,7 @@ class PagePermissionMiddleware:
         ("/violations/", "dashboard.view_records"),
         ("/api/vehicles/search/", "dashboard.view_records"),
         ("/api/vehicles/delete/", "dashboard.delete_records"),
+        ("/api/vehicles/clear/", "dashboard.delete_records"),
         ("/api/stats/", "dashboard.view_records"),
         ("/snapshot/", "dashboard.view_records"),
     ]
@@ -45,7 +52,7 @@ class PagePermissionMiddleware:
 
         needed = next((perm for prefix, perm in self.path_permissions if path.startswith(prefix)),
                       "dashboard.use_dashboard")
-        if user.has_perm(needed):
+        if needed is None or user.has_perm(needed):
             return self.get_response(request)
 
         if is_api:

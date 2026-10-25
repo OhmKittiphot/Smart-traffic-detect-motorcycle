@@ -47,3 +47,6 @@ web/staticfiles/
 
 # Generated datasets
 datasets/
+
+# Test files
+tests/

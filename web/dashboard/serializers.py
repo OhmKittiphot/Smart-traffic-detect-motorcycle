@@ -3,13 +3,15 @@
 Request serializers check what the browser sends before the views act on it; their error messages are
 shown to the admin as they are, so they are written for people.
 """
+from django.contrib.auth.password_validation import validate_password
+from django.core.exceptions import ValidationError as DjangoValidationError
 from django.utils import timezone
 from rest_framework import serializers
 
 from province import THAI_PROVINCES
 
-from .models import Review, SourceMode
-from .plate_search import MIN_QUERY_LENGTH, normalize_query
+from .models import SEEK_STEPS_S, Review, SourceMode, SystemSettings, TableFilter, Units, UserPreferences
+from .plate_search import MAX_QUERIES, MIN_QUERY_LENGTH, normalize_query, split_queries
 
 # Largest real distance accepted for a calibration side, in meters
 MAX_CALIBRATION_M = 500.0
@@ -23,20 +25,33 @@ class VehicleQuerySerializer(serializers.Serializer):
 
 
 class PlateSearchSerializer(serializers.Serializer):
-    """?q=<plate or part of it>&province=<part of a name>&violations_only=true
+    """?q=<plate or part of it, or several separated by commas>&province=<Thai name>&source=<mode>:<name>
+    &violations_only=true
     An empty q lists every record, newest first, a page at a time (&before=<id of the last row shown>)."""
-    q = serializers.CharField(max_length=32, required=False, allow_blank=True, default="")
+    q = serializers.CharField(max_length=300, required=False, allow_blank=True, default="")
     # Thai name, as stored on the records; the page lists them by their English names
     province = serializers.ChoiceField(choices=THAI_PROVINCES, required=False, allow_blank=True, default="",
                                        error_messages={"invalid_choice": "Unknown province"})
+    # Where the records came from, as "<source_mode>:<source_name>" ("file:clip.mp4", "live:" = IP camera),
+    # or a whole group as "<source_mode>" ("live" = every live camera, "file" = every video file)
+    source = serializers.CharField(max_length=300, required=False, allow_blank=True, default="")
     violations_only = serializers.BooleanField(default=False)
     before = serializers.IntegerField(min_value=1, required=False, default=None)
 
+    def validate_source(self, source):
+        if source and source.partition(":")[0] not in SourceMode.values:
+            raise serializers.ValidationError("Unknown video source")
+        return source
+
     def validate_q(self, q):
-        q = q.strip()
-        if q and len(normalize_query(q)) < MIN_QUERY_LENGTH:
-            raise serializers.ValidationError(f"Type at least {MIN_QUERY_LENGTH} plate characters")
-        return q
+        plates = split_queries(q)
+        if len(plates) > MAX_QUERIES:
+            raise serializers.ValidationError(f"Search at most {MAX_QUERIES} plates at once")
+        for plate in plates:
+            if len(normalize_query(plate)) < MIN_QUERY_LENGTH:
+                raise serializers.ValidationError(f"Type at least {MIN_QUERY_LENGTH} plate characters for each plate"
+                                                  f" (“{plate}” is too short)")
+        return ", ".join(plates)
 
 
 class VehicleDeleteSerializer(PlateSearchSerializer):
@@ -70,6 +85,10 @@ class SourceSerializer(serializers.Serializer):
         else:
             data["live"] = ""
         return data
+
+
+class PauseSerializer(serializers.Serializer):
+    paused = serializers.BooleanField(required=False)   # left out: flip pause
 
 
 class SeekSerializer(serializers.Serializer):
@@ -125,6 +144,67 @@ class SourceDistancesSerializer(SourceKeySerializer):
     length_m = _size_field("Length")
 
 
+def _whole_field(name, low, high, unit):
+    message = f"{name} must be a whole number from {low} to {high} {unit}"
+    return serializers.IntegerField(min_value=low, max_value=high, error_messages={
+        "required": f"{name} is required",
+        "invalid": message,
+        "min_value": message,
+        "max_value": message,
+    })
+
+
+class SystemSettingsSerializer(serializers.ModelSerializer):
+    """Admin: violation rules and how long records and photos are kept."""
+    speed_limit_kmh = _whole_field("Speed limit", 0, 300, "km/h")
+    max_riders = _whole_field("Riders allowed", 1, 10, "people")
+    record_retention_days = _whole_field("Keep records for", 1, 3650, "days")
+    photo_retention_days = _whole_field("Keep photos for", 1, 3650, "days")
+    media_max_mb = _whole_field("Photo space", 100, 1_000_000, "MB")
+
+    class Meta:
+        model = SystemSettings
+        fields = ["speed_limit_kmh", "max_riders", "record_retention_days", "photo_retention_days", "media_max_mb"]
+
+    def validate(self, data):
+        if data["photo_retention_days"] > data["record_retention_days"]:
+            raise serializers.ValidationError("Photos cannot be kept longer than the records they belong to")
+        return data
+
+
+class PreferencesSerializer(serializers.ModelSerializer):
+    """Staff: how the live view looks and behaves for this account."""
+    table_filter = serializers.ChoiceField(choices=TableFilter.choices)
+    seek_step_s = serializers.ChoiceField(choices=SEEK_STEPS_S,
+                                          error_messages={"invalid_choice": "Choose one of the skip lengths"})
+    units = serializers.ChoiceField(choices=Units.choices)
+
+    class Meta:
+        model = UserPreferences
+        fields = ["table_filter", "seek_step_s", "show_fps_chart", "violation_notify", "camera_notify", "units"]
+
+
+class PasswordChangeSerializer(serializers.Serializer):
+    """The view passes the logged-in user as context["user"]."""
+    old_password = serializers.CharField(error_messages={"blank": "Type your current password"})
+    new_password = serializers.CharField(error_messages={"blank": "Type a new password"})
+    confirm_password = serializers.CharField(error_messages={"blank": "Type the new password again"})
+
+    def validate_old_password(self, password):
+        if not self.context["user"].check_password(password):
+            raise serializers.ValidationError("The current password is wrong")
+        return password
+
+    def validate(self, data):
+        if data["new_password"] != data["confirm_password"]:
+            raise serializers.ValidationError({"confirm_password": ["The two new passwords do not match"]})
+        try:
+            validate_password(data["new_password"], self.context["user"])
+        except DjangoValidationError as e:
+            raise serializers.ValidationError({"new_password": e.messages})
+        return data
+
+
 # ---------- responses ----------
 
 class VehicleRecordSerializer(serializers.Serializer):
@@ -144,6 +224,7 @@ class VehicleRecordSerializer(serializers.Serializer):
     violations = serializers.ListField(child=serializers.CharField(), source="violation_labels")
     source = serializers.SerializerMethodField()
     snapshot = serializers.SerializerMethodField()   # True when an evidence photo can be opened
+    plate_snapshot = serializers.SerializerMethodField()   # True when a photo of the plate can be opened
     review = serializers.CharField()
     review_label = serializers.CharField(source="get_review_display")
     review_note = serializers.CharField()
@@ -164,6 +245,9 @@ class VehicleRecordSerializer(serializers.Serializer):
 
     def get_snapshot(self, record) -> bool:
         return bool(record.snapshot)
+
+    def get_plate_snapshot(self, record) -> bool:
+        return bool(record.plate_snapshot)
 
     def get_reviewed_by(self, record) -> str:
         return record.reviewed_by.get_username() if record.reviewed_by else ""

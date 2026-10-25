@@ -2,7 +2,8 @@
 
 // Live line chart of the processing speed under the video (#fps-chart). dashboard.js calls push() with
 // each status poll (once a second); null marks a moment with detection off, which breaks the line.
-// Exposed as window.FpsChart.
+// While a video file is paused the chart's clock stops: nothing is added, nothing scrolls, and the paused
+// time is left out of the timeline, so the line goes on where it stopped. Exposed as window.FpsChart.
 window.FpsChart = (() => {
   const WINDOW_S = 120;   // seconds of history shown
   const HEIGHT = 96;
@@ -14,8 +15,13 @@ window.FpsChart = (() => {
   const tip = box.querySelector(".fps-tip");
   const nowText = document.getElementById("fps-now");
   const avgText = document.getElementById("fps-avg");
-  const samples = [];   // {t: ms timestamp, fps: number | null}
+  const samples = [];   // {t: ms on the chart's clock, wall: real time, fps: number | null}
   let hoverX = null;    // pointer x in the plot, or null
+  let pausedTotal = 0;  // ms the video has been paused so far, taken off the wall clock
+  let pausedAt = null;  // wall time the current pause began, or null while playing
+
+  // The chart's clock: wall time minus every pause, standing still during a pause
+  const clock = () => (pausedAt ?? Date.now()) - pausedTotal;
 
   function svgEl(tag, attrs, text) {
     const node = document.createElementNS(SVG_NS, tag);
@@ -32,7 +38,7 @@ window.FpsChart = (() => {
   function draw() {
     const width = plot.clientWidth;
     if (!width) return;
-    const now = Date.now();
+    const now = clock();
     const values = samples.filter((s) => s.fps != null).map((s) => s.fps);
     const yMax = niceMax(Math.max(1, ...values));
     const x = (t) => PAD.left + (1 - (now - t) / (WINDOW_S * 1000)) * (width - PAD.left - PAD.right);
@@ -69,7 +75,7 @@ window.FpsChart = (() => {
       const cx = x(nearest.t);
       svg.append(svgEl("line", { class: "fps-cross", x1: cx, x2: cx, y1: PAD.top, y2: HEIGHT - PAD.bottom }));
       if (nearest.fps != null) svg.append(svgEl("circle", { class: "fps-dot", cx, cy: y(nearest.fps), r: 4 }));
-      tip.textContent = `${new Date(nearest.t).toLocaleTimeString()} · `
+      tip.textContent = `${new Date(nearest.wall).toLocaleTimeString()} · `
         + (nearest.fps != null ? `${nearest.fps.toFixed(1)} fps` : "detection off");
       tip.hidden = false;
       tip.style.left = `${plot.offsetLeft + Math.min(Math.max(cx, 60), width - 60)}px`;   // tip sits in the card
@@ -77,9 +83,19 @@ window.FpsChart = (() => {
     plot.replaceChildren(svg);
   }
 
-  function push(fps) {
-    const now = Date.now();
-    samples.push({ t: now, fps });
+  // paused: the video file is paused (the chart then stands still and shows "Paused")
+  function push(fps, paused = false) {
+    if (paused) {
+      if (pausedAt == null) pausedAt = Date.now();
+      nowText.textContent = "Paused";
+      return;
+    }
+    if (pausedAt != null) {
+      pausedTotal += Date.now() - pausedAt;
+      pausedAt = null;
+    }
+    const now = clock();
+    samples.push({ t: now, wall: Date.now(), fps });
     while (samples.length && samples[0].t < now - WINDOW_S * 1000) samples.shift();
     const values = samples.filter((s) => s.fps != null).map((s) => s.fps);
     nowText.textContent = fps != null ? `${fps.toFixed(1)} fps` : "Detection off";

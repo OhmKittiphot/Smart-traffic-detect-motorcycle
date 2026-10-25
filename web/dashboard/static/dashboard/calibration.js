@@ -6,6 +6,9 @@
 window.CalibrationEditor = (() => {
   const SVG_NS = "http://www.w3.org/2000/svg";
   const POINT_NAMES = ["far-left", "far-right", "near-right", "near-left"];
+  const MIN_M = 0.1;   // allowed width / length in metres (the server checks the same range)
+  const MAX_M = 500;
+  const { units } = window.Dashboard;
   const $ = (id) => document.getElementById(id);
   const dialog = $("calib-dialog");
   const img = $("calib-img");
@@ -147,7 +150,9 @@ window.CalibrationEditor = (() => {
     saveBtn.disabled = true;
     status("Saving…", "busy");
     try {
-      await options.save({ points, width_m: Number(widthInput.value), length_m: Number(lengthInput.value) });
+      // Typed in the account's units (m or ft); always saved in metres
+      await options.save({ points, width_m: units.toMetres(Number(widthInput.value)),
+                           length_m: units.toMetres(Number(lengthInput.value)) });
       dialog.close();
       options.onSaved?.();
     } catch (e) {
@@ -164,8 +169,13 @@ window.CalibrationEditor = (() => {
     status("");
     $("calib-source").textContent = opts.source;
     points = opts.points ? opts.points.map((p) => [p[0], p[1]]) : [];
-    widthInput.value = opts.width_m ?? "";
-    lengthInput.value = opts.length_m ?? "";
+    widthInput.value = opts.width_m != null ? units.toShown(opts.width_m) : "";
+    lengthInput.value = opts.length_m != null ? units.toShown(opts.length_m) : "";
+    for (const input of [widthInput, lengthInput]) {
+      input.min = units.toShown(MIN_M);
+      input.max = units.toShown(MAX_M);
+    }
+    for (const unit of dialog.querySelectorAll(".calib-unit")) unit.textContent = units.lengthUnit();
     dialog.showModal();
     loadFrame();
   }

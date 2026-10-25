@@ -8,6 +8,7 @@ import logging
 import threading
 import time
 import uuid
+from dataclasses import replace
 from datetime import datetime
 from pathlib import Path
 from typing import Optional
@@ -152,14 +153,16 @@ class DetectionService:
         threading.Thread(target=self._boot, daemon=True, name="DetectionBoot").start()
 
     def _boot(self):
-        from .models import CameraSettings
+        from .models import CameraSettings, SystemSettings
 
         try:
             from app_config import AppConfig, configure_torch_runtime
             from detection_app import DetectionApp
             from report import add_report_listener
 
-            self._config = AppConfig.from_env()
+            rules = SystemSettings.load()
+            self._config = replace(AppConfig.from_env(), max_riders=rules.max_riders,
+                                   speed_limit_kmh=float(rules.speed_limit_kmh))
             saved = CameraSettings.load()
             source = self._source_for(saved.mode, saved.video_file, saved.live_source)
             if source is None:
@@ -171,13 +174,15 @@ class DetectionService:
             self.live_source = saved.live_source if saved.mode == "live" else ""
 
             device, use_half = configure_torch_runtime()
+            if device == "cpu":
+                log.warning("CUDA is not available: detection runs on the CPU and will be slow.")
             # An unconfigured camera still starts the pipeline on a placeholder; frames just never arrive
             self._app = DetectionApp(self._config, source or "rtsp://unconfigured.invalid/", device, use_half)
             add_report_listener(self._on_report)
             self._load_calibration()
             self._app.start_workers()
             self.state = self.RUNNING
-            log.info("Detection running (%s).", self.describe_source())
+            log.info("Detection running on %s (%s).", device, self.describe_source())
         except Exception as e:
             log.exception("Detection failed to start")
             self.state, self.error = self.ERROR, f"{type(e).__name__}: {e}"
@@ -192,6 +197,15 @@ class DetectionService:
             self._app.stop()
         remove_report_listener(self._on_report)
         self.state = self.STOPPED
+
+    def apply_rules(self, max_riders: int, speed_limit_kmh: float) -> None:
+        """Use violation rules changed on the settings page: they apply to the overlay and to every
+        motorcycle reported from now on. A service still loading reads them from the database itself."""
+        if self._config is None:
+            return
+        self._config = replace(self._config, max_riders=max_riders, speed_limit_kmh=speed_limit_kmh)
+        if self._app is not None:
+            self._app.config = self._config
 
     def health(self) -> dict:
         """Quick check for the system status page; nothing is started or changed."""
@@ -241,10 +255,10 @@ class DetectionService:
             self._load_calibration()
         log.info("Source switched to %s.", self.describe_source())
 
-    def toggle_pause(self) -> bool:
+    def toggle_pause(self, paused: Optional[bool] = None) -> bool:
         if self.state != self.RUNNING or self.mode != "file":
             raise RuntimeError("Only a video file can be paused")
-        return self._app.video_stream.toggle_pause()
+        return self._app.video_stream.toggle_pause(paused)
 
     def seek(self, pos_ms: float) -> None:
         if self.state != self.RUNNING or self.mode != "file":
@@ -453,18 +467,24 @@ class DetectionService:
                 violations=",".join(violations),
                 is_violation=bool(violations),
                 snapshot=self._save_snapshot(meta.get("snapshot")),
+                plate_snapshot=self._save_snapshot(meta.get("plate_snapshot")),
             )
         finally:
             close_old_connections()
 
     @staticmethod
     def _save_snapshot(crop) -> str:
+        """Save an evidence photo, scaled down to SNAPSHOT_MAX_SIDE to save disk space."""
         if crop is None or not getattr(crop, "size", 0):
             return ""
+        h, w = crop.shape[:2]
+        scale = settings.SNAPSHOT_MAX_SIDE / max(h, w)
+        if scale < 1:
+            crop = cv2.resize(crop, (max(1, int(w * scale)), max(1, int(h * scale))), interpolation=cv2.INTER_AREA)
         rel = Path("snapshots") / datetime.now().strftime("%Y%m%d") / f"{uuid.uuid4().hex}.jpg"
         dest = Path(settings.MEDIA_ROOT) / rel
         dest.parent.mkdir(parents=True, exist_ok=True)
-        ok, buf = cv2.imencode(".jpg", crop, [cv2.IMWRITE_JPEG_QUALITY, 88])
+        ok, buf = cv2.imencode(".jpg", crop, [cv2.IMWRITE_JPEG_QUALITY, settings.SNAPSHOT_JPEG_QUALITY])
         if not ok:
             return ""
         dest.write_bytes(buf.tobytes())
@@ -476,19 +496,28 @@ _service_lock = threading.Lock()
 
 
 # Detection runs only while staff have the live view open: the page polls /api/status/ every second and
-# keeps /stream/ open. Once neither has been seen for this long, detection stops and the GPU is freed.
+# keeps /stream/ open, and stops both when it is left or its tab is hidden. Once neither has been seen
+# for this long, detection stops and the GPU is freed.
 IDLE_STOP_S = 60
 _IDLE_CHECK_EVERY_S = 5
+# A live view page polls every second; one not heard from for this long is no longer open
+_VIEWER_GONE_S = 5
 _last_viewer_t = 0.0
+# Session key -> when that session's live view was last seen, so one account logging out does not stop
+# detection for the others still watching
+_viewers: dict = {}
 _idle_watch: Optional[threading.Thread] = None
 
 
-def get_service() -> DetectionService:
+def get_service(viewer: Optional[str] = None) -> DetectionService:
     """The process-wide service for the live view, started if it is off. Only live-view requests call
-    this: each call counts as staff being on the live view (see IDLE_STOP_S)."""
+    this: each call counts as staff being on the live view (see IDLE_STOP_S). viewer: the session key
+    of the page asking, if known."""
     global _service, _last_viewer_t, _idle_watch
     with _service_lock:
         _last_viewer_t = time.time()
+        if viewer:
+            _viewers[viewer] = _last_viewer_t
         if _service is None:
             _service = DetectionService()
             _service.start()
@@ -516,6 +545,8 @@ def _stop_when_idle() -> None:
     while True:
         time.sleep(_IDLE_CHECK_EVERY_S)
         with _service_lock:
+            for key in [k for k, t in _viewers.items() if time.time() - t > IDLE_STOP_S]:
+                del _viewers[key]
             service = _service
             # A service still loading its models is left to finish, then stopped on a later check
             idle = (service is not None and service.state != service.STARTING
@@ -524,9 +555,32 @@ def _stop_when_idle() -> None:
                 _service = None
         if idle:
             log.info("No one on the live view for %d s: stopping detection.", IDLE_STOP_S)
-            service.stop()
-            del service
-            _free_gpu_memory()
+            _stop_and_free(service)
+
+
+def stop_on_logout(session_key: Optional[str] = None) -> None:
+    """Stop detection right away when the last staff on the live view log out, instead of waiting
+    IDLE_STOP_S. A service still loading its models is marked idle, so the idle check stops it as soon
+    as it has loaded."""
+    global _service, _last_viewer_t
+    with _service_lock:
+        _viewers.pop(session_key, None)
+        now = time.time()
+        if any(now - t < _VIEWER_GONE_S for t in _viewers.values()):
+            return   # someone else still has the live view open
+        _last_viewer_t = 0.0
+        service = _service
+        if service is None or service.state == service.STARTING:
+            return
+        _service = None
+    log.info("Logged out: stopping detection.")
+    _stop_and_free(service)
+
+
+def _stop_and_free(service: DetectionService) -> None:
+    service.stop()
+    del service
+    _free_gpu_memory()
 
 
 def _free_gpu_memory() -> None:

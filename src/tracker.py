@@ -187,6 +187,14 @@ class MotorcycleTracker:
             meta["snapshot"] = crop.copy()
             meta["snapshot_area"] = area
 
+    def record_plate_snapshot(self, track_id: Optional[int], crop, sharpness: float) -> None:
+        """Keep the sharpest crop of the track's licence plate; saved as evidence next to the read text."""
+        meta = self.motorcycle_tracks.get(track_id) if track_id is not None else None
+        if meta is None or sharpness <= meta.get("plate_snapshot_sharpness", -1.0):
+            return
+        meta["plate_snapshot"] = crop.copy()
+        meta["plate_snapshot_sharpness"] = sharpness
+
     def record_speed(self, track_id: int, speed: Optional[float]) -> None:
         meta = self.motorcycle_tracks.get(track_id)
         if meta is not None and speed is not None:

@@ -81,8 +81,9 @@ class AppConfig:
     # Increase if motorcycles move fast between frames (e.g. 250 for ~30fps, higher for low-fps cameras).
     motorcycle_track_distance: float = 250.0
     # max_age_s: how long (seconds) to keep a track alive without a new detection.
+    # A bike is reported once it has been gone this long; 2.5 keeps the report within 3s of leaving the frame.
     # Increase if YOLO sometimes misses a motorcycle for multiple frames.
-    motorcycle_track_max_age_s: float = 6.0
+    motorcycle_track_max_age_s: float = 2.5
     
     # Display parameters
     display_fps: int = 25

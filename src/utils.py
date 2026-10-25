@@ -2,6 +2,8 @@ import os
 import re
 import time
 import traceback
+from urllib.parse import urlsplit
+
 import cv2
 from typing import Dict, List, Tuple
 
@@ -35,8 +37,9 @@ def format_thai_plate(plate_text: str, province_text: str) -> str:
     plate_text = plate_text.replace(" ", "").strip()
     
     # Split into plate characters and digits
-    # Match: (Thai letters/digits){1,4} followed by (digits)
-    match = re.match(r"([\d\u0E00-\u0E7F]{2,3})([0-9]*)", plate_text)
+    # Match: an optional digit/letter and 2 Thai letters, followed by (digits). A greedy {2,3} would take
+    # the number's first digit into a 2-letter series ("\u0E01\u0E021234" -> "\u0E01\u0E021" + "234")
+    match = re.match(r"([\d\u0E00-\u0E7F]?[\u0E00-\u0E7F]{2})([0-9]*)", plate_text)
     
     if not match:
         return f"{plate_text} {province_text}" if province_text else plate_text
@@ -78,9 +81,22 @@ _RTSP_OPEN_TIMEOUT_MS = 10000
 _RTSP_READ_TIMEOUT_MS = 10000
 
 
+def describe_capture_url(camera_url: str) -> str:
+    """A capture URL safe to print: network URLs keep only scheme, host and port (the user, password,
+    path or query may carry a camera password or token); file paths are kept."""
+    parts = urlsplit(camera_url)
+    if not parts.netloc:
+        return camera_url
+    try:
+        port = f":{parts.port}" if parts.port else ""
+    except ValueError:   # malformed port
+        port = ""
+    return f"{parts.scheme}://{parts.hostname or '?'}{port}/..."
+
+
 def open_capture(camera_url: str) -> cv2.VideoCapture:
     """Open a cv2 VideoCapture for an RTSP / http(s) stream URL or a local video file path."""
-    is_rtsp = camera_url.lower().startswith("rtsp://")
+    is_rtsp = camera_url.lower().startswith(("rtsp://", "rtsps://"))
     is_network = is_rtsp or camera_url.lower().startswith(("http://", "https://"))
     # Low-latency RTSP options; read by OpenCV on every open, and they would break probing of video files
     if is_rtsp:
@@ -97,7 +113,7 @@ def open_capture(camera_url: str) -> cv2.VideoCapture:
 
     if not cap.open(camera_url, cv2.CAP_FFMPEG):
         # Never print the RTSP URL itself: it usually carries the camera password
-        print(f"[Capture] Failed to open source: {'RTSP camera' if is_rtsp else camera_url}")
+        print(f"[Capture] Failed to open source: {describe_capture_url(camera_url)}")
         return cap
 
     if is_rtsp:

@@ -1,8 +1,8 @@
 "use strict";
 
-// Violation statistics at the top of the search page, from /api/stats/ (refreshed every minute)
+// Violation statistics at the top of the search page, from /api/stats/ (refreshed every 5 seconds)
 (() => {
-  const REFRESH_MS = 60000;
+  const REFRESH_MS = 5000;
   const { api, el } = window.Dashboard;
   const $ = (id) => document.getElementById(id);
 
@@ -96,10 +96,12 @@
     }
   }
 
+  // No requests while the tab is hidden; refreshed as soon as it is shown again
   async function poll() {
-    await refresh();
+    if (!document.hidden) await refresh();
     setTimeout(poll, REFRESH_MS);
   }
+  document.addEventListener("visibilitychange", () => { if (!document.hidden) refresh(); });
 
   // Records deleted on this page (search.js): show the new numbers now rather than at the next poll
   document.addEventListener("records-changed", refresh);

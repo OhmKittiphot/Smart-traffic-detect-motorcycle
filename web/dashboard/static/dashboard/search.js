@@ -3,12 +3,13 @@
 (() => {
   // Search as the user types, once they stop for this long
   const TYPE_DELAY_MS = 300;
-  const { api, el, thumbCell, helmetCell, statusCell } = window.Dashboard;
+  const { api, el, units, thumbCell, plateCell, helmetCell, statusCell } = window.Dashboard;
 
   const $ = (id) => document.getElementById(id);
   const form = $("search-form");
   const qInput = $("search-q");
   const provinceInput = $("search-province");
+  const sourceInput = $("search-source");
   const violationsBox = $("search-violations");
   const rowsEl = $("result-rows");
   const emptyMsg = $("empty-msg");
@@ -53,11 +54,11 @@
     tr.append(
       el("td", { class: "time-cell" }, r.time, el("small", {}, r.date)),
       el("td", {}, thumbCell(r)),
-      el("td", { class: "plate" }, r.plate || el("span", { class: "muted" }, "Unreadable")),
+      el("td", { class: "plate" }, plateCell(r)),
       el("td", {}, r.province || "—"),
       el("td", { class: "num" }, r.riders ?? "—"),
       el("td", {}, helmetCell(r)),
-      el("td", { class: "num" }, r.speed != null ? `${Math.round(r.speed)} km/h` : "—"),
+      el("td", { class: "num" }, units.speed(r.speed) ?? "—"),
       el("td", {}, statusCell(r)),
       el("td", {}, reviewTag(r)),
       el("td", { class: "muted" }, r.source),
@@ -104,7 +105,8 @@
 
   async function search() {
     clearTimeout(typeTimer);
-    const q = qInput.value.trim();
+    // Several plates may be typed, separated by commas; blank entries ("1กข987, ,") are left out
+    const q = qInput.value.split(",").map((plate) => plate.trim()).filter(Boolean).join(", ");
     if (!q && !browse) {
       list = null;
       rowsById.clear();
@@ -115,7 +117,7 @@
       showMsg(msg, "");
       return;
     }
-    const params = new URLSearchParams({ q, province: provinceInput.value });
+    const params = new URLSearchParams({ q, province: provinceInput.value, source: sourceInput.value });
     if (violationsBox.checked) params.set("violations_only", "true");
     list = { params, total: 0, nextBefore: null };
     await fetchPage(false);
@@ -126,9 +128,56 @@
     typeTimer = setTimeout(search, TYPE_DELAY_MS);
   }
 
+  // ---------- source menu ----------
+  // Nested: "All sources", then each group (live cameras, video files) with its sources under it, shown with
+  // the arrow beside the group. Choosing a group lists the records of every source in it. The choice is
+  // written into the hidden #search-source, which then sends "change" like the other filters.
+
+  const sourceMenu = $("source-menu");
+  const sourceBtn = sourceMenu.querySelector(".source-btn");
+  const sourceList = $("source-list");
+
+  function openSourceMenu(open) {
+    sourceList.hidden = !open;
+    sourceBtn.setAttribute("aria-expanded", String(open));
+  }
+
+  function expandGroup(group, open) {
+    group.querySelector(".source-children").hidden = !open;
+    group.querySelector(".source-toggle").setAttribute("aria-expanded", String(open));
+  }
+
+  sourceBtn.addEventListener("click", () => openSourceMenu(sourceList.hidden));
+  sourceList.addEventListener("click", (ev) => {
+    const toggle = ev.target.closest(".source-toggle");
+    if (toggle) {
+      const group = toggle.closest(".source-group");
+      expandGroup(group, group.querySelector(".source-children").hidden);
+      return;
+    }
+    const item = ev.target.closest(".source-item");
+    if (!item) return;
+    for (const i of sourceList.querySelectorAll(".source-item")) i.setAttribute("aria-pressed", String(i === item));
+    sourceBtn.querySelector(".source-btn-label").textContent = item.dataset.label;
+    openSourceMenu(false);
+    sourceBtn.focus();
+    if (sourceInput.value !== item.dataset.value) {
+      sourceInput.value = item.dataset.value;
+      sourceInput.dispatchEvent(new Event("change"));
+    }
+  });
+  document.addEventListener("click", (ev) => { if (!sourceMenu.contains(ev.target)) openSourceMenu(false); });
+  sourceMenu.addEventListener("keydown", (ev) => {
+    if (ev.key === "Escape" && !sourceList.hidden) {
+      openSourceMenu(false);
+      sourceBtn.focus();
+    }
+  });
+
   form.addEventListener("submit", (ev) => { ev.preventDefault(); search(); });
   qInput.addEventListener("input", searchSoon);
   provinceInput.addEventListener("change", search);
+  sourceInput.addEventListener("change", search);
   violationsBox.addEventListener("change", search);
   loadMoreBtn.addEventListener("click", () => fetchPage(true));
 
@@ -245,12 +294,14 @@
       ? `${r.review_label} by ${r.reviewed_by || "a deleted user"} · ${r.reviewed_at}` : r.review_label;
     $("detail-list").replaceChildren(
       ...detailItem("Date & time", `${r.date} ${r.time}`),
-      ...detailItem("Plate", r.plate),
+      ...detailItem("Plate", r.plate || null),
+      ...(r.plate_snapshot ? detailItem("Plate photo",
+        el("img", { class: "detail-plate", src: `/snapshot/${r.id}/plate/`, alt: `Plate ${r.plate}` })) : []),
       ...detailItem("Province", r.province || null),
       ...detailItem("OCR confidence", r.plate_conf != null ? `${r.plate_conf}%` : null),
       ...detailItem("Riders", r.riders),
       ...detailItem("Helmet", helmetCell(r)),
-      ...detailItem("Speed", r.speed != null ? `${Math.round(r.speed)} km/h` : null),
+      ...detailItem("Speed", units.speed(r.speed)),
       ...detailItem("Status", statusCell(r)),
       ...detailItem("Source", r.source),
       ...detailItem("Track ID", r.track_id),
@@ -319,5 +370,8 @@
   }
   $("detail-close").addEventListener("click", () => dialog.close());
 
-  if (browse) search();   // the violations page opens on the full list
+  // A plate typed in the top bar's search box arrives as ?q=; the violations page opens on the full list
+  const startQuery = new URLSearchParams(location.search).get("q");
+  if (startQuery) qInput.value = startQuery.trim();
+  if (browse || qInput.value) search();
 })();

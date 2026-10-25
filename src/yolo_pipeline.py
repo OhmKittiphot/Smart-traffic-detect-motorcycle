@@ -6,6 +6,7 @@ import numpy as np
 import torch
 
 from app_config import load_yolo_model
+from ocr import plate_sharpness
 from report import print_motorcycle_reports
 from rider_classifier import RiderClassifier
 from rider_voting import RiderVoting
@@ -342,6 +343,8 @@ class YoloPipeline:
             with self.det_lock:
                 for (bb, cr) in bboxes:
                     track_id = self.tracker.resolve_track_id(bb)
+                    # Evidence photo of the plate, also when OCR cannot read it
+                    self.tracker.record_plate_snapshot(track_id, cr, plate_sharpness(cr))
                     cached_text, cached_conf = self.ocr_manager.get_cached_ocr(bb, frame_t, track_id=track_id)
                     current_dets.append((bb, cached_text, cached_conf))
                     if self.ocr_manager.should_ocr(track_id, bb, frame_t):
