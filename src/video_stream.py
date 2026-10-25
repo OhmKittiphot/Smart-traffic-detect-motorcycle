@@ -3,6 +3,7 @@ import time
 from datetime import timedelta
 import cv2
 
+from hls import STALE_AFTER_S, format_age, is_hls_url, playlist_age_s
 from utils import log_error, open_capture
 
 
@@ -18,6 +19,8 @@ _HOLD_TIMEOUT_S = 20.0
 _DROP_LOG_EVERY = 300
 # Paced live streams (HLS): a frame this far behind its slot restarts the pacing clock (stall / reconnect)
 _PACE_RESYNC_S = 2.0
+# How often a frozen HLS playlist is checked again while the camera is treated as offline
+_STALE_RECHECK_S = 15.0
 
 
 class VideoStream:
@@ -32,6 +35,9 @@ class VideoStream:
         self.is_video_file = not video_camera.lower().startswith(("rtsp://", "http://", "https://"))
         # HLS over http(s) delivers whole segments in bursts; frames are paced at the source fps instead
         self._paced_live = not self.is_video_file and not video_camera.lower().startswith("rtsp://")
+        self._is_hls = is_hls_url(video_camera)
+        # Why a live source shows no video (e.g. its playlist stopped updating), or None
+        self._offline_reason = None
 
         self._running = False
         self._thread = None
@@ -77,6 +83,11 @@ class VideoStream:
     def error(self):
         """Fatal error that stopped capture (e.g. unreadable video file), or None."""
         return self._error
+
+    @property
+    def offline_reason(self):
+        """Short reason the live source is treated as offline, or None."""
+        return self._offline_reason
 
     @property
     def is_running(self) -> bool:
@@ -199,19 +210,48 @@ class VideoStream:
         self._source_fps = source_fps
         return source_fps
 
+    def _sleep_while_running(self, seconds: float) -> None:
+        end = time.time() + seconds
+        while self._running and time.time() < end:
+            time.sleep(0.2)
+
+    def _wait_for_fresh_playlist(self) -> None:
+        """Block while an HLS playlist has stopped updating. Opening it anyway would replay its last few
+        segments (old video, re-detected and re-reported) and then stall, over and over."""
+        if not self._is_hls:
+            return
+        logged = False
+        while self._running:
+            age = playlist_age_s(self.video_camera)
+            if age is None or age < STALE_AFTER_S:
+                if logged:
+                    print("[Capture] Live stream is updating again.")
+                self._offline_reason = None
+                return
+            self._offline_reason = f"Camera offline: no new video for {format_age(age)}"
+            if not logged:
+                print(f"[Capture] Live stream not updating (last update {format_age(age)} ago); "
+                      f"treating camera as offline, checking every {_STALE_RECHECK_S:.0f}s.")
+                logged = True
+            self._sleep_while_running(_STALE_RECHECK_S)
+
+    def _open(self):
+        self._wait_for_fresh_playlist()
+        return open_capture(self.video_camera)
+
     def _reopen(self, cap, delay: float):
         """Release the capture, wait `delay` seconds, and open the source again."""
         try:
             cap.release()
         except Exception as e:
             log_error("Capture", e)
-        time.sleep(delay)
-        return open_capture(self.video_camera)
+        self._sleep_while_running(delay)
+        return self._open()
 
     def _capture_fn(self):
         cap = None
         try:
-            cap = open_capture(self.video_camera)
+            cap = self._open()
             if self.is_video_file and not cap.isOpened():
                 # Unlike a camera that may come back online, a file that can't be opened won't fix itself
                 self._fail(f"Cannot open video file: {self.video_camera}")

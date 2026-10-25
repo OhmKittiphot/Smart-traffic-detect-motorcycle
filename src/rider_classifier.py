@@ -73,7 +73,7 @@ class RiderClassifier:
         self.device = torch.device(device)
         self.use_half = use_half and self.device.type == "cuda"
         self.model = build_model(pretrained=False)
-        ckpt = torch.load(weights_path, map_location="cpu")
+        ckpt = torch.load(weights_path, map_location="cpu", weights_only=True)
         self.model.load_state_dict(ckpt["model"] if "model" in ckpt else ckpt)
         self.model.eval().to(self.device)
         if self.use_half:

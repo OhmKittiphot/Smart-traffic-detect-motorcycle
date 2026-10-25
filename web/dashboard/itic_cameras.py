@@ -4,10 +4,14 @@ The dashboard lists these next to the IP camera (RTSP_URL) under "Live camera". 
 this file: the dropdown then offers only the IP camera, and a saved iTIC choice falls back to it on restart.
 """
 
+# Cameras that served video when checked (ccs04, ccs10, ccs11 and ccs15 did not). Closest motorcycle views:
+# ccs01, ccs05 (traffic light queue), ccs13, ccs14
+_CAMERA_IDS = ("ccs01", "ccs02", "ccs03", "ccs05", "ccs06", "ccs07", "ccs08", "ccs09", "ccs12", "ccs13", "ccs14")
+
 # key -> (label shown in the dropdown, HLS stream URL)
-# Other cameras on the same server: ccs01-03, ccs05-09 (same URL pattern)
 CAMERAS = {
-    "itic-ccs06": ("iTIC CCTV · Chachoengsao ccs06", "https://camerai1.iticfoundation.org/hls/ccs06.m3u8"),
+    f"itic-{cid}": (f"iTIC CCTV · Chachoengsao {cid}", f"https://camerai1.iticfoundation.org/hls/{cid}.m3u8")
+    for cid in _CAMERA_IDS
 }
 
 

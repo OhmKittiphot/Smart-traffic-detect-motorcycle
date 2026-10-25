@@ -47,7 +47,7 @@ def list_live_sources() -> dict:
     return itic_cameras.live_sources()
 
 
-def _placeholder_frame(title: str, subtitle: str = "") -> np.ndarray:
+def _placeholder_frame(title: str, subtitle: str = "", detail: str = "") -> np.ndarray:
     """Dark 'No Signal'-style card with a timestamp, sized like a 720p camera frame."""
     h, w = 720, 1280
     frame = np.full((h, w, 3), (24, 22, 20), dtype=np.uint8)
@@ -58,9 +58,14 @@ def _placeholder_frame(title: str, subtitle: str = "") -> np.ndarray:
     if title:
         cv2.putText(frame, title, ((w - tw) // 2, h // 2), font, 2.4, (235, 235, 235), 3, cv2.LINE_AA)
     if subtitle:
+        subtitle = subtitle.replace("·", "-")   # cv2 fonts are ASCII-only; source labels use "·"
         (sw, _), _ = cv2.getTextSize(subtitle, cv2.FONT_HERSHEY_SIMPLEX, 0.9, 2)
         cv2.putText(frame, subtitle, ((w - sw) // 2, h // 2 + th + 30), cv2.FONT_HERSHEY_SIMPLEX, 0.9,
                     (150, 150, 150), 2, cv2.LINE_AA)
+    if detail:
+        (dw, _), _ = cv2.getTextSize(detail, cv2.FONT_HERSHEY_SIMPLEX, 0.9, 2)
+        cv2.putText(frame, detail, ((w - dw) // 2, h // 2 + th + 75), cv2.FONT_HERSHEY_SIMPLEX, 0.9,
+                    (90, 170, 235), 2, cv2.LINE_AA)
     stamp = timezone.localtime().strftime("%Y-%m-%d %H:%M:%S")
     cv2.putText(frame, stamp, (24, h - 28), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (150, 150, 150), 2, cv2.LINE_AA)
     return frame
@@ -325,9 +330,12 @@ class DetectionService:
                 key, make = ("error", int(time.time())), lambda: _placeholder_frame(
                     "SYSTEM ERROR", "See server console")
             elif not self.has_signal():
-                sub = "Camera not configured (RTSP_URL)" if (self.mode == "live" and not self._camera_configured()) \
-                    else self.describe_source()
-                key, make = ("nosignal", sub, int(time.time())), lambda: _placeholder_frame("NO SIGNAL", sub)
+                configured = not (self.mode == "live" and not self._camera_configured())
+                sub = self.describe_source() if configured else "Camera not configured (RTSP_URL)"
+                # e.g. the stream's playlist stopped updating (see VideoStream.offline_reason)
+                detail = (self._app.video_stream.offline_reason or "") if configured else ""
+                key, make = (("nosignal", sub, detail, int(time.time())),
+                             lambda: _placeholder_frame("NO SIGNAL", sub, detail))
             else:
                 raw, _, _ = self._app.video_stream.get_display_data()
                 # Re-render only when the frame or the detections changed
