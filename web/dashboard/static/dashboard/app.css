@@ -89,7 +89,7 @@ button, input, select { font: inherit; color: inherit; }
 :lang(th) :is(.kpi-label, .chart-title, .settings-form legend, .settings-password summary, .loading-text, .badge) {
   letter-spacing: 0;
 }
-:lang(th) :is(.kpi-label, .chart-title, .settings-form legend, .loading-text, .cal-weekday,
+:lang(th) :is(.kpi-label, .chart-title, .settings-form legend, .loading-text, .heat-weekday,
   .settings-row > span:first-child small) { font-size: 12px; }
 :lang(th) .fps-axis { font-size: 11px; }
 :lang(th) :is(.settings-row > span:first-child small, .toast-text, .calib-next) { line-height: 1.5; }
@@ -671,21 +671,19 @@ a.filter:hover { color: var(--text); border-color: var(--border-strong); }
 .repeat-meta { font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
 .repeat-none { padding: 18px 0; text-align: center; }
 
-/* Month calendar: a column per weekday (Monday first), each day redder the more violations it had */
+/* Month heatmap laid out as a calendar: a column per weekday (Monday first), a row per week, a cell per day,
+   darker for more violations */
 .cal-nav { display: inline-flex; align-items: center; gap: 4px; font-weight: 600; text-transform: none; letter-spacing: 0;
   font-size: 12px; color: var(--text); }
 #cal-month { min-width: 110px; text-align: center; }
-.calendar { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 3px; font-size: 12px; }
+.calendar { display: grid; grid-template-columns: repeat(7, minmax(0, 40px)); justify-content: center; gap: 3px; font-size: 10px;
+  line-height: 14px; color: var(--muted); }
 .calendar .chart-loading { grid-column: 1 / -1; }
-.cal-weekday { padding-bottom: 2px; text-align: center; font-size: 11px; color: var(--muted); }
-.cal-day { position: relative; display: flex; justify-content: space-between; align-items: flex-start; min-height: 40px;
-  padding: 4px 6px; border-radius: 4px; background: var(--chip-bg); font-variant-numeric: tabular-nums; overflow: hidden; }
-.cal-fill { position: absolute; inset: 0; background: var(--bad); }
-.cal-date, .cal-count { position: relative; }
-.cal-count { align-self: flex-end; font-weight: 600; }
-.cal-strong { color: #fff; }
-.cal-today { box-shadow: inset 0 0 0 2px var(--text); }
-.cal-future { background: none; border: 1px dashed var(--border); color: var(--muted); }
+.heat-weekday { text-align: center; }
+.heat-cell { aspect-ratio: 1; border-radius: 2px; background: var(--bad); }
+.heat-cell.heat-empty { background: var(--chip-bg); }
+.heat-cell.heat-future { background: none; border: 1px dashed var(--border); }
+.heat-cell.heat-today { outline: 2px solid var(--text); outline-offset: -2px; }
 .cal-peak { margin: 0; font-size: 12px; }
 .search-title { margin: 0 0 12px; }
 /* Back, above the violations page (staff) */

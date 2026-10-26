@@ -63,8 +63,9 @@
     return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
   }
 
-  // A cell per day of the month, Monday first; the more violations, the redder. days ends today, so the
-  // rest of the current month is drawn as days still to come
+  // Heatmap cells laid out as a calendar: a column per weekday (Monday first), a row per week, each day's
+  // colour stronger the more violations. days ends today, so the rest of the current month is drawn as
+  // days still to come
   function renderCalendar(cal) {
     shownCalendar = cal;
     const [year, month] = cal.month.split("-").map(Number);
@@ -76,22 +77,17 @@
 
     const days = Array.from({ length: daysInMonth }, (_, i) => {
       const d = cal.days[i];
-      if (!d) return el("span", { class: "cal-day cal-future" }, el("span", { class: "cal-date" }, i + 1));
-      const level = max ? d.violation / max : 0;
+      if (!d) return el("span", { class: "heat-cell heat-future" });
+      const today = isThisMonth && i === cal.days.length - 1;
       const cell = el("span", {
-        class: `cal-day${level > 0.5 ? " cal-strong" : ""}${isThisMonth && i === cal.days.length - 1 ? " cal-today" : ""}`,
+        class: `heat-cell${d.violation ? "" : " heat-empty"}${today ? " heat-today" : ""}`,
         title: interpolate(gettext("%(date)s: %(violations)s violations of %(total)s"),
                            { date: d.date, violations: d.violation, total: d.total }, true),
       });
-      if (d.violation) {
-        const fill = el("span", { class: "cal-fill" });
-        fill.style.opacity = 0.15 + 0.85 * level;   // element.style, which the CSP allows
-        cell.append(fill);
-      }
-      cell.append(el("span", { class: "cal-date" }, i + 1), el("span", { class: "cal-count" }, d.violation || ""));
+      if (d.violation) cell.style.opacity = 0.2 + 0.8 * (d.violation / max);
       return cell;
     });
-    $("calendar").replaceChildren(...WEEKDAYS.map((w) => el("span", { class: "cal-weekday" }, w)),
+    $("calendar").replaceChildren(...WEEKDAYS.map((w) => el("span", { class: "heat-weekday" }, w)),
       ...Array.from({ length: blanks }, () => el("span")), ...days);
 
     $("cal-month").textContent = first.toLocaleDateString(document.documentElement.lang || undefined,
