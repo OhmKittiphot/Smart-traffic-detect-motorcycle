@@ -1,0 +1,40 @@
+{# Top bar of every dashboard page #}
+{% load i18n static dashboard_tags %}
+<header class="topbar">
+  {% if perms.dashboard.use_dashboard %}
+  <a class="brand text-decoration-none" href="{% url 'dashboard' %}" title="{% translate "Go to the live view" %}"><span class="rec-dot" aria-hidden="true"></span><span>CCTV Control</span></a>
+  {% else %}
+  <div class="brand"><span class="rec-dot" aria-hidden="true"></span><span>CCTV Control</span></div>
+  {% endif %}
+  <div class="topbar-user">
+    <span class="muted">{{ user.get_username }} | </span>
+    {% if perms.dashboard.view_records %}
+      {% comment %}Opens a page with this plate searched (?q=, see search.js): the plate search page for staff,
+         the violations page (their home page) for accounts without the live view{% endcomment %}
+      <form class="topbar-search" method="get" action="{% if perms.dashboard.use_dashboard %}{% url 'plate_search' %}{% else %}{% url 'violations' %}{% endif %}" role="search">
+        <input type="search" name="q" maxlength="300" autocomplete="off" placeholder="{% translate "Search plate" %}" aria-label="{% translate "Search plate" %}" required>
+        <button type="submit" aria-label="{% translate "Search" %}">
+          <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><circle cx="6.5" cy="6.5" r="5" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="m10.5 10.5 4 4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+        </button>
+      </form>
+      {% translate "Violations stats" as label %}{% nav_link 'violations' label %}
+    {% endif %}
+    {% if perms.dashboard.view_system_status %}
+      {% translate "System status" as label %}{% nav_link 'system_status' label %}
+    {% endif %}
+    {% if perms.auth.view_user %}
+      {# Admin only, and it leaves the dashboard for Django admin: set apart in the accent colour #}
+      <a class="plate-link admin-link" href="{% url 'admin:index' %}">
+        <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><circle cx="6" cy="5" r="2.6" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M1.5 14c0-2.6 2-4.4 4.5-4.4s4.5 1.8 4.5 4.4" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/><path d="M11.5 3.2a2.4 2.4 0 0 1 0 4.4M12.8 9.9c1.1.6 1.7 2 1.7 4.1" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
+        {% translate "Manage users & roles" %}
+      </a>
+    {% endif %}
+    <button type="button" class="plate-link settings-link" popovertarget="settings-panel">
+      <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true"><path d="M12 15.2a3.2 3.2 0 1 0 0-6.4 3.2 3.2 0 0 0 0 6.4z" fill="none" stroke="currentColor" stroke-width="2"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></svg>
+      {% translate "Settings" %}
+    </button>
+  </div>
+</header>
+{% settings_panel %}
+<script src="{% static 'dashboard/settings.js' %}" defer></script>
+<script src="{% static 'dashboard/notify.js' %}" defer></script>

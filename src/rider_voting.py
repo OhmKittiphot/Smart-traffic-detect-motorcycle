@@ -16,7 +16,11 @@ class RiderVoting:
         self.max_age_s = max_age_s
         self._probs: Dict[int, deque] = {}
         self._last_seen: Dict[int, float] = {}
-        self._reported: set = set()
+
+    def reset(self) -> None:
+        """Forget all tracks (track IDs restart after a video loop, seek or source switch)."""
+        self._probs.clear()
+        self._last_seen.clear()
 
     def update(self, track_id: int, probs: np.ndarray) -> None:
         """probs: (positions, states) probabilities for one crop of this track."""
@@ -35,16 +39,8 @@ class RiderVoting:
         result["frames"] = len(hist)
         return result
 
-    def should_report(self, track_id: int) -> bool:
-        """True only the first time a track is reported (avoids printing the same violation every frame)."""
-        if track_id in self._reported:
-            return False
-        self._reported.add(track_id)
-        return True
-
     def prune(self) -> None:
         now = time.time()
         for tid in [t for t, ts in self._last_seen.items() if now - ts > self.max_age_s]:
             self._probs.pop(tid, None)
             self._last_seen.pop(tid, None)
-            self._reported.discard(tid)

@@ -1,6 +1,27 @@
+import os
 import re
+import time
+import traceback
+from urllib.parse import urlsplit
+
 import cv2
-from typing import List, Tuple
+from typing import Dict, List, Tuple
+
+
+_last_error_log: Dict[str, float] = {}
+
+
+def log_error(tag: str, exc: BaseException, interval_s: float = 5.0) -> None:
+    """Print an error with its traceback, at most once per interval per (tag, error type)
+    so a failure repeating inside a worker loop does not flood the console."""
+    key = f"{tag}:{type(exc).__name__}"
+    now = time.monotonic()
+    last = _last_error_log.get(key)
+    if last is not None and now - last < interval_s:
+        return
+    _last_error_log[key] = now
+    print(f"[{tag}] {type(exc).__name__}: {exc}")
+    traceback.print_exception(type(exc), exc, exc.__traceback__)
 
 def format_thai_plate(plate_text: str, province_text: str) -> str:
     """
@@ -16,8 +37,9 @@ def format_thai_plate(plate_text: str, province_text: str) -> str:
     plate_text = plate_text.replace(" ", "").strip()
     
     # Split into plate characters and digits
-    # Match: (Thai letters/digits){1,4} followed by (digits)
-    match = re.match(r"([\d\u0E00-\u0E7F]{2,3})([0-9]*)", plate_text)
+    # Match: an optional digit/letter and 2 Thai letters, followed by (digits). A greedy {2,3} would take
+    # the number's first digit into a 2-letter series ("\u0E01\u0E021234" -> "\u0E01\u0E021" + "234")
+    match = re.match(r"([\d\u0E00-\u0E7F]?[\u0E00-\u0E7F]{2})([0-9]*)", plate_text)
     
     if not match:
         return f"{plate_text} {province_text}" if province_text else plate_text
@@ -25,7 +47,6 @@ def format_thai_plate(plate_text: str, province_text: str) -> str:
     plate_chars = match.group(1)
     digits = match.group(2)
     
-    # Validate plate_chars structure
     is_valid = False
     
     if len(plate_chars) == 2:
@@ -44,7 +65,6 @@ def format_thai_plate(plate_text: str, province_text: str) -> str:
         if is_first_valid and is_rest_thai:
             is_valid = True
     
-    # Build formatted string
     if is_valid:
         formatted = plate_chars
         if province_text:
@@ -53,7 +73,6 @@ def format_thai_plate(plate_text: str, province_text: str) -> str:
             formatted += f" {digits}"
         return formatted
     else:
-        # Fallback: return original with province
         return f"{plate_text} {province_text}" if province_text else plate_text
 
 
@@ -62,17 +81,39 @@ _RTSP_OPEN_TIMEOUT_MS = 10000
 _RTSP_READ_TIMEOUT_MS = 10000
 
 
+def describe_capture_url(camera_url: str) -> str:
+    """A capture URL safe to print: network URLs keep only scheme, host and port (the user, password,
+    path or query may carry a camera password or token); file paths are kept."""
+    parts = urlsplit(camera_url)
+    if not parts.netloc:
+        return camera_url
+    try:
+        port = f":{parts.port}" if parts.port else ""
+    except ValueError:   # malformed port
+        port = ""
+    return f"{parts.scheme}://{parts.hostname or '?'}{port}/..."
+
+
 def open_capture(camera_url: str) -> cv2.VideoCapture:
-    """Open a cv2 VideoCapture for an RTSP URL or a local video file path."""
-    is_rtsp = camera_url.lower().startswith("rtsp://")
+    """Open a cv2 VideoCapture for an RTSP / http(s) stream URL or a local video file path."""
+    is_rtsp = camera_url.lower().startswith(("rtsp://", "rtsps://"))
+    is_network = is_rtsp or camera_url.lower().startswith(("http://", "https://"))
+    # Low-latency RTSP options; read by OpenCV on every open, and they would break probing of video files
+    if is_rtsp:
+        os.environ["OPENCV_FFMPEG_CAPTURE_OPTIONS"] = (
+            "rtsp_transport;tcp|fflags;nobuffer|flags;low_delay|analyzeduration;0|probesize;32"
+        )
+    else:
+        os.environ.pop("OPENCV_FFMPEG_CAPTURE_OPTIONS", None)
 
     cap = cv2.VideoCapture()
-    if is_rtsp:
+    if is_network:
         cap.set(cv2.CAP_PROP_OPEN_TIMEOUT_MSEC, _RTSP_OPEN_TIMEOUT_MS)
         cap.set(cv2.CAP_PROP_READ_TIMEOUT_MSEC, _RTSP_READ_TIMEOUT_MS)
 
     if not cap.open(camera_url, cv2.CAP_FFMPEG):
-        print(f"[Capture] Failed to open source: {camera_url}")
+        # Never print the RTSP URL itself: it usually carries the camera password
+        print(f"[Capture] Failed to open source: {describe_capture_url(camera_url)}")
         return cap
 
     if is_rtsp:
@@ -81,27 +122,67 @@ def open_capture(camera_url: str) -> cv2.VideoCapture:
     return cap
 
 
+def _boxes_are_related(a: Tuple[int, int, int, int, float], b: Tuple[int, int, int, int, float]) -> bool:
+    """True when two detections likely belong to the same plate (nearby fragments)."""
+    dist = bbox_distance(a[:4], b[:4])
+    aw, ah = a[2] - a[0], a[3] - a[1]
+    bw, bh = b[2] - b[0], b[3] - b[1]
+    threshold = max(150.0, max(aw, ah, bw, bh) * 2.5)
+    return dist < threshold
+
+
 def merge_related_boxes(boxes: List[Tuple[int, int, int, int, float]]) -> List[Tuple[int, int, int, int, float]]:
-    """Merge bounding boxes that are close to each other."""
+    """Cluster nearby bounding boxes and merge each cluster into one box."""
     if not boxes:
         return []
 
-    boxes = sorted(boxes, key=lambda x: x[4], reverse=True)
-    bx1, by1, bx2, by2, bconf = boxes[0]
+    n = len(boxes)
+    parent = list(range(n))
 
-    for x1, y1, x2, y2, _ in boxes[1:]:
-        cx, cy = (x1 + x2) / 2, (y1 + y2) / 2
-        bcx, bcy = (bx1 + bx2) / 2, (by1 + by2) / 2
-        dist = ((cx - bcx) ** 2 + (cy - bcy) ** 2) ** 0.5
-        threshold = max(bx2 - bx1, by2 - by1) * 2.5
+    def find(i: int) -> int:
+        while parent[i] != i:
+            parent[i] = parent[parent[i]]
+            i = parent[i]
+        return i
 
-        if dist < max(150, threshold):
-            bx1 = min(bx1, x1)
-            by1 = min(by1, y1)
-            bx2 = max(bx2, x2)
-            by2 = max(by2, y2)
+    def union(i: int, j: int) -> None:
+        ri, rj = find(i), find(j)
+        if ri != rj:
+            parent[rj] = ri
 
-    return [(bx1, by1, bx2, by2, bconf)]
+    for i in range(n):
+        for j in range(i + 1, n):
+            if _boxes_are_related(boxes[i], boxes[j]):
+                union(i, j)
+
+    clusters: Dict[int, list] = {}
+    for i, box in enumerate(boxes):
+        root = find(i)
+        x1, y1, x2, y2, conf = box
+        if root not in clusters:
+            clusters[root] = [x1, y1, x2, y2, conf]
+            continue
+        c = clusters[root]
+        c[0] = min(c[0], x1)
+        c[1] = min(c[1], y1)
+        c[2] = max(c[2], x2)
+        c[3] = max(c[3], y2)
+        c[4] = max(c[4], conf)
+
+    return [tuple(c) for c in clusters.values()]
+
+
+def suppress_overlapping_boxes(items, scores, iou_thresh=0.45, boxes_xyxy=None):
+    """Deduplicate overlapping boxes using NMS; returns the kept items.
+    items are the boxes themselves unless boxes_xyxy gives the boxes separately."""
+    if not items:
+        return []
+    boxes = boxes_xyxy if boxes_xyxy is not None else items
+    cv_boxes = [[x1, y1, x2 - x1, y2 - y1] for x1, y1, x2, y2 in boxes]
+    indices = cv2.dnn.NMSBoxes(cv_boxes, scores, score_threshold=0.0, nms_threshold=iou_thresh)
+    if len(indices) == 0:
+        return []
+    return [items[int(i)] for i in indices]
 
 
 def bbox_center(bbox: Tuple[float, float, float, float]) -> Tuple[float, float]:

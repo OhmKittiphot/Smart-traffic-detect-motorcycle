@@ -1,0 +1,33 @@
+{% extends "dashboard/base.html" %}
+{% load i18n %}
+{% block title %}{% translate "Log in" %} · CCTV Control{% endblock %}
+{% block body_class %}page-login{% endblock %}
+{% block body %}
+<main class="login-card">
+  <div class="brand brand-lg">
+    <span class="rec-dot" aria-hidden="true"></span>
+    <span>CCTV Control</span>
+  </div>
+  <p class="muted">{% translate "Motorcycle detection" %} · {% translate "Administrators only" %}</p>
+
+  {% if locked_out %}
+    <div class="alert alert-danger" role="alert">
+      {% blocktranslate trimmed %}Too many failed login attempts. This account is locked for {{ cooloff_minutes }} minutes.{% endblocktranslate %}
+    </div>
+  {% else %}
+    {% if form.errors %}
+      <div class="alert alert-danger" role="alert">{% translate "Incorrect username or password." %}</div>
+    {% endif %}
+    <form method="post" class="login-form" autocomplete="on">
+      {% csrf_token %}
+      <label for="id_username">{% translate "Username" %}</label>
+      <input type="text" name="username" id="id_username" autocomplete="username" required autofocus
+             maxlength="150" value="{{ form.username.value|default_if_none:'' }}">
+      <label for="id_password">{% translate "Password" %}</label>
+      <input type="password" name="password" id="id_password" autocomplete="current-password" required>
+      <input type="hidden" name="next" value="{{ next }}">
+      <button type="submit" class="btn btn-primary btn-block">{% translate "Log in" %}</button>
+    </form>
+  {% endif %}
+</main>
+{% endblock %}

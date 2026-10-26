@@ -1,0 +1,87 @@
+{% extends "dashboard/base.html" %}
+{% load i18n static %}
+{% block title %}{% translate "Violations" %} · CCTV Control{% endblock %}
+{% block body %}
+{% include "dashboard/_topbar.html" %}
+
+<main class="search-page">
+  {% include "dashboard/_back_link.html" %}
+  <section class="violation-stats" aria-labelledby="stats-title">
+    <div class="table-head">
+      <h2 id="stats-title">{% translate "Violation statistics" %}</h2>
+      <span class="stats-meta muted" id="stats-meta"></span>
+      <span class="form-msg" id="stats-msg" role="status" aria-live="polite"></span>
+      {# Empty dates mean the last 30 days; the server fills them in #}
+      <form class="stats-range" id="stats-range">
+        <label>{% translate "From" %} <input type="date" id="st-start"></label>
+        <label>{% translate "To" %} <input type="date" id="st-end"></label>
+        <button type="button" class="btn btn-sm btn-ghost" id="st-range-reset" hidden>{% translate "Last 30 days" %}</button>
+      </form>
+    </div>
+    {# Laid out like a table in a paper: heavy rules above and below, a light rule between figures and charts #}
+    <div class="stats-board">
+      <div class="kpis">
+        <div class="kpi">
+          <span class="kpi-label">{% translate "Violations today" %}</span>
+          <span class="kpi-value" id="st-today"><span class="value-loading" aria-label="{% translate "Loading" %}"></span></span>
+          <span class="kpi-note" id="st-today-note"></span>
+        </div>
+        <div class="kpi">
+          <span class="kpi-label">{% translate "Last 7 days" %}</span>
+          <span class="kpi-value" id="st-week"><span class="value-loading" aria-label="{% translate "Loading" %}"></span></span>
+          <span class="kpi-spark" id="st-week-spark" aria-hidden="true"></span>
+        </div>
+        <div class="kpi">
+          <span class="kpi-label" id="st-range-label">{% translate "Last 30 days" %}</span>
+          <span class="kpi-value" id="st-violation"><span class="value-loading" aria-label="{% translate "Loading" %}"></span></span>
+          <span class="kpi-meter" aria-hidden="true"><span id="st-rate-bar"></span></span>
+          <span class="kpi-note" id="st-rate"></span>
+        </div>
+        <div class="kpi">
+          <span class="kpi-label">{% translate "Not reviewed yet" %}</span>
+          <span class="kpi-value" id="st-pending"><span class="value-loading" aria-label="{% translate "Loading" %}"></span></span>
+          <span class="kpi-meter kpi-meter-ok" aria-hidden="true"><span id="st-review-bar"></span></span>
+          <span class="kpi-note" id="st-confirmed"></span>
+        </div>
+      </div>
+      <div class="stats-charts">
+        <figure class="chart-panel">
+          <div class="chart-title">{% translate "Violations by type" %}</div>
+          <div id="by-type" class="hbars"><p class="chart-loading"><span class="value-loading" aria-label="{% translate "Loading" %}"></span></p></div>
+        </figure>
+        <figure class="chart-panel">
+          <div class="chart-title">{% translate "Motorcycles per day" %}
+            <span class="chart-legend"><span class="key key-bad"></span>{% translate "Violations" %} <span class="key key-total"></span>{% translate "All motorcycles" %}</span>
+          </div>
+          <div id="per-day" class="day-chart"><p class="chart-loading"><span class="value-loading" aria-label="{% translate "Loading" %}"></span></p></div>
+        </figure>
+      </div>
+      <div class="stats-charts">
+        <figure class="chart-panel">
+          <div class="chart-title">{% translate "Repeat offenders" %} <span class="chart-legend">{% translate "Click a plate to search it" %}</span></div>
+          <ol id="repeat" class="repeat-list"><li class="chart-loading"><span class="value-loading" aria-label="{% translate "Loading" %}"></span></li></ol>
+        </figure>
+        <figure class="chart-panel">
+          {# Follows the current month until another month is picked with the arrows #}
+          <div class="chart-title">{% translate "Violations by day" %}
+            <span class="cal-nav">
+              <button type="button" class="btn btn-sm btn-ghost" id="cal-prev" aria-label="{% translate "Previous month" %}">‹</button>
+              <span id="cal-month" aria-live="polite"></span>
+              <button type="button" class="btn btn-sm btn-ghost" id="cal-next" aria-label="{% translate "Next month" %}" disabled>›</button>
+            </span>
+          </div>
+          <div id="calendar" class="calendar"><p class="chart-loading"><span class="value-loading" aria-label="{% translate "Loading" %}"></span></p></div>
+          <p class="cal-peak muted" id="cal-peak"></p>
+        </figure>
+      </div>
+    </div>
+  </section>
+
+  {% include "dashboard/_plate_search.html" with violations_only=True browse=True plain_rows=True deletable=True %}
+</main>
+
+<meta name="csrf-token" content="{{ csrf_token }}">
+<script src="{% static 'dashboard/common.js' %}" defer></script>
+<script src="{% static 'dashboard/stats.js' %}" defer></script>
+<script src="{% static 'dashboard/search.js' %}" defer></script>
+{% endblock %}

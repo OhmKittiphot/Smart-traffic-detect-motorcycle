@@ -65,8 +65,11 @@ class SpeedEstimator:
         wx, wy = self._to_world((x1 + x2) / 2.0, float(y2))
 
         st = self._tracks.get(track_id)
+        # The same moment again (a repeated frame) adds nothing; restarting would throw the history away
+        if st is not None and t == st["last_t"]:
+            return st["speed"]
         # Time going backwards means the video looped: restart this track's history
-        if st is None or t <= st["last_t"]:
+        if st is None or t < st["last_t"]:
             st = {"raw": deque(maxlen=self.smooth_n), "hist": deque(), "speed": None, "last_t": t}
             self._tracks[track_id] = st
         st["last_t"] = t
@@ -98,6 +101,15 @@ class SpeedEstimator:
     def get_speed(self, track_id: int) -> Optional[float]:
         st = self._tracks.get(track_id)
         return st["speed"] if st else None
+
+    def clear_calibration(self) -> None:
+        """Forget the calibration; speeds are not measured until it is set again."""
+        self._H = None
+        self._tracks = {}
+
+    def reset(self) -> None:
+        """Drop per-track speed history; keep the homography calibration."""
+        self._tracks = {}
 
     def prune(self, now_t: float, max_age_s: float = 3.0) -> None:
         for tid in list(self._tracks.keys()):
