@@ -1,11 +1,12 @@
 """Recorded vehicles: plate search, reviewing and deleting records, violation statistics, evidence photos
 and the notifications of new violations."""
+import calendar
 from datetime import datetime, time, timedelta
 from pathlib import Path
 
 from django.conf import settings
 from django.db.models import Count, Max, Q
-from django.db.models.functions import ExtractHour, ExtractIsoWeekDay, TruncDate
+from django.db.models.functions import TruncDate
 from django.http import FileResponse, Http404
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
@@ -170,28 +171,25 @@ def _per_day(first, last) -> list:
              "violation": counts.get(d, {}).get("violation", 0)} for d in days]
 
 
-def _by_hour(violations) -> list:
-    """Violations by weekday (Monday first) and hour of the day: 7 rows of 24 counts."""
-    tz = timezone.get_current_timezone()
-    grid = [[0] * 24 for _ in range(7)]
-    for row in (violations.annotate(weekday=ExtractIsoWeekDay("detected_at", tzinfo=tz),
-                                    hour=ExtractHour("detected_at", tzinfo=tz))
-                .values("weekday", "hour").annotate(n=Count("id"))):
-        grid[row["weekday"] - 1][row["hour"]] = row["n"]
-    return grid
+def _calendar(month) -> dict:
+    """The calendar of `month` (its first day): motorcycles and violations of each of its days up to today."""
+    today = timezone.localdate()
+    last = min(month.replace(day=calendar.monthrange(month.year, month.month)[1]), today)
+    return {"month": month.strftime("%Y-%m"), "this_month": today.strftime("%Y-%m"), "days": _per_day(month, last)}
 
 
-def _stats_range(request):
+def _stats_query(request) -> dict:
     query = StatsQuerySerializer(data=request.query_params)
     query.is_valid(raise_exception=True)
-    return query.validated_data["start"], query.validated_data["end"]
+    return query.validated_data
 
 
 class StatsView(APIView):
     def get(self, request):
         """Violation statistics for the violations page. The last 7 days always end today; the rest covers
-        the chosen date range: totals, violations by type, per day and by time of day."""
-        first, last = _stats_range(request)
+        the chosen date range: totals, violations by type and per day. The calendar shows the chosen month."""
+        query = _stats_query(request)
+        first, last = query["start"], query["end"]
         today = timezone.localdate()
         violations = _in_days(first, last).filter(is_violation=True)
         return Response({
@@ -206,7 +204,7 @@ class StatsView(APIView):
             "by_type": [{"label": v.label, "count": violations.filter(violations__contains=v.value).count()}
                         for v in Violation],
             "per_day": _per_day(first, last),
-            "by_hour": _by_hour(violations),
+            "calendar": _calendar(query["month"]),
         })
 
 
@@ -215,8 +213,8 @@ class RepeatOffendersView(APIView):
         """Plates with more than one violation in the chosen date range, most violations first. Plates OCR
         read slightly differently count as one motorcycle (plate_search.group_plates); rejected events
         are left out."""
-        first, last = _stats_range(request)
-        violations = (_in_days(first, last).filter(is_violation=True)
+        query = _stats_query(request)
+        violations = (_in_days(query["start"], query["end"]).filter(is_violation=True)
                       .exclude(review=Review.REJECTED).exclude(plate_text=""))
         counts = dict(violations.values("plate_text").annotate(n=Count("id")).order_by("-n")
                       .values_list("plate_text", "n")[:_REPEAT_MAX_PLATES])

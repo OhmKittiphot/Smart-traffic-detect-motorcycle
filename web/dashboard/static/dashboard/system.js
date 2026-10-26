@@ -19,7 +19,7 @@
     return `${n.toFixed(i ? 1 : 0)} ${units[i]}`;
   }
 
-  const time = (iso) => (iso ? new Date(iso).toLocaleString() : "—");
+  const time = (iso) => (iso ? new Date(iso).toLocaleString(document.documentElement.lang) : "—");
 
   // Name of a camera / file, marked when it is the source being processed now
   function sourceCell(name, source) {

@@ -62,8 +62,16 @@
           <ol id="repeat" class="repeat-list"><li class="chart-loading"><span class="value-loading" aria-label="{% translate "Loading" %}"></span></li></ol>
         </figure>
         <figure class="chart-panel">
-          <div class="chart-title">{% translate "Violations by time of day" %} <span class="chart-legend" id="by-hour-peak"></span></div>
-          <div id="by-hour" class="heatmap"><p class="chart-loading"><span class="value-loading" aria-label="{% translate "Loading" %}"></span></p></div>
+          {# Follows the current month until another month is picked with the arrows #}
+          <div class="chart-title">{% translate "Violations by day" %}
+            <span class="cal-nav">
+              <button type="button" class="btn btn-sm btn-ghost" id="cal-prev" aria-label="{% translate "Previous month" %}">‹</button>
+              <span id="cal-month" aria-live="polite"></span>
+              <button type="button" class="btn btn-sm btn-ghost" id="cal-next" aria-label="{% translate "Next month" %}" disabled>›</button>
+            </span>
+          </div>
+          <div id="calendar" class="calendar"><p class="chart-loading"><span class="value-loading" aria-label="{% translate "Loading" %}"></span></p></div>
+          <p class="cal-peak muted" id="cal-peak"></p>
         </figure>
       </div>
     </div>

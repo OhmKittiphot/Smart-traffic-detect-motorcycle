@@ -30,20 +30,26 @@ class VehicleQuerySerializer(serializers.Serializer):
 
 class StatsQuerySerializer(serializers.Serializer):
     """?start=<YYYY-MM-DD>&end=<YYYY-MM-DD>: the days the violation statistics cover, both included.
-    Without them, the last DEFAULT_DAYS days, today included."""
+    Without them, the last DEFAULT_DAYS days, today included.
+    &month=<YYYY-MM>: the month the calendar shows, this month by default (given as its first day)."""
     DEFAULT_DAYS = 30
     MAX_DAYS = 366
     start = serializers.DateField(required=False)
     end = serializers.DateField(required=False)
+    month = serializers.DateField(input_formats=["%Y-%m"], required=False)
 
     def validate(self, data):
-        end = data.get("end") or timezone.localdate()
+        today = timezone.localdate()
+        end = data.get("end") or today
         start = data.get("start") or end - timedelta(days=self.DEFAULT_DAYS - 1)
         if start > end:
             raise serializers.ValidationError(_("The start date is after the end date"))
         if (end - start).days >= self.MAX_DAYS:
             raise serializers.ValidationError(_("Choose at most %(days)s days") % {"days": self.MAX_DAYS})
-        return {"start": start, "end": end}
+        month = data.get("month") or today.replace(day=1)
+        if month > today:
+            raise serializers.ValidationError(_("That month has not started yet"))
+        return {"start": start, "end": end, "month": month}
 
 
 class PlateSearchSerializer(serializers.Serializer):

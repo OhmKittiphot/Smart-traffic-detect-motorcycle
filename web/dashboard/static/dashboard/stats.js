@@ -1,6 +1,7 @@
 "use strict";
 
-// Violation statistics at the top of the violations page, from /api/stats/ (refreshed every 5 seconds)
+// Violation statistics at the top of the violations page, with a calendar of one month, from /api/stats/
+// (refreshed every 5 seconds)
 // and /api/stats/repeat/ (every minute, since grouping look-alike plates takes longer), for the chosen dates
 (() => {
   const REFRESH_MS = 5000;
@@ -50,28 +51,66 @@
     $("per-day").replaceChildren(grid, el("div", { class: "day-plot" }, ...days));
   }
 
-  // A cell per weekday and hour, its colour stronger the more violations; the busiest hour is named above
-  function renderByHour(byHour) {
-    const max = Math.max(0, ...byHour.flat());
-    const cells = byHour.flatMap((hours, day) => [
-      el("span", {}, WEEKDAYS[day]),
-      ...hours.map((n, hour) => {
-        const cell = el("span", { class: n ? "heat-cell" : "heat-cell heat-empty",
-                                  title: `${WEEKDAYS[day]} ${hour}:00–${hour + 1}:00: `
-                                    + interpolate(ngettext("%s violation", "%s violations", n), [n]) });
-        if (n) cell.style.opacity = 0.2 + 0.8 * (n / max);
-        return cell;
-      }),
-    ]);
-    const hourLabels = [el("span"), ...Array.from({ length: 24 },
-      (_, hour) => el("span", { class: "heat-hour" }, hour % 6 === 0 ? `${hour}:00` : ""))];
-    $("by-hour").replaceChildren(...cells, ...hourLabels);
+  // ---------- month calendar ----------
+  // null: the current month, so the calendar moves on by itself when a new month starts
+  let calendarMonth = null;
+  let shownCalendar = null;
 
-    const peak = byHour.flat().indexOf(max);
-    $("by-hour-peak").textContent = max
-      ? interpolate(gettext("Busiest: %s"), [`${WEEKDAYS[Math.floor(peak / 24)]} ${peak % 24}:00–${peak % 24 + 1}:00 (${max})`])
+  // "2026-10" one month later or earlier
+  function shiftMonth(month, by) {
+    const [year, m] = month.split("-").map(Number);
+    const date = new Date(year, m - 1 + by, 1);
+    return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
+  }
+
+  // A cell per day of the month, Monday first; the more violations, the redder. days ends today, so the
+  // rest of the current month is drawn as days still to come
+  function renderCalendar(cal) {
+    shownCalendar = cal;
+    const [year, month] = cal.month.split("-").map(Number);
+    const first = new Date(year, month - 1, 1);
+    const daysInMonth = new Date(year, month, 0).getDate();
+    const blanks = (first.getDay() + 6) % 7;   // getDay() counts from Sunday
+    const max = Math.max(0, ...cal.days.map((d) => d.violation));
+    const isThisMonth = cal.month === cal.this_month;
+
+    const days = Array.from({ length: daysInMonth }, (_, i) => {
+      const d = cal.days[i];
+      if (!d) return el("span", { class: "cal-day cal-future" }, el("span", { class: "cal-date" }, i + 1));
+      const level = max ? d.violation / max : 0;
+      const cell = el("span", {
+        class: `cal-day${level > 0.5 ? " cal-strong" : ""}${isThisMonth && i === cal.days.length - 1 ? " cal-today" : ""}`,
+        title: interpolate(gettext("%(date)s: %(violations)s violations of %(total)s"),
+                           { date: d.date, violations: d.violation, total: d.total }, true),
+      });
+      if (d.violation) {
+        const fill = el("span", { class: "cal-fill" });
+        fill.style.opacity = 0.15 + 0.85 * level;   // element.style, which the CSP allows
+        cell.append(fill);
+      }
+      cell.append(el("span", { class: "cal-date" }, i + 1), el("span", { class: "cal-count" }, d.violation || ""));
+      return cell;
+    });
+    $("calendar").replaceChildren(...WEEKDAYS.map((w) => el("span", { class: "cal-weekday" }, w)),
+      ...Array.from({ length: blanks }, () => el("span")), ...days);
+
+    $("cal-month").textContent = first.toLocaleDateString(document.documentElement.lang || undefined,
+                                                          { month: "long", year: "numeric" });
+    $("cal-next").disabled = isThisMonth;
+    const peak = cal.days.find((d) => max && d.violation === max);
+    $("cal-peak").textContent = peak
+      ? interpolate(gettext("Busiest: %s"), [`${peak.date} (${interpolate(ngettext("%s violation", "%s violations", max), [max])})`])
       : gettext("No violations");
   }
+
+  function showMonth(by) {
+    if (!shownCalendar) return;
+    const month = shiftMonth(shownCalendar.month, by);
+    calendarMonth = month === shownCalendar.this_month ? null : month;
+    refresh();
+  }
+  $("cal-prev").addEventListener("click", () => showMonth(-1));
+  $("cal-next").addEventListener("click", () => showMonth(1));
 
   // Plates with more than one violation; a click searches the plate in the list below
   function renderRepeat(rows) {
@@ -127,10 +166,10 @@
 
     renderByType(s.by_type, s.violation);
     renderPerDay(s.per_day);
-    renderByHour(s.by_hour);
+    renderCalendar(s.calendar);
     if (!startInput.value) startInput.value = s.start;
     if (!endInput.value) endInput.value = s.end;
-    $("stats-meta").textContent = `${rangeText(s)} · ${interpolate(gettext("updated %s"), [new Date().toLocaleTimeString()])}`;
+    $("stats-meta").textContent = `${rangeText(s)} · ${interpolate(gettext("updated %s"), [new Date().toLocaleTimeString(document.documentElement.lang)])}`;
   }
 
   // ---------- date range ----------
@@ -146,6 +185,13 @@
 
   function rangeQuery() {
     return customRange ? `?${new URLSearchParams({ start: startInput.value, end: endInput.value })}` : "";
+  }
+
+  // The range plus the month the calendar shows, unless it is the current one
+  function statsQuery() {
+    const params = new URLSearchParams(customRange ? { start: startInput.value, end: endInput.value } : {});
+    if (calendarMonth) params.set("month", calendarMonth);
+    return params.size ? `?${params}` : "";
   }
 
   function reload() {
@@ -172,7 +218,7 @@
 
   async function refresh() {
     try {
-      render(await api(`/api/stats/${rangeQuery()}`));
+      render(await api(`/api/stats/${statsQuery()}`));
       $("stats-msg").textContent = "";
     } catch (e) {
       $("stats-msg").textContent = interpolate(gettext("Could not load statistics: %s"), [e.message]);

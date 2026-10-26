@@ -13,7 +13,7 @@
       <legend>{% translate "Violation rules" %}</legend>
       <label class="settings-row">
         <span>{% translate "Speed limit" %} <small>{% translate "0 = not checked" %}</small></span>
-        <span class="input-unit"><input type="number" name="speed_limit_kmh" min="0" max="300" step="1" value="{{ system.speed_limit_kmh }}" required><span>km/h</span></span>
+        <span class="input-unit"><input type="number" name="speed_limit_kmh" min="0" max="300" step="1" value="{{ system.speed_limit_kmh }}" required><span>{% translate "km/h" %}</span></span>
       </label>
       <label class="settings-row">
         <span>{% translate "Riders allowed" %}</span>
@@ -58,13 +58,18 @@
           <span class="theme-label">{% translate "Auto" %}</span>
         </button>
       </div>
-      <label class="settings-row">
-        <span>{% translate "Language" %}</span>
-        {# Each language is named in its own language, so it can be found whatever the page is shown in #}
-        <select name="language">
-          {% for value, label in languages %}<option value="{{ value }}" lang="{{ value }}" {% if prefs.language == value %}selected{% endif %}>{{ label }}</option>{% endfor %}
-        </select>
-      </label>
+      <div class="settings-row">
+        <span id="language-label">{% translate "Language" %}</span>
+        {# Each language is named in its own language (title), so it can be found whatever the page is shown in #}
+        <div class="lang-toggle" role="radiogroup" aria-labelledby="language-label">
+          {% for value, label in languages %}
+          <label title="{{ label }}" lang="{{ value }}">
+            <input type="radio" name="language" value="{{ value }}" {% if prefs.language == value %}checked{% endif %}>
+            <span>{{ value|upper }}</span>
+          </label>
+          {% endfor %}
+        </div>
+      </div>
       {% if live_view %}
       <label class="settings-row">
         <span>{% translate "Units" %}</span>

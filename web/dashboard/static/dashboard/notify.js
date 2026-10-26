@@ -156,7 +156,8 @@
       // Only online <-> offline is news; a camera that was just added or is not set up is not
       const changed = data.cameras.filter((c) => last[c.key] && last[c.key] !== c.state
         && c.state !== "unconfigured" && last[c.key] !== "unconfigured");
-      const time = new Date(data.checked_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+      const time = new Date(data.checked_at).toLocaleTimeString(document.documentElement.lang,
+                                                                { hour: "2-digit", minute: "2-digit" });
       if (changed.length > MAX_SHOWN) show(camerasToast(changed, time));
       else for (const c of changed) show(cameraToast(c, time));
     } catch (e) { /* try again on the next poll */ }

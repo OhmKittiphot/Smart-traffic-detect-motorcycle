@@ -1,3 +1,14 @@
+/* Thai text: Noto Sans Thai, and its looped version for descriptions and other text of 13px or smaller
+   (both SIL Open Font License, fonts/OFL.txt). Served from this site, since the CSP loads nothing from other
+   origins. One variable file per font covers weights 400-700; the unicode-range covers Thai only, so Latin
+   letters and digits keep the system fonts listed after them in --font / --font-small */
+@font-face { font-family: "Noto Sans Thai"; font-weight: 400 700; font-display: swap;
+  src: url("fonts/noto-sans-thai.woff2") format("woff2");
+  unicode-range: U+02D7, U+0303, U+0331, U+0E01-0E5B, U+200C-200D, U+25CC; }
+@font-face { font-family: "Noto Sans Thai Looped"; font-weight: 400 700; font-display: swap;
+  src: url("fonts/noto-sans-thai-looped.woff2") format("woff2");
+  unicode-range: U+02D7, U+0303, U+0331, U+0E01-0E5B, U+200C-200D, U+25CC; }
+
 :root {
   --bg: #0f1115;
   --panel: #171a21;
@@ -18,7 +29,9 @@
   --chip-bg: #2a2f3a;
   --row-flash: rgba(59, 130, 246, .28);
   --radius: 10px;
-  font-family: "Segoe UI", Tahoma, "Noto Sans Thai", "Leelawadee UI", system-ui, sans-serif;
+  --font: "Noto Sans Thai", "Segoe UI", Tahoma, "Leelawadee UI", system-ui, sans-serif;
+  --font-small: "Noto Sans Thai Looped", "Segoe UI", Tahoma, "Leelawadee UI", system-ui, sans-serif;
+  font-family: var(--font);
   color-scheme: dark;
 }
 
@@ -58,6 +71,28 @@
 html, body { margin: 0; }
 body { background: var(--bg); color: var(--text); font-size: 14px; line-height: 1.5; min-height: 100vh; }
 button, input, select { font: inherit; color: inherit; }
+/* Descriptions (.muted) and other text of 13px or smaller, with what they contain: the looped Thai letters
+   are easier to read at small sizes; headings and 14px text keep --font. :where() adds no specificity */
+:where(.muted, .btn-sm, .login-form label, .alert, .plate-link, .video-meta, .loading-overlay, .engine-chip, .seek-time,
+  .badge, .form-msg, .stat-label, .rules, .fps-head, .fps-axis, .fps-tip, .filter, .vehicles, .tag,
+  .calib-help, .calib-next, .calib-field, .search-field, .search-check, .search-help, .source-btn,
+  .source-item, .source-count, .source-none, .detail-note, .model-list, .link-btn, .stats-meta, .kpi-label,
+  .chart-title, .kpi-note, .chart-legend, .hbar, .hbar-share, .day-tick, .day-label, .stats-range,
+  .repeat-meta, .calendar, #storage-use, .settings-pop, .toast-text, .topbar-search input, small) {
+  font-family: var(--font-small);
+}
+:where(h1, h2, h3) { font-family: var(--font); }
+
+/* Thai pages (<html lang="th">). Letter spacing pulls Thai words apart and uppercase does nothing for them,
+   so the spaced-out labels get normal spacing and a size up instead. Thai vowels and tone marks stack above
+   and below the letters, so the tight line heights get more room */
+:lang(th) :is(.kpi-label, .chart-title, .settings-form legend, .settings-password summary, .loading-text, .badge) {
+  letter-spacing: 0;
+}
+:lang(th) :is(.kpi-label, .chart-title, .settings-form legend, .loading-text, .cal-weekday,
+  .settings-row > span:first-child small) { font-size: 12px; }
+:lang(th) .fps-axis { font-size: 11px; }
+:lang(th) :is(.settings-row > span:first-child small, .toast-text, .calib-next) { line-height: 1.5; }
 .muted { color: var(--muted); }
 .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 [hidden] { display: none !important; }
@@ -311,7 +346,7 @@ a.brand:focus-visible { outline: 2px solid var(--accent); outline-offset: 4px; }
 /* Left: title with the filters under it. Right: Delete all, centred on both rows, kept apart from the filters */
 .table-head { display: flex; align-items: center; justify-content: space-between; gap: 24px; padding: 0 0 12px; }
 .table-head-main { display: grid; gap: 10px; min-width: 0; }
-.table-head h2 { font-size: 15px; margin: 0; }
+.table-head h2 { font-size: 15px; margin: 0; white-space: nowrap; }   /* a squeezed title would break mid-word */
 .table-head .filter { height: 32px; }
 .btn-clear { height: 40px; padding: 0 16px; flex: none; border-radius: 10px; }
 .btn-clear .bi, .btn-danger .bi { flex: none; }
@@ -334,7 +369,9 @@ a.brand:focus-visible { outline: 2px solid var(--accent); outline-offset: 4px; }
 
 .table-wrap { max-height: calc(100vh - 150px); overflow: auto; border-top: 1px solid var(--border); }
 @media (max-width: 1100px) { .table-wrap { max-height: 70vh; } }
-.vehicles { width: 100%; border-collapse: collapse; font-size: 13px; }
+/* Separate (not collapsed) borders: each line belongs to its cell, so it moves with the rows when new ones
+   slide in (dashboard.js printRows); collapsed borders are drawn for the whole table and would stay put */
+.vehicles { width: 100%; border-collapse: separate; border-spacing: 0; font-size: 13px; }
 .vehicles th { position: sticky; top: 0; background: var(--bg); text-align: left; font-weight: 500; color: var(--muted);
   padding: 8px 10px; border-bottom: 1px solid var(--border); white-space: nowrap; z-index: 1; }
 .vehicles td { padding: 8px 10px; border-bottom: 1px solid var(--border); vertical-align: middle; }
@@ -634,13 +671,22 @@ a.filter:hover { color: var(--text); border-color: var(--border-strong); }
 .repeat-meta { font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
 .repeat-none { padding: 18px 0; text-align: center; }
 
-/* Time-of-day heatmap: a row per weekday, a cell per hour, darker for more violations */
-.heatmap { display: grid; grid-template-columns: 30px repeat(24, minmax(0, 1fr)); gap: 2px; font-size: 10px;
-  line-height: 14px; color: var(--muted); }
-.heatmap .chart-loading { grid-column: 1 / -1; }
-.heat-hour { white-space: nowrap; font-variant-numeric: tabular-nums; }
-.heat-cell { aspect-ratio: 1; min-height: 8px; border-radius: 2px; background: var(--bad); }
-.heat-cell.heat-empty { background: var(--chip-bg); }
+/* Month calendar: a column per weekday (Monday first), each day redder the more violations it had */
+.cal-nav { display: inline-flex; align-items: center; gap: 4px; font-weight: 600; text-transform: none; letter-spacing: 0;
+  font-size: 12px; color: var(--text); }
+#cal-month { min-width: 110px; text-align: center; }
+.calendar { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 3px; font-size: 12px; }
+.calendar .chart-loading { grid-column: 1 / -1; }
+.cal-weekday { padding-bottom: 2px; text-align: center; font-size: 11px; color: var(--muted); }
+.cal-day { position: relative; display: flex; justify-content: space-between; align-items: flex-start; min-height: 40px;
+  padding: 4px 6px; border-radius: 4px; background: var(--chip-bg); font-variant-numeric: tabular-nums; overflow: hidden; }
+.cal-fill { position: absolute; inset: 0; background: var(--bad); }
+.cal-date, .cal-count { position: relative; }
+.cal-count { align-self: flex-end; font-weight: 600; }
+.cal-strong { color: #fff; }
+.cal-today { box-shadow: inset 0 0 0 2px var(--text); }
+.cal-future { background: none; border: 1px dashed var(--border); color: var(--muted); }
+.cal-peak { margin: 0; font-size: 12px; }
 .search-title { margin: 0 0 12px; }
 /* Back, above the violations page (staff) */
 .back-link { display: inline-flex; align-items: center; gap: 4px; margin: 0 0 12px -8px; padding-left: 6px;
@@ -691,6 +737,20 @@ a.filter:hover { color: var(--text); border-color: var(--border-strong); }
 .logout-btn:hover { background: var(--bad-bg); border-color: var(--bad); }
 .logout-btn .muted { margin-left: auto; font-weight: 400; }
 button.plate-link { cursor: pointer; font: inherit; font-size: 13px; font-weight: 600; }
+
+/* Language toggle: EN | TH, the highlight slides to the chosen side */
+.lang-toggle { position: relative; display: inline-grid; grid-template-columns: 1fr 1fr; padding: 2px;
+  border: 1px solid var(--border-strong); border-radius: 8px; background: var(--bg); }
+.lang-toggle::before { content: ""; position: absolute; top: 2px; bottom: 2px; left: 2px; width: calc(50% - 2px);
+  border-radius: 6px; background: var(--accent); transition: transform .25s cubic-bezier(.2, .8, .2, 1); }
+.lang-toggle:has(input[value=th]:checked)::before { transform: translateX(100%); }
+.lang-toggle label { position: relative; }
+.lang-toggle input { position: absolute; inset: 0; margin: 0; opacity: 0; cursor: pointer; }
+.lang-toggle span { display: block; min-width: 40px; padding: 4px 10px; text-align: center; font-size: 12px;
+  font-weight: 700; letter-spacing: .06em; color: var(--muted); transition: color .25s ease; pointer-events: none; }
+.lang-toggle input:checked + span { color: #fff; }
+.lang-toggle input:focus-visible + span { outline: 2px solid var(--accent); outline-offset: 1px; border-radius: 6px; }
+@media (prefers-reduced-motion: reduce) { .lang-toggle::before, .lang-toggle span { transition: none; } }
 
 /* On / off switch for a checkbox */
 .switch { appearance: none; position: relative; flex: none; width: 34px; height: 20px; margin: 0; border-radius: 999px;

@@ -51,7 +51,7 @@ window.FpsChart = (() => {
       svg.append(svgEl("text", { class: "fps-axis", x: PAD.left - 6, y: y(v) + 4, "text-anchor": "end" }, v));
     }
     svg.append(svgEl("text", { class: "fps-axis", x: PAD.left, y: HEIGHT - 4 }, interpolate(gettext("%s min ago"), [WINDOW_S / 60])));
-    svg.append(svgEl("text", { class: "fps-axis", x: width - PAD.right, y: HEIGHT - 4, "text-anchor": "end" }, gettext(gettext("now"))));
+    svg.append(svgEl("text", { class: "fps-axis", x: width - PAD.right, y: HEIGHT - 4, "text-anchor": "end" }, gettext("now")));
 
     // One path per unbroken run of samples
     let d = "";
@@ -75,7 +75,7 @@ window.FpsChart = (() => {
       const cx = x(nearest.t);
       svg.append(svgEl("line", { class: "fps-cross", x1: cx, x2: cx, y1: PAD.top, y2: HEIGHT - PAD.bottom }));
       if (nearest.fps != null) svg.append(svgEl("circle", { class: "fps-dot", cx, cy: y(nearest.fps), r: 4 }));
-      tip.textContent = `${new Date(nearest.wall).toLocaleTimeString()} · `
+      tip.textContent = `${new Date(nearest.wall).toLocaleTimeString(document.documentElement.lang)} · `
         + (nearest.fps != null ? `${nearest.fps.toFixed(1)} fps` : gettext(gettext("detection off")));
       tip.hidden = false;
       tip.style.left = `${plot.offsetLeft + Math.min(Math.max(cx, 60), width - 60)}px`;   // tip sits in the card

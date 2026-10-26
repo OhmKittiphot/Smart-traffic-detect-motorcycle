@@ -12,7 +12,7 @@ msgid "%(date)s: %(violations)s violations of %(total)s"
 msgstr "%(date)s: ฝ่าฝืน %(violations)s จาก %(total)s คัน"
 
 msgid "%(rate)s% of %(total)s motorcycles"
-msgstr "%(rate)s% ของรถจักรยานยนต์ %(total)s คัน"
+msgstr "%(rate)s% ของรถจักรยานยนต์ทั้งหมด %(total)s คัน"
 
 msgid "%(review)s by %(user)s · %(when)s"
 msgstr "%(review)s โดย %(user)s · %(when)s"
@@ -27,7 +27,7 @@ msgid "%s cameras changed"
 msgstr "กล้องเปลี่ยนสถานะ %s ตัว"
 
 msgid "%s min ago"
-msgstr "%s นาทีก่อน"
+msgstr "%s นาทีที่แล้ว"
 
 msgid "%s motorcycle found"
 msgid_plural "%s motorcycles found"
@@ -55,7 +55,7 @@ msgstr "(แสดง %s รายการล่าสุด)"
 
 msgid "+%s more violation"
 msgid_plural "+%s more violations"
-msgstr[0] "+ การฝ่าฝืนอีก %s ครั้ง"
+msgstr[0] "และฝ่าฝืนอีก %s ครั้ง"
 
 msgid "a deleted user"
 msgstr "ผู้ใช้ที่ถูกลบ"
@@ -64,7 +64,7 @@ msgid "All %s motorcycles"
 msgstr "รถจักรยานยนต์ทั้งหมด %s คัน"
 
 msgid "also read as %s"
-msgstr "อ่านได้อีกแบบว่า %s"
+msgstr "อาจอ่านเป็น %s"
 
 msgid "Auto"
 msgstr "อัตโนมัติ"
@@ -76,7 +76,7 @@ msgid "Back %s seconds"
 msgstr "ย้อนกลับ %s วินาที"
 
 msgid "Busiest: %s"
-msgstr "มากที่สุด: %s"
+msgstr "ฝ่าฝืนมากที่สุด: %s"
 
 msgid "Calibrate"
 msgstr "ปรับเทียบ"
@@ -115,7 +115,7 @@ msgid "Could not load a frame from the video"
 msgstr "โหลดเฟรมจากวิดีโอไม่ได้"
 
 msgid "Could not load repeat offenders: %s"
-msgstr "โหลดผู้ฝ่าฝืนซ้ำไม่ได้: %s"
+msgstr "โหลดรายชื่อผู้กระทำผิดซ้ำไม่ได้: %s"
 
 msgid "Could not load statistics: %s"
 msgstr "โหลดสถิติไม่ได้: %s"
@@ -130,14 +130,14 @@ msgid "Dark"
 msgstr "มืด"
 
 msgid "Date & time"
-msgstr "วันและเวลา"
+msgstr "วันที่และเวลา"
 
 msgid "Delete %s selected motorcycle?"
 msgid_plural "Delete %s selected motorcycles?"
-msgstr[0] "ลบรถจักรยานยนต์ที่เลือก %s คัน?"
+msgstr[0] "ลบรถจักรยานยนต์ที่เลือก %s คันหรือไม่"
 
 msgid "Delete all %s motorcycles in this list?"
-msgstr "ลบรถจักรยานยนต์ทั้ง %s คันในรายการนี้?"
+msgstr "ลบรถจักรยานยนต์ทั้ง %s คันในรายการนี้หรือไม่"
 
 msgid "Delete all (%s)"
 msgstr "ลบทั้งหมด (%s)"
@@ -183,16 +183,16 @@ msgid "FILE"
 msgstr "ไฟล์"
 
 msgid "Forward %s seconds"
-msgstr "ข้ามไป %s วินาที"
+msgstr "ไปข้างหน้า %s วินาที"
 
 msgid "Fri"
 msgstr "ศ."
 
 msgid "Helmet"
-msgstr "หมวกกันน็อก"
+msgstr "หมวกนิรภัย"
 
 msgid "Helmet %s"
-msgstr "สวมหมวก %s"
+msgstr "สวมหมวกนิรภัย %s"
 
 msgid "In use"
 msgstr "กำลังใช้งาน"
@@ -231,7 +231,7 @@ msgid "Needs a video signal"
 msgstr "ต้องมีสัญญาณวิดีโอ"
 
 msgid "No helmet %s"
-msgstr "ไม่สวมหมวก %s"
+msgstr "ไม่สวมหมวกนิรภัย %s"
 
 msgid "No motorcycles match this filter"
 msgstr "ไม่มีรถจักรยานยนต์ที่ตรงกับตัวกรองนี้"
@@ -240,10 +240,10 @@ msgid "No motorcycles recorded"
 msgstr "ยังไม่มีรถจักรยานยนต์ที่บันทึกไว้"
 
 msgid "No motorcycles yet"
-msgstr "ยังไม่มีรถจักรยานยนต์"
+msgstr "ยังไม่พบรถจักรยานยนต์"
 
 msgid "No plate has more than one violation"
-msgstr "ไม่มีป้ายทะเบียนใดฝ่าฝืนมากกว่าหนึ่งครั้ง"
+msgstr "ยังไม่มีป้ายทะเบียนใดฝ่าฝืนเกินหนึ่งครั้ง"
 
 msgid "No plate looks like “%s”"
 msgstr "ไม่มีป้ายทะเบียนที่คล้าย “%s”"
@@ -279,7 +279,7 @@ msgid "Nothing to review"
 msgstr "ไม่มีรายการให้ตรวจสอบ"
 
 msgid "now"
-msgstr "ตอนนี้"
+msgstr "ขณะนี้"
 
 msgid "OCR confidence"
 msgstr "ความมั่นใจของ OCR"
@@ -369,7 +369,7 @@ msgid "Select record"
 msgstr "เลือกรายการ"
 
 msgid "Show less"
-msgstr "แสดงน้อยลง"
+msgstr "ย่อรายการ"
 
 msgid "Source"
 msgstr "แหล่งวิดีโอ"
@@ -390,7 +390,7 @@ msgid "Speed calibration saved"
 msgstr "บันทึกการปรับเทียบความเร็วแล้ว"
 
 msgid "Speed is not measured until calibrated"
-msgstr "จะไม่วัดความเร็วจนกว่าจะปรับเทียบ"
+msgstr "ยังไม่วัดความเร็วจนกว่าจะปรับเทียบ"
 
 msgid "Status"
 msgstr "สถานะ"
@@ -414,7 +414,7 @@ msgid "Thu"
 msgstr "พฤ."
 
 msgid "Track ID"
-msgstr "รหัสการติดตาม"
+msgstr "หมายเลขติดตาม"
 
 msgid "Tue"
 msgstr "อ."
@@ -432,7 +432,7 @@ msgid "Unreadable plate"
 msgstr "อ่านป้ายทะเบียนไม่ได้"
 
 msgid "updated %s"
-msgstr "อัปเดต %s"
+msgstr "อัปเดตเมื่อ %s"
 
 msgid "View evidence photo"
 msgstr "ดูภาพหลักฐาน"
