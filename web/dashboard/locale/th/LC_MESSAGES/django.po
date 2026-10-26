@@ -144,6 +144,9 @@ msgstr "วันที่และเวลา"
 msgid "Details of %(plate)s"
 msgstr "รายละเอียดของ %(plate)s"
 
+msgid "Detection is not running"
+msgstr "ระบบตรวจจับไม่ได้ทำงาน"
+
 msgid "Helmet %(n)s"
 msgstr "สวมหมวกนิรภัย %(n)s"
 
@@ -675,8 +678,8 @@ msgstr "กำลังเริ่ม"
 msgid "Starting…"
 msgstr "กำลังเริ่ม…"
 
-msgid "Starts when staff open the live view"
-msgstr "เริ่มทำงานเมื่อเจ้าหน้าที่เปิดหน้าภาพสด"
+msgid "Starts when staff log in"
+msgstr "เริ่มทำงานเมื่อเจ้าหน้าที่เข้าสู่ระบบ"
 
 msgid "Status"
 msgstr "สถานะ"

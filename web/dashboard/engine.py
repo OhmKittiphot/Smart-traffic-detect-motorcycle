@@ -1,4 +1,4 @@
-"""Runs the detection pipeline (src/) inside the web server process, while staff have the live view open.
+"""Runs the detection pipeline (src/) inside the web server process, while staff are logged in.
 
 One DetectionService per process: models and the OCR process load once, and switching between the live
 camera and a video file only replaces the video stream. Its parts live in their own modules: which sources
@@ -252,86 +252,126 @@ _service: Optional[DetectionService] = None
 _service_lock = threading.Lock()
 
 
-# Detection runs only while staff have the live view open: the page polls /api/status/ every second and
-# keeps /stream/ open, and stops both when it is left or its tab is hidden. Once neither has been seen
-# for this long, detection stops and the GPU is freed.
-IDLE_STOP_S = 60
-_IDLE_CHECK_EVERY_S = 5
-# A live view page polls every second; one not heard from for this long is no longer open
-_VIEWER_GONE_S = 5
-_last_viewer_t = 0.0
-# Session key -> when that session's live view was last seen, so one account logging out does not stop
-# detection for the others still watching
-_viewers: dict = {}
-_idle_watch: Optional[threading.Thread] = None
+# Detection runs (and holds the GPU) only while staff are logged in: the models load when the first of them
+# logs in and are freed when the last logs out or their session expires. While it runs:
+# - a live camera is detected all the time
+# - a video file only while it plays: it opens paused, staff start and stop it with play / pause, and it
+#   pauses itself at the end
+# Staff already logged in when the server starts are counted too (resume_logged_in_staff, run.py).
+_staff: set = set()   # session keys of the staff logged in
+# Sessions that end without logging out (the browser was closed and the session expired) are noticed this often
+_SESSION_CHECK_S = 30
+_session_watch: Optional[threading.Thread] = None
 
 
-def get_service(viewer: Optional[str] = None) -> DetectionService:
-    """The process-wide service for the live view, started if it is off. Only live-view requests call
-    this: each call counts as staff being on the live view (see IDLE_STOP_S). viewer: the session key
-    of the page asking, if known."""
-    global _service, _last_viewer_t, _idle_watch
+def staff_logged_in(session_key: Optional[str]) -> None:
+    """Staff logged in: start detection if it is off, and keep it on until they log out. The only way it
+    starts; requests of the pages never start it, so one still running while its user logs out cannot
+    start it again."""
     with _service_lock:
-        _last_viewer_t = time.time()
-        if viewer:
-            _viewers[viewer] = _last_viewer_t
-        if _service is None:
-            _service = DetectionService()
-            _service.start()
-        if _idle_watch is None:
-            _idle_watch = threading.Thread(target=_stop_when_idle, daemon=True, name="DetectionIdle")
-            _idle_watch.start()
-        return _service
+        if session_key:
+            _staff.add(session_key)
+        _start_service()
+
+
+def _start_service() -> DetectionService:
+    """The service, started if it is off (called holding _service_lock)."""
+    global _service, _session_watch
+    if _service is None:
+        _service = DetectionService()
+        _service.start()
+    if _session_watch is None:
+        _session_watch = threading.Thread(target=_watch_sessions, daemon=True, name="DetectionSessions")
+        _session_watch.start()
+    return _service
 
 
 def current_service() -> Optional[DetectionService]:
-    """The service while detection is on, else None. Never starts it (system status page)."""
+    """The service while detection is on, else None. Never starts it."""
     return _service
+
+
+def stopped_status() -> dict:
+    """DetectionService.status() for while detection is off."""
+    return {"state": DetectionService.STOPPED, "error": "", "mode": "", "source": "", "signal": False,
+            "paused": False, "fps": 0.0, "speed_calibrated": False, "camera_configured": False, "pos_ms": 0,
+            "total_ms": 0, "loading": ""}
 
 
 def engine_health() -> dict:
     """State of detection for the system status page, checked without starting it."""
     service = _service
     if service is None:
-        return _health("standby", _("Standby"), _("Starts when staff open the live view"))
+        return _health("standby", _("Standby"), _("Starts when staff log in"))
     return service.health()
 
 
-def _stop_when_idle() -> None:
+def staff_logged_out(session_key: Optional[str]) -> None:
+    """Staff logged out: stop detection at once when no other staff are logged in. A service still loading
+    its models is left to finish, then stopped by the session check."""
+    with _service_lock:
+        _staff.discard(session_key)
+        service = _take_unneeded_service()
+    if service:
+        log.info("Last staff logged out: stopping detection.")
+        _stop_and_free(service)
+
+
+def _take_unneeded_service() -> Optional[DetectionService]:
+    """The service, cleared, when no staff are left and it has finished loading; else None (called
+    holding _service_lock)."""
     global _service
+    service = _service
+    if _staff or service is None or service.state == service.STARTING:
+        return None
+    _service = None
+    return service
+
+
+def _live_sessions(keys) -> set:
+    """The keys among `keys` whose session still exists and has not expired."""
+    from django.contrib.sessions.models import Session
+    from django.utils import timezone
+
+    try:
+        return set(Session.objects.filter(session_key__in=keys, expire_date__gt=timezone.now())
+                   .values_list("session_key", flat=True))
+    finally:
+        close_old_connections()
+
+
+def _watch_sessions() -> None:
+    """Forget staff whose session ended without logging out, and stop detection when none are left."""
     while True:
-        time.sleep(_IDLE_CHECK_EVERY_S)
+        time.sleep(_SESSION_CHECK_S)
         with _service_lock:
-            for key in [k for k, t in _viewers.items() if time.time() - t > IDLE_STOP_S]:
-                del _viewers[key]
-            service = _service
-            # A service still loading its models is left to finish, then stopped on a later check
-            idle = (service is not None and service.state != service.STARTING
-                    and time.time() - _last_viewer_t > IDLE_STOP_S)
-            if idle:
-                _service = None
-        if idle:
-            log.info("No one on the live view for %d s: stopping detection.", IDLE_STOP_S)
+            keys = set(_staff)
+        live = _live_sessions(keys)
+        with _service_lock:
+            _staff.difference_update(keys - live)
+            service = _take_unneeded_service()
+        if service:
+            log.info("No staff logged in: stopping detection.")
             _stop_and_free(service)
 
 
-def stop_on_logout(session_key: Optional[str] = None) -> None:
-    """Stop detection right away when the last staff on the live view log out, instead of waiting
-    IDLE_STOP_S. A service still loading its models is marked idle, so the idle check stops it as soon
-    as it has loaded."""
-    global _service, _last_viewer_t
-    with _service_lock:
-        _viewers.pop(session_key, None)
-        now = time.time()
-        if any(now - t < _VIEWER_GONE_S for t in _viewers.values()):
-            return   # someone else still has the live view open
-        _last_viewer_t = 0.0
-        service = _service
-        if service is None or service.state == service.STARTING:
-            return
-        _service = None
-    log.info("Logged out: stopping detection.")
-    _stop_and_free(service)
+def resume_logged_in_staff() -> None:
+    """On server start: staff whose session is still valid are logged in, so detection starts for them."""
+    from django.contrib.auth import get_user_model
+    from django.contrib.sessions.models import Session
+    from django.utils import timezone
+
+    User = get_user_model()
+    keys = []
+    for session in Session.objects.filter(expire_date__gt=timezone.now()):
+        user_id = session.get_decoded().get("_auth_user_id")
+        user = User.objects.filter(pk=user_id, is_active=True).first() if user_id else None
+        if user and user.has_perm("dashboard.use_dashboard"):
+            keys.append(session.session_key)
+    if keys:
+        log.info("%d staff still logged in: starting detection.", len(keys))
+        for key in keys:
+            staff_logged_in(key)
 
 
 def _stop_and_free(service: DetectionService) -> None:

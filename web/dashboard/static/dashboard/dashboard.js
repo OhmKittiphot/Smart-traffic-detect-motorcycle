@@ -1,12 +1,11 @@
 "use strict";
 
 (() => {
-  const STATUS_EVERY_MS = 1000;
   // This account's live view preferences, rendered into the page by the view and changed from the
   // Settings pop-up (see "preferences" below)
   const prefs = JSON.parse(document.getElementById("prefs").textContent);
   const MAX_ROWS = 300;
-  const { api, el, units, thumbCell, plateCell, helmetCell, statusCell, watchRecords, openSnapshotsFrom } = window.Dashboard;
+  const { api, el, units, thumbCell, plateCell, helmetCell, statusCell, watchEvents, watchRecords, openSnapshotsFrom } = window.Dashboard;
 
   const $ = (id) => document.getElementById(id);
   const streamImg = $("stream");
@@ -28,7 +27,7 @@
 
   let lastId = 0;
   let busy = false;
-  // Playback position, advanced locally between status polls so the seek bar moves smoothly
+  // Playback position, advanced locally between status events so the seek bar moves smoothly
   const playback = { pos: 0, total: 0, playing: false, at: performance.now() };
   let dragging = false;
 
@@ -60,7 +59,8 @@
     chip.dataset.state = s.state;
     $("engine-text").textContent =
       s.state === "running" ? gettext("Detection running") :
-      s.state === "error" ? interpolate(gettext("System error: %s"), [s.error]) : gettext("Loading models…");
+      s.state === "error" ? interpolate(gettext("System error: %s"), [s.error]) :
+      s.state === "stopped" ? gettext("Detection stopped") : gettext("Loading models…");
 
     const badge = $("source-badge");
     let kind = "nosignal";
@@ -124,24 +124,20 @@
     $("pos-text").textContent = fmtTime(pos);
   }
 
-  // True after a status poll failed, e.g. while the server restarts
+  // True after the status stream dropped, e.g. while the server restarts
   let serverLost = false;
 
-  async function pollStatus() {
-    if (document.hidden) return;   // a hidden tab does not keep detection on (see engine.IDLE_STOP_S)
-    try {
-      const s = await api("/api/status/");
-      // The browser gives no event when the server closes the video stream: the picture just freezes
-      // on its last frame. So reopen the stream once the server answers again
-      if (serverLost) {
-        serverLost = false;
-        reloadStream();
-      }
-      renderStatus(s);
-      window.FpsChart.push(s.state === "running" ? s.fps : null, s.state === "running" && s.paused);
-    } catch (e) {
-      serverLost = true;   // keep last state; next poll retries
+  // The server sends the status every second (views/events.py)
+  function onStatus(ev) {
+    const s = JSON.parse(ev.data);
+    // The browser gives no event when the server closes the video stream: the picture just freezes
+    // on its last frame. So reopen the stream once the server answers again
+    if (serverLost) {
+      serverLost = false;
+      reloadStream();
     }
+    renderStatus(s);
+    window.FpsChart.push(s.state === "running" ? s.fps : null, s.state === "running" && s.paused);
   }
 
   // ---------- vehicle table ----------
@@ -232,7 +228,6 @@
       await api("/api/vehicles/clear/", { method: "POST", body: "{}" });
       rowsEl.replaceChildren();
       updateEmpty();
-      pollStatus();
     } catch (e) {
       showMsg(e.message, "error");
     } finally {
@@ -247,15 +242,12 @@
     streamImg.src = `/stream/?t=${Date.now()}`;
   }
 
-  // Close the stream and stop polling while the tab is hidden, so detection stops and frees the GPU;
-  // reopen and catch up on return (new rows: see loadVehicles)
+  // Close the video stream while the tab is hidden, so it costs no bandwidth (detection goes on: it runs
+  // while staff are logged in, see engine.py), and reopen it on return. The event streams do the same
+  // (watchEvents in common.js)
   document.addEventListener("visibilitychange", () => {
-    if (document.hidden) {
-      streamImg.removeAttribute("src");
-    } else {
-      reloadStream();
-      pollStatus();
-    }
+    if (document.hidden) streamImg.removeAttribute("src");
+    else reloadStream();
   });
 
   form.addEventListener("change", syncFormState);
@@ -306,7 +298,6 @@
       pauseOverlay.hidden = !r.paused;   // pops in when shown
       if (!r.paused) restartAnimation(playFlash, "is-shown");
       restartAnimation(playBtn, "is-bumped");
-      pollStatus();
     } catch (e) {
       showMsg(e.message, "error");
     }
@@ -323,7 +314,6 @@
     } catch (e) {
       showMsg(e.message, "error");
     }
-    pollStatus();
   }
 
   // "+10s" / "-10s" shown on the video; repeated presses add up ("+20s") like most video players
@@ -405,7 +395,7 @@
         ...c,
         frameUrl: "/api/calibration/frame/",
         save: (body) => api("/api/calibration/save/", { method: "POST", body: JSON.stringify(body) }),
-        onSaved: () => { showMsg(gettext("Speed calibration saved"), "ok"); pollStatus(); },
+        onSaved: () => showMsg(gettext("Speed calibration saved"), "ok"),
       });
     } catch (e) {
       showMsg(e.message, "error");
@@ -422,7 +412,6 @@
     try {
       await api("/api/calibration/remove/", { method: "POST", body: "{}" });
       showMsg(gettext("Speed calibration reset"), "ok");
-      pollStatus();
     } catch (e) {
       showMsg(e.message, "error");
     }
@@ -471,8 +460,7 @@
 
   // ---------- start ----------
   syncFormState();
-  pollStatus();
+  watchEvents(() => "/api/events/status/", { status: onStatus, error: () => { serverLost = true; } });
   loadVehicles();
-  setInterval(pollStatus, STATUS_EVERY_MS);
   setInterval(drawPosition, 250);
 })();

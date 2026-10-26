@@ -57,6 +57,9 @@ msgid "+%s more violation"
 msgid_plural "+%s more violations"
 msgstr[0] "และฝ่าฝืนอีก %s ครั้ง"
 
+msgid "Detection stopped"
+msgstr "ระบบตรวจจับหยุดทำงาน"
+
 msgid "a deleted user"
 msgstr "ผู้ใช้ที่ถูกลบ"
 

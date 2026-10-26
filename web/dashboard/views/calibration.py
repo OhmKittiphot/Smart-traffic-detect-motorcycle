@@ -11,7 +11,7 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from .. import calibrations
-from ..engine import current_service, get_service
+from ..engine import current_service
 from ..live_frames import encode_jpeg
 from ..models import SpeedCalibration
 from ..serializers import CalibrationSerializer, SourceDistancesSerializer, SourceKeySerializer
@@ -29,14 +29,14 @@ _REDRAW_FRAME_KEEP_S = 60 * 60
 class CalibrationView(APIView):
     def get(self, request):
         """Speed calibration of the current source (points in frame pixels)."""
-        return Response(get_service().calibration())
+        return Response(running_service().calibration())
 
 
 class CalibrationFrameView(APIView):
     def get(self, request):
         """The current frame without overlays, as JPEG, for clicking the calibration points on."""
         try:
-            return jpeg_response(get_service().frames.raw_jpeg())
+            return jpeg_response(running_service().frames.raw_jpeg())
         except RuntimeError as e:
             return conflict(e)
 
@@ -44,7 +44,7 @@ class CalibrationFrameView(APIView):
 class CalibrationSaveView(APIView):
     def post(self, request):
         """Save the 4 points and real size clicked on the current source's frame."""
-        service = get_service()
+        service = running_service()
         frame_size = service.frames.size()
         if frame_size is None:
             return conflict(_("No video signal to calibrate on"))
@@ -66,7 +66,7 @@ class CalibrationSaveView(APIView):
 class CalibrationRemoveView(APIView):
     def post(self, request):
         """Remove the speed calibration of the current source (speeds are no longer measured)."""
-        service = get_service()
+        service = running_service()
         try:
             service.remove_calibration(request.user)
         except RuntimeError as e:

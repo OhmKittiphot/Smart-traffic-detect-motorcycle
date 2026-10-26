@@ -140,24 +140,20 @@ window.Dashboard = (() => {
   // Speeds in the HTML htmx puts into the page are in km/h
   document.addEventListener("htmx:afterSwap", units.refresh);
 
-  // ---------- new records, pushed by the server (Server-Sent Events, views/events.py) ----------
+  // ---------- pushed by the server (Server-Sent Events, views/events.py) ----------
 
-  // Calls onRecords({rows, total}, lastId) with the records saved after `after` (rows newest first; total
-  // also counts those not sent), once at the start with no rows, and then as each one is saved. after:
-  // a record id, or null for "from now on"; violations: only violations. The stream is closed while the tab
-  // is hidden, so it holds no server thread, and opened again from the last id seen when it is shown.
-  // The browser reconnects by itself if the stream drops. Returns a function that stops it.
-  function watchRecords({ after = null, violations = false }, onRecords) {
+  // Listens to the event stream at url() while the tab is shown: it is closed while the tab is hidden, so
+  // it holds no server thread, and opened again (url() is asked again) when it is shown. listeners:
+  // {event name: function(ev)}. The browser reconnects by itself if the stream drops; one the server
+  // refuses (a lost session) goes to the login page, like api(). Returns a function that stops it.
+  function watchEvents(url, listeners) {
     let source = null;
 
     function open() {
-      const params = new URLSearchParams();
-      if (after !== null) params.set("after", after);
-      if (violations) params.set("violations", "true");
-      source = new EventSource(`/api/events/records/?${params}`);
-      source.addEventListener("records", (ev) => {
-        after = Number(ev.lastEventId);
-        onRecords(JSON.parse(ev.data), after);
+      source = new EventSource(url());
+      for (const [name, listener] of Object.entries(listeners)) source.addEventListener(name, listener);
+      source.addEventListener("error", () => {
+        if (source?.readyState === EventSource.CLOSED) window.location.href = "/login/";
       });
     }
 
@@ -179,6 +175,24 @@ window.Dashboard = (() => {
     };
   }
 
+  // Calls onRecords({rows, total}, lastId) with the records saved after `after` (rows newest first; total
+  // also counts those not sent), once at the start with no rows, and then as each one is saved. after:
+  // a record id, or null for "from now on"; violations: only violations. A hidden tab catches up from the
+  // last id seen when it is shown again.
+  function watchRecords({ after = null, violations = false }, onRecords) {
+    return watchEvents(() => {
+      const params = new URLSearchParams();
+      if (after !== null) params.set("after", after);
+      if (violations) params.set("violations", "true");
+      return `/api/events/records/?${params}`;
+    }, {
+      records: (ev) => {
+        after = Number(ev.lastEventId);
+        onRecords(JSON.parse(ev.data), after);
+      },
+    });
+  }
+
   // Clicking a thumbnail inside `container` opens the evidence photo in the #snap-dialog
   function openSnapshotsFrom(container) {
     const dialog = document.getElementById("snap-dialog");
@@ -190,5 +204,5 @@ window.Dashboard = (() => {
     });
   }
 
-  return { api, el, units, thumbCell, plateCell, helmetCell, statusCell, watchRecords, openSnapshotsFrom };
+  return { api, el, units, thumbCell, plateCell, helmetCell, statusCell, watchEvents, watchRecords, openSnapshotsFrom };
 })();

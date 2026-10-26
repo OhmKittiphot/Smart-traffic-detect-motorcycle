@@ -7,7 +7,6 @@ from django.shortcuts import render
 from django.utils.translation import gettext as _
 from django.views.decorators.http import require_GET
 
-from ..engine import get_service
 from ..models import CameraSettings, SystemSettings, UserPreferences, VehicleRecord
 from ..serializers import PreferencesSerializer
 from ..sources import list_live_sources, list_video_files
@@ -29,7 +28,6 @@ def lockout(request, original_response=None, credentials=None):
 @require_GET
 def dashboard(request):
     """The live view."""
-    get_service(request.session.session_key)   # start detection if it is not running yet
     prefs = UserPreferences.load(request.user)
     return render(request, "dashboard/dashboard.html", {
         "video_files": list_video_files(),

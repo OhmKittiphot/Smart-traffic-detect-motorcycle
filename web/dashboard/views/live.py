@@ -9,26 +9,14 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from .. import storage
-from ..engine import get_service
+from ..engine import current_service
 from ..models import CameraSettings, VehicleRecord
 from ..serializers import PauseSerializer, SeekSerializer, SourceSerializer, VehicleRecordSerializer
 from ..sources import VideoSource
-from .common import audit, bad_request, conflict
+from .common import audit, bad_request, conflict, running_service
 
 # Rows the table starts with; newer ones arrive on the event stream (events.py)
 _INITIAL_ROWS = 100
-
-
-class StatusView(APIView):
-    def get(self, request):
-        """Engine state, playback position and today's vehicle counts (polled every second)."""
-        data = get_service(request.session.session_key).status()
-        today = timezone.localtime().replace(hour=0, minute=0, second=0, microsecond=0)
-        records = VehicleRecord.objects.filter(detected_at__gte=today)
-        total = records.count()
-        violations = records.filter(is_violation=True).count()
-        data["today"] = {"total": total, "violation": violations, "normal": total - violations}
-        return Response(data)
 
 
 class VehicleListView(APIView):
@@ -54,7 +42,7 @@ class SourceView(APIView):
         data = serializer.validated_data
         source = VideoSource(data["mode"], data["file"], data["live"])
 
-        service = get_service()
+        service = running_service()
         try:
             service.switch(source)
         except ValueError as e:
@@ -75,7 +63,7 @@ class PauseView(APIView):
         """Pause or resume the video file: {"paused": true/false} sets it, {} flips it."""
         serializer = PauseSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        service = get_service()
+        service = running_service()
         try:
             paused = service.toggle_pause(serializer.validated_data.get("paused"))
         except RuntimeError as e:
@@ -90,7 +78,7 @@ class SeekView(APIView):
         serializer = SeekSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         try:
-            get_service().seek(serializer.validated_data["pos_ms"])
+            running_service().seek(serializer.validated_data["pos_ms"])
         except RuntimeError as e:
             return conflict(e)
         return Response({"ok": True})
@@ -100,7 +88,6 @@ class SeekView(APIView):
 def stream(request):
     """MJPEG stream of the annotated video (or the No Signal card)."""
     session = request.session
-    viewer = session.session_key
     interval = 1.0 / settings.STREAM_FPS
 
     def frames():
@@ -112,14 +99,15 @@ def stream(request):
         part_head = b"--frame\r\nContent-Type: image/jpeg\r\n\r\n"
         yield part_head
         while True:
-            # A stream outlives its page; stop it once the session has expired or the user logged out.
-            # Checked every second so it cannot restart detection just after logout stopped it
+            # A stream outlives its page; stop it once the session has expired or the user logged out
             if time.time() >= next_check:
                 next_check = time.time() + 1
                 if not session.exists(session.session_key) or session.get_expiry_date() <= timezone.now():
                     return
-            # Looked up every frame: an open stream keeps detection on, and follows it if it restarted
-            jpeg = get_service(viewer).frames.jpeg()
+            # Looked up every frame, so it follows detection when it restarts. Never starts it: only
+            # logging in does (engine.py), not a stream left open after logout
+            service = current_service()
+            jpeg = service.frames.jpeg() if service else None
             # An unchanged frame (paused video) is sent again every second: the server only notices a
             # closed page when it writes, and a stream that never writes would hold its thread forever
             if jpeg and (jpeg is not last or time.time() - last_sent_t >= 1.0):

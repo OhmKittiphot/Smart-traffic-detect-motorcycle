@@ -1,8 +1,11 @@
 """Helpers shared by the views."""
 from django.http import HttpResponse
+from django.utils.translation import gettext_lazy as _
 from rest_framework import status
+from rest_framework.exceptions import APIException
 from rest_framework.response import Response
 
+from ..engine import current_service
 from ..models import AuditLog
 
 
@@ -19,6 +22,20 @@ def conflict(error):
 
 def bad_request(error):
     return Response({"detail": str(error)}, status=status.HTTP_400_BAD_REQUEST)
+
+
+class DetectionOff(APIException):
+    status_code = status.HTTP_409_CONFLICT
+    default_detail = _("Detection is not running")
+
+
+def running_service():
+    """The detection service for a live view request; 409 while detection is off. Requests never start
+    it: only staff logging in does (engine.py)."""
+    service = current_service()
+    if service is None:
+        raise DetectionOff()
+    return service
 
 
 def jpeg_response(jpeg: bytes):

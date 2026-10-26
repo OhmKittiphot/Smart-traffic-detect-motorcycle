@@ -17,10 +17,11 @@ urlpatterns = [
 
     # Live view
     path("stream/", live.stream, name="stream"),
-    path("api/status/", live.StatusView.as_view(), name="api_status"),
     path("api/vehicles/", live.VehicleListView.as_view(), name="api_vehicles"),
     path("api/vehicles/clear/", live.VehicleClearView.as_view(), name="api_vehicles_clear"),
-    # New records as they are saved (Server-Sent Events): the live view's table and the notifications
+    # Pushed by the server (Server-Sent Events): the live view's status, and new records as they are
+    # saved for its table and the notifications
+    path("api/events/status/", events.status_events, name="api_status_events"),
     path("api/events/records/", events.record_events, name="api_record_events"),
     path("api/source/", live.SourceView.as_view(), name="api_source"),
     path("api/pause/", live.PauseView.as_view(), name="api_pause"),

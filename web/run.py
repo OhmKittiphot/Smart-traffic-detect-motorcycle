@@ -4,7 +4,7 @@
 
 Then open http://127.0.0.1:8000 and log in with an admin account
 (create one first with: venv\Scripts\python web\manage.py createsuperuser).
-Detection (models, video stream) runs only while staff have the live view open.
+Detection (models, video stream) runs only while staff are logged in.
 Always use the project's venv: the detection models and Django are installed there.
 """
 import multiprocessing as mp
@@ -46,11 +46,13 @@ def main():
     from waitress import serve
 
     from admin.wsgi import application
-    from dashboard.engine import stop_service   # detection starts from the live view, not here
+    from dashboard.engine import resume_logged_in_staff, stop_service
     from dashboard.storage import start_cleanup_thread
 
     # Old records and photos are removed now and every few hours (limits in .env, see dashboard/storage.py)
     start_cleanup_thread()
+    # Detection starts when staff log in; those still logged in from before the restart count too
+    resume_logged_in_staff()
 
     host = os.getenv("DASHBOARD_HOST", "127.0.0.1")
     port = int(os.getenv("DASHBOARD_PORT", "8000"))
