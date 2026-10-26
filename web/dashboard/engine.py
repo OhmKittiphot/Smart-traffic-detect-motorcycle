@@ -14,6 +14,7 @@ from typing import Optional
 
 from django.conf import settings
 from django.db import close_old_connections
+from django.utils.translation import gettext as _
 
 from . import calibrations
 from .live_frames import LiveFrames
@@ -112,50 +113,50 @@ class DetectionService:
     def health(self) -> dict:
         """Quick check for the system status page; nothing is started or changed."""
         if self.state == self.STARTING:
-            return _health("starting", "Starting", "Loading models to GPU…")
+            return _health("starting", _("Starting"), _("Loading models to GPU…"))
         if self.state == self.ERROR:
-            return _health("error", "Error", self.error)
+            return _health("error", _("Error"), self.error)
         if self.state == self.STOPPED:
-            return _health("standby", "Standby", "Stopping…")
+            return _health("standby", _("Standby"), _("Stopping…"))
         problems = self.app.worker_problems()
         if problems:
-            return _health("problem", "Problem", "; ".join(problems))
+            return _health("problem", _("Problem"), "; ".join(problems))
         stream = self.app.video_stream
         if not self.has_signal():
-            return _health("ok", "Healthy", "No video signal")
+            return _health("ok", _("Healthy"), _("No video signal"))
         if stream.is_video_file and stream.playback.is_paused():
-            return _health("ok", "Healthy", "Video paused")
+            return _health("ok", _("Healthy"), _("Video paused"))
         fps = self.app.stats.fps()
         if fps == 0 and not stream.playback.holding:
-            return _health("problem", "Problem", "Video arrives but no frame is being processed")
-        return _health("ok", "Healthy", f"Processing {fps:.1f} fps")
+            return _health("problem", _("Problem"), _("Video arrives but no frame is being processed"))
+        return _health("ok", _("Healthy"), _("Processing %(fps).1f fps") % {"fps": fps})
 
     # ----- source control -----
 
     def switch(self, source: VideoSource) -> None:
         """Raises ValueError for an invalid choice, RuntimeError while the pipeline is not ready."""
         if self.state != self.RUNNING:
-            raise RuntimeError("Detection is not ready yet")
+            raise RuntimeError(_("Detection is not ready yet"))
         url = source.capture_url(self.config.rtsp_url)
         if url is None:
-            raise ValueError("The selected video file was not found" if source.is_file
-                             else "The selected camera is not available")
+            raise ValueError(_("The selected video file was not found") if source.is_file
+                             else _("The selected camera is not available"))
         with self._lock:
             self.app.switch_source(url or _UNCONFIGURED_CAMERA)
             self.source = source
             self._apply_calibration()
         log.info("Source switched to %s.", source.describe())
 
-    def _file_playback(self, action: str):
+    def _file_playback(self, error: str):
         if self.state != self.RUNNING or not self.source.is_file:
-            raise RuntimeError(f"Only a video file can be {action}")
+            raise RuntimeError(error)
         return self.app.video_stream.playback
 
     def toggle_pause(self, paused: Optional[bool] = None) -> bool:
-        return self._file_playback("paused").toggle_pause(paused)
+        return self._file_playback(_("Only a video file can be paused")).toggle_pause(paused)
 
     def seek(self, pos_ms: float) -> None:
-        self._file_playback("seeked").seek(pos_ms)
+        self._file_playback(_("Only a video file can be seeked")).seek(pos_ms)
 
     def camera_configured(self) -> bool:
         return self.source.is_configured(self.config.rtsp_url if self.config else "")
@@ -187,7 +188,7 @@ class DetectionService:
     def save_calibration(self, points, width_m: float, length_m: float, user) -> None:
         """Raises ValueError when the points do not form a usable rectangle on the road."""
         if self.state != self.RUNNING:
-            raise RuntimeError("Detection is not ready yet")
+            raise RuntimeError(_("Detection is not ready yet"))
         with self.app.det_lock:
             # Validates the shape (convex, in order, not tiny) before anything is stored
             self.app.speed_estimator.set_calibration([tuple(p) for p in points], (width_m, length_m))
@@ -195,7 +196,7 @@ class DetectionService:
 
     def remove_calibration(self, user) -> None:
         if self.state != self.RUNNING:
-            raise RuntimeError("Detection is not ready yet")
+            raise RuntimeError(_("Detection is not ready yet"))
         calibrations.remove(self.source.key, user)
         with self.app.det_lock:
             self.app.speed_estimator.clear_calibration()
@@ -224,11 +225,11 @@ class DetectionService:
         holding = bool(stream and stream.playback.holding)
         lag = self.app.stats.lag_s(stream) if running and self.has_signal() else 0.0
         if self.state == self.STARTING:
-            loading = "Loading models to GPU…"
+            loading = _("Loading models to GPU…")
         elif holding:
-            loading = "Processing frame…"
+            loading = _("Processing frame…")
         elif lag > settings.LOADING_LAG_S:
-            loading = "GPU is catching up…"
+            loading = _("GPU is catching up…")
         else:
             loading = ""
         return {
@@ -292,7 +293,7 @@ def engine_health() -> dict:
     """State of detection for the system status page, checked without starting it."""
     service = _service
     if service is None:
-        return _health("standby", "Standby", "Starts when staff open the live view")
+        return _health("standby", _("Standby"), _("Starts when staff open the live view"))
     return service.health()
 
 

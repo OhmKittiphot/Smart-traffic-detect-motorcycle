@@ -5,6 +5,7 @@ calibration of any source from the system status page (SourceCalibration*View), 
 """
 from django.core.cache import cache
 from django.utils import timezone
+from django.utils.translation import gettext as _, gettext_lazy
 from rest_framework import status
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -17,7 +18,7 @@ from ..serializers import CalibrationSerializer, SourceDistancesSerializer, Sour
 from ..sources import grab_frame
 from .common import audit, conflict, jpeg_response
 
-_NOT_A_RECTANGLE = {"points": ["The 4 points must outline a rectangle on the road, clicked in order"]}
+_NOT_A_RECTANGLE = {"points": [gettext_lazy("The 4 points must outline a rectangle on the road, clicked in order")]}
 # Size of the last frame sent for redrawing a source's points, so the points saved for it can be checked
 _REDRAW_FRAME_SIZE = "calibration-frame-size:{}"
 _REDRAW_FRAME_KEEP_S = 60 * 60
@@ -46,7 +47,7 @@ class CalibrationSaveView(APIView):
         service = get_service()
         frame_size = service.frames.size()
         if frame_size is None:
-            return conflict("No video signal to calibrate on")
+            return conflict(_("No video signal to calibrate on"))
 
         serializer = CalibrationSerializer(data=request.data, context={"frame_size": frame_size})
         serializer.is_valid(raise_exception=True)
@@ -92,7 +93,7 @@ class SourceCalibrationView(APIView):
         updated = (SpeedCalibration.objects.filter(source_key=key, points__isnull=False)
                    .update(width_m=width_m, length_m=length_m, updated_by=request.user, updated_at=timezone.now()))
         if not updated:
-            return conflict("This source has no saved calibration; staff set the points from the live view")
+            return conflict(_("This source has no saved calibration; staff set the points from the live view"))
         _reload_calibration(key)
         audit(request, "speed_calibration", f"{key}: {width_m:g} x {length_m:g} m")
         return Response({"source_key": key, "width_m": width_m, "length_m": length_m})
@@ -114,7 +115,7 @@ class SourceCalibrationFrameView(APIView):
                 frame = grab_frame(key)
                 jpeg, size = encode_jpeg(frame, quality=90), (frame.shape[1], frame.shape[0])
                 if not jpeg:
-                    raise RuntimeError("Could not capture a frame")
+                    raise RuntimeError(_("Could not capture a frame"))
         except RuntimeError as e:
             return conflict(e)
         cache.set(_REDRAW_FRAME_SIZE.format(key), size, _REDRAW_FRAME_KEEP_S)
@@ -131,7 +132,7 @@ class SourceCalibrationPointsView(APIView):
         key = source.validated_data["source_key"]
         frame_size = cache.get(_REDRAW_FRAME_SIZE.format(key))
         if frame_size is None:
-            return conflict("The frame expired; open the editor again")
+            return conflict(_("The frame expired; open the editor again"))
 
         serializer = CalibrationSerializer(data=request.data, context={"frame_size": frame_size})
         serializer.is_valid(raise_exception=True)

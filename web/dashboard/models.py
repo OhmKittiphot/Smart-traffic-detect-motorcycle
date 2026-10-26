@@ -1,10 +1,11 @@
 from django.conf import settings
 from django.db import models
+from django.utils.translation import gettext_lazy as _
 
 
 class SourceMode(models.TextChoices):
-    LIVE = "live", "Live camera (RTSP)"
-    FILE = "file", "Video file"
+    LIVE = "live", _("Live camera (RTSP)")
+    FILE = "file", _("Video file")
 
 
 class CameraSettings(models.Model):
@@ -23,7 +24,7 @@ class CameraSettings(models.Model):
 
     @classmethod
     def load(cls) -> "CameraSettings":
-        obj, _ = cls.objects.get_or_create(pk=1)
+        obj, _created = cls.objects.get_or_create(pk=1)
         return obj
 
 
@@ -45,7 +46,7 @@ class SystemSettings(models.Model):
 
     @classmethod
     def load(cls) -> "SystemSettings":
-        obj, _ = cls.objects.get_or_create(pk=1, defaults={
+        obj, _created = cls.objects.get_or_create(pk=1, defaults={
             "record_retention_days": settings.RECORD_RETENTION_DAYS,
             "photo_retention_days": settings.PHOTO_RETENTION_DAYS,
             "media_max_mb": settings.MEDIA_MAX_MB,
@@ -54,15 +55,21 @@ class SystemSettings(models.Model):
 
 
 class TableFilter(models.TextChoices):
-    ALL = "all", "All"
-    NORMAL = "normal", "Normal"
-    VIOLATION = "violation", "Violation"
+    ALL = "all", _("All")
+    NORMAL = "normal", _("Normal")
+    VIOLATION = "violation", _("Violation")
 
 
 class Units(models.TextChoices):
     """How speeds and distances are shown. They are always stored in metric; the page converts them."""
-    METRIC = "metric", "Metric (km/h, m)"
-    IMPERIAL = "imperial", "Imperial (mph, ft)"
+    METRIC = "metric", _("Metric (km/h, m)")
+    IMPERIAL = "imperial", _("Imperial (mph, ft)")
+
+
+class Language(models.TextChoices):
+    """Language of the dashboard pages; each name is written in its own language."""
+    EN = "en", "English"
+    TH = "th", "ไทย"
 
 
 # Choices of UserPreferences.seek_step_s
@@ -81,13 +88,14 @@ class UserPreferences(models.Model):
     # Admins: a pop-up when a live camera goes offline or comes back (notify.js)
     camera_notify = models.BooleanField(default=True)
     units = models.CharField(max_length=8, choices=Units.choices, default=Units.METRIC)
+    language = models.CharField(max_length=5, choices=Language.choices, default=Language.EN)
 
     class Meta:
         verbose_name = verbose_name_plural = "User preferences"
 
     @classmethod
     def load(cls, user) -> "UserPreferences":
-        obj, _ = cls.objects.get_or_create(user=user)
+        obj, _created = cls.objects.get_or_create(user=user)
         return obj
 
 
@@ -110,16 +118,16 @@ class SpeedCalibration(models.Model):
 
 
 class Violation(models.TextChoices):
-    NO_HELMET = "NO_HELMET", "No helmet"
-    OVERLOAD = "OVERLOAD", "Too many riders"
-    SPEEDING = "SPEEDING", "Speeding"
+    NO_HELMET = "NO_HELMET", _("No helmet")
+    OVERLOAD = "OVERLOAD", _("Too many riders")
+    SPEEDING = "SPEEDING", _("Speeding")
 
 
 class Review(models.TextChoices):
     """An admin's verdict on a recorded event, set from the plate search page."""
-    PENDING = "pending", "Not reviewed"
-    CONFIRMED = "confirmed", "Confirmed"
-    REJECTED = "rejected", "Rejected"
+    PENDING = "pending", _("Not reviewed")
+    CONFIRMED = "confirmed", _("Confirmed")
+    REJECTED = "rejected", _("Rejected")
 
 
 class VehicleRecord(models.Model):

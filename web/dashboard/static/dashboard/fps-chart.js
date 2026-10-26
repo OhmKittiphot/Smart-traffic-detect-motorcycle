@@ -45,13 +45,13 @@ window.FpsChart = (() => {
     const y = (v) => PAD.top + (1 - v / yMax) * (HEIGHT - PAD.top - PAD.bottom);
 
     const svg = svgEl("svg", { width, height: HEIGHT, viewBox: `0 0 ${width} ${HEIGHT}`, role: "img",
-      "aria-label": `Processing speed over the last ${WINDOW_S / 60} minutes` });
+      "aria-label": interpolate(gettext("Processing speed over the last %s minutes"), [WINDOW_S / 60]) });
     for (const v of [0, yMax / 2, yMax]) {
       svg.append(svgEl("line", { class: "fps-grid", x1: PAD.left, x2: width - PAD.right, y1: y(v), y2: y(v) }));
       svg.append(svgEl("text", { class: "fps-axis", x: PAD.left - 6, y: y(v) + 4, "text-anchor": "end" }, v));
     }
-    svg.append(svgEl("text", { class: "fps-axis", x: PAD.left, y: HEIGHT - 4 }, `${WINDOW_S / 60} min ago`));
-    svg.append(svgEl("text", { class: "fps-axis", x: width - PAD.right, y: HEIGHT - 4, "text-anchor": "end" }, "now"));
+    svg.append(svgEl("text", { class: "fps-axis", x: PAD.left, y: HEIGHT - 4 }, interpolate(gettext("%s min ago"), [WINDOW_S / 60])));
+    svg.append(svgEl("text", { class: "fps-axis", x: width - PAD.right, y: HEIGHT - 4, "text-anchor": "end" }, gettext(gettext("now"))));
 
     // One path per unbroken run of samples
     let d = "";
@@ -76,7 +76,7 @@ window.FpsChart = (() => {
       svg.append(svgEl("line", { class: "fps-cross", x1: cx, x2: cx, y1: PAD.top, y2: HEIGHT - PAD.bottom }));
       if (nearest.fps != null) svg.append(svgEl("circle", { class: "fps-dot", cx, cy: y(nearest.fps), r: 4 }));
       tip.textContent = `${new Date(nearest.wall).toLocaleTimeString()} · `
-        + (nearest.fps != null ? `${nearest.fps.toFixed(1)} fps` : "detection off");
+        + (nearest.fps != null ? `${nearest.fps.toFixed(1)} fps` : gettext(gettext("detection off")));
       tip.hidden = false;
       tip.style.left = `${plot.offsetLeft + Math.min(Math.max(cx, 60), width - 60)}px`;   // tip sits in the card
     }
@@ -87,7 +87,7 @@ window.FpsChart = (() => {
   function push(fps, paused = false) {
     if (paused) {
       if (pausedAt == null) pausedAt = Date.now();
-      nowText.textContent = "Paused";
+      nowText.textContent = gettext("Paused");
       return;
     }
     if (pausedAt != null) {
@@ -98,9 +98,9 @@ window.FpsChart = (() => {
     samples.push({ t: now, wall: Date.now(), fps });
     while (samples.length && samples[0].t < now - WINDOW_S * 1000) samples.shift();
     const values = samples.filter((s) => s.fps != null).map((s) => s.fps);
-    nowText.textContent = fps != null ? `${fps.toFixed(1)} fps` : "Detection off";
+    nowText.textContent = fps != null ? `${fps.toFixed(1)} fps` : gettext("Detection off");
     avgText.textContent = values.length
-      ? `average ${(values.reduce((a, b) => a + b, 0) / values.length).toFixed(1)} fps` : "";
+      ? interpolate(gettext("average %s fps"), [(values.reduce((a, b) => a + b, 0) / values.length).toFixed(1)]) : "";
     draw();
   }
 

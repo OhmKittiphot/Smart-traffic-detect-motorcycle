@@ -1,6 +1,8 @@
 "use strict";
 
-// Helpers shared by the dashboard pages (dashboard.js, search.js), exposed as window.Dashboard
+// Helpers shared by the dashboard pages (dashboard.js, search.js), exposed as window.Dashboard.
+// Texts go through gettext() / ngettext() / interpolate() from /jsi18n/ (Django's JavaScript catalog), which
+// gives them in the language the account chose in Settings.
 window.Dashboard = (() => {
   const csrf = document.querySelector('meta[name="csrf-token"]').content;
 
@@ -99,32 +101,32 @@ window.Dashboard = (() => {
 
   function thumbCell(r) {
     return r.snapshot
-      ? el("button", { type: "button", class: "thumb-btn", "data-snap": r.id, "aria-label": "View evidence photo" },
+      ? el("button", { type: "button", class: "thumb-btn", "data-snap": r.id, "aria-label": gettext(gettext("View evidence photo")) },
           el("img", { class: "thumb", src: `/snapshot/${r.id}/`, alt: "", loading: "lazy" }))
       : el("span", { class: "muted" }, "—");
   }
 
   // Plate text, with the plate photo beside it when one was saved (opens larger like the evidence photo)
   function plateCell(r) {
-    const text = r.plate || el("span", { class: "muted" }, "Unreadable");
+    const text = r.plate || el("span", { class: "muted" }, gettext(gettext("Unreadable")));
     if (!r.plate_snapshot) return text;
     const src = `/snapshot/${r.id}/plate/`;
     return el("span", { class: "plate-with-photo" },
       el("button", { type: "button", class: "thumb-btn", "data-snap": r.id, "data-snap-src": src,
-        "aria-label": "View plate photo" }, el("img", { class: "plate-thumb", src, alt: "", loading: "lazy" })),
+        "aria-label": gettext(gettext("View plate photo")) }, el("img", { class: "plate-thumb", src, alt: "", loading: "lazy" })),
       text);
   }
 
   function helmetCell(r) {
-    if (r.helmet == null) return el("span", { class: "muted" }, "Unknown");
+    if (r.helmet == null) return el("span", { class: "muted" }, gettext(gettext("Unknown")));
     const parts = [];
-    if (r.helmet) parts.push(el("span", { class: "tag tag-ok" }, `Helmet ${r.helmet}`));
-    if (r.no_helmet) parts.push(el("span", { class: "tag tag-bad" }, `No helmet ${r.no_helmet}`));
-    return parts.length ? el("span", {}, ...parts) : el("span", { class: "muted" }, "Unknown");
+    if (r.helmet) parts.push(el("span", { class: "tag tag-ok" }, interpolate(gettext("Helmet %s"), [r.helmet])));
+    if (r.no_helmet) parts.push(el("span", { class: "tag tag-bad" }, interpolate(gettext("No helmet %s"), [r.no_helmet])));
+    return parts.length ? el("span", {}, ...parts) : el("span", { class: "muted" }, gettext(gettext("Unknown")));
   }
 
   function statusCell(r) {
-    if (!r.violation) return el("span", { class: "tag tag-ok" }, "Normal");
+    if (!r.violation) return el("span", { class: "tag tag-ok" }, gettext(gettext("Normal")));
     return el("span", {}, ...r.violations.map((v) => el("span", { class: "tag tag-bad" }, v)));
   }
 

@@ -3,9 +3,13 @@
 Request serializers check what the browser sends before the views act on it; their error messages are
 shown to the admin as they are, so they are written for people.
 """
+from datetime import timedelta
+
 from django.contrib.auth.password_validation import validate_password
 from django.core.exceptions import ValidationError as DjangoValidationError
 from django.utils import timezone
+from django.utils.text import format_lazy
+from django.utils.translation import gettext_lazy as _
 from rest_framework import serializers
 
 from province import THAI_PROVINCES
@@ -24,6 +28,24 @@ class VehicleQuerySerializer(serializers.Serializer):
     after = serializers.IntegerField(min_value=0, default=0)
 
 
+class StatsQuerySerializer(serializers.Serializer):
+    """?start=<YYYY-MM-DD>&end=<YYYY-MM-DD>: the days the violation statistics cover, both included.
+    Without them, the last DEFAULT_DAYS days, today included."""
+    DEFAULT_DAYS = 30
+    MAX_DAYS = 366
+    start = serializers.DateField(required=False)
+    end = serializers.DateField(required=False)
+
+    def validate(self, data):
+        end = data.get("end") or timezone.localdate()
+        start = data.get("start") or end - timedelta(days=self.DEFAULT_DAYS - 1)
+        if start > end:
+            raise serializers.ValidationError(_("The start date is after the end date"))
+        if (end - start).days >= self.MAX_DAYS:
+            raise serializers.ValidationError(_("Choose at most %(days)s days") % {"days": self.MAX_DAYS})
+        return {"start": start, "end": end}
+
+
 class PlateSearchSerializer(serializers.Serializer):
     """?q=<plate or part of it, or several separated by commas>&province=<Thai name>&source=<mode>:<name>
     &violations_only=true
@@ -31,7 +53,7 @@ class PlateSearchSerializer(serializers.Serializer):
     q = serializers.CharField(max_length=300, required=False, allow_blank=True, default="")
     # Thai name, as stored on the records; the page lists them by their English names
     province = serializers.ChoiceField(choices=THAI_PROVINCES, required=False, allow_blank=True, default="",
-                                       error_messages={"invalid_choice": "Unknown province"})
+                                       error_messages={"invalid_choice": _("Unknown province")})
     # Where the records came from, as "<source_mode>:<source_name>" ("file:clip.mp4", "live:" = IP camera),
     # or a whole group as "<source_mode>" ("live" = every live camera, "file" = every video file)
     source = serializers.CharField(max_length=300, required=False, allow_blank=True, default="")
@@ -40,17 +62,18 @@ class PlateSearchSerializer(serializers.Serializer):
 
     def validate_source(self, source):
         if source and source.partition(":")[0] not in SourceMode.values:
-            raise serializers.ValidationError("Unknown video source")
+            raise serializers.ValidationError(_("Unknown video source"))
         return source
 
     def validate_q(self, q):
         plates = split_queries(q)
         if len(plates) > MAX_QUERIES:
-            raise serializers.ValidationError(f"Search at most {MAX_QUERIES} plates at once")
+            raise serializers.ValidationError(_("Search at most %(n)s plates at once") % {"n": MAX_QUERIES})
         for plate in plates:
             if len(normalize_query(plate)) < MIN_QUERY_LENGTH:
-                raise serializers.ValidationError(f"Type at least {MIN_QUERY_LENGTH} plate characters for each plate"
-                                                  f" (“{plate}” is too short)")
+                raise serializers.ValidationError(
+                    _("Type at least %(n)s plate characters for each plate (“%(plate)s” is too short)")
+                    % {"n": MIN_QUERY_LENGTH, "plate": plate})
         return ", ".join(plates)
 
 
@@ -62,7 +85,7 @@ class VehicleDeleteSerializer(PlateSearchSerializer):
 
     def validate(self, data):
         if not data["all"] and not data["ids"]:
-            raise serializers.ValidationError("Select the records to delete")
+            raise serializers.ValidationError(_("Select the records to delete"))
         return data
 
 
@@ -96,10 +119,10 @@ class SeekSerializer(serializers.Serializer):
 
 
 def _size_field(name):
-    message = f"{name} must be between 0.1 and {MAX_CALIBRATION_M:.0f} m"
+    message = format_lazy(_("{name} must be between 0.1 and {max} m"), name=name, max=f"{MAX_CALIBRATION_M:.0f}")
     return serializers.FloatField(min_value=0.1, max_value=MAX_CALIBRATION_M, error_messages={
-        "required": f"{name} is required",
-        "invalid": f"{name} must be a number",
+        "required": format_lazy(_("{name} is required"), name=name),
+        "invalid": format_lazy(_("{name} must be a number"), name=name),
         "min_value": message,
         "max_value": message,
     })
@@ -113,16 +136,16 @@ class CalibrationSerializer(serializers.Serializer):
     points = serializers.ListField(
         child=serializers.ListField(child=serializers.FloatField(), min_length=2, max_length=2),
         min_length=4, max_length=4,
-        error_messages={"min_length": "Click exactly 4 points", "max_length": "Click exactly 4 points"},
+        error_messages={"min_length": _("Click exactly 4 points"), "max_length": _("Click exactly 4 points")},
     )
-    width_m = _size_field("Width")
-    length_m = _size_field("Length")
+    width_m = _size_field(_("Width"))
+    length_m = _size_field(_("Length"))
 
     def validate_points(self, points):
         frame_w, frame_h = self.context["frame_size"]
         for x, y in points:
             if not (0 <= x <= frame_w and 0 <= y <= frame_h):
-                raise serializers.ValidationError("Points must be inside the frame")
+                raise serializers.ValidationError(_("Points must be inside the frame"))
         return [[round(x, 1), round(y, 1)] for x, y in points]
 
 
@@ -134,20 +157,21 @@ class SourceKeySerializer(serializers.Serializer):
         from .sources import source_keys
 
         if key not in source_keys():
-            raise serializers.ValidationError("Unknown video source")
+            raise serializers.ValidationError(_("Unknown video source"))
         return key
 
 
 class SourceDistancesSerializer(SourceKeySerializer):
     """New real width and length of a source's saved calibration rectangle (its points stay)."""
-    width_m = _size_field("Width")
-    length_m = _size_field("Length")
+    width_m = _size_field(_("Width"))
+    length_m = _size_field(_("Length"))
 
 
 def _whole_field(name, low, high, unit):
-    message = f"{name} must be a whole number from {low} to {high} {unit}"
+    message = format_lazy(_("{name} must be a whole number from {low} to {high} {unit}"),
+                          name=name, low=low, high=high, unit=unit)
     return serializers.IntegerField(min_value=low, max_value=high, error_messages={
-        "required": f"{name} is required",
+        "required": format_lazy(_("{name} is required"), name=name),
         "invalid": message,
         "min_value": message,
         "max_value": message,
@@ -156,11 +180,11 @@ def _whole_field(name, low, high, unit):
 
 class SystemSettingsSerializer(serializers.ModelSerializer):
     """Admin: violation rules and how long records and photos are kept."""
-    speed_limit_kmh = _whole_field("Speed limit", 0, 300, "km/h")
-    max_riders = _whole_field("Riders allowed", 1, 10, "people")
-    record_retention_days = _whole_field("Keep records for", 1, 3650, "days")
-    photo_retention_days = _whole_field("Keep photos for", 1, 3650, "days")
-    media_max_mb = _whole_field("Photo space", 100, 1_000_000, "MB")
+    speed_limit_kmh = _whole_field(_("Speed limit"), 0, 300, "km/h")
+    max_riders = _whole_field(_("Riders allowed"), 1, 10, _("people"))
+    record_retention_days = _whole_field(_("Keep records for"), 1, 3650, _("days"))
+    photo_retention_days = _whole_field(_("Keep photos for"), 1, 3650, _("days"))
+    media_max_mb = _whole_field(_("Photo space"), 100, 1_000_000, "MB")
 
     class Meta:
         model = SystemSettings
@@ -168,7 +192,7 @@ class SystemSettingsSerializer(serializers.ModelSerializer):
 
     def validate(self, data):
         if data["photo_retention_days"] > data["record_retention_days"]:
-            raise serializers.ValidationError("Photos cannot be kept longer than the records they belong to")
+            raise serializers.ValidationError(_("Photos cannot be kept longer than the records they belong to"))
         return data
 
 
@@ -176,28 +200,29 @@ class PreferencesSerializer(serializers.ModelSerializer):
     """Staff: how the live view looks and behaves for this account."""
     table_filter = serializers.ChoiceField(choices=TableFilter.choices)
     seek_step_s = serializers.ChoiceField(choices=SEEK_STEPS_S,
-                                          error_messages={"invalid_choice": "Choose one of the skip lengths"})
+                                          error_messages={"invalid_choice": _("Choose one of the skip lengths")})
     units = serializers.ChoiceField(choices=Units.choices)
 
     class Meta:
         model = UserPreferences
-        fields = ["table_filter", "seek_step_s", "show_fps_chart", "violation_notify", "camera_notify", "units"]
+        fields = ["table_filter", "seek_step_s", "show_fps_chart", "violation_notify", "camera_notify", "units",
+                  "language"]
 
 
 class PasswordChangeSerializer(serializers.Serializer):
     """The view passes the logged-in user as context["user"]."""
-    old_password = serializers.CharField(error_messages={"blank": "Type your current password"})
-    new_password = serializers.CharField(error_messages={"blank": "Type a new password"})
-    confirm_password = serializers.CharField(error_messages={"blank": "Type the new password again"})
+    old_password = serializers.CharField(error_messages={"blank": _("Type your current password")})
+    new_password = serializers.CharField(error_messages={"blank": _("Type a new password")})
+    confirm_password = serializers.CharField(error_messages={"blank": _("Type the new password again")})
 
     def validate_old_password(self, password):
         if not self.context["user"].check_password(password):
-            raise serializers.ValidationError("The current password is wrong")
+            raise serializers.ValidationError(_("The current password is wrong"))
         return password
 
     def validate(self, data):
         if data["new_password"] != data["confirm_password"]:
-            raise serializers.ValidationError({"confirm_password": ["The two new passwords do not match"]})
+            raise serializers.ValidationError({"confirm_password": [_("The two new passwords do not match")]})
         try:
             validate_password(data["new_password"], self.context["user"])
         except DjangoValidationError as e:

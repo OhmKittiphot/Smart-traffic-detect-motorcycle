@@ -6,6 +6,7 @@ from rest_framework.views import APIView
 
 from .. import storage
 from ..engine import current_service
+from ..middleware import remember_language
 from ..models import SystemSettings, UserPreferences
 from ..serializers import PasswordChangeSerializer, PreferencesSerializer, SystemSettingsSerializer
 from .common import audit
@@ -43,7 +44,8 @@ class PreferencesView(APIView):
         """Save this account's preferences; the Settings pop-up sends only the fields its page shows."""
         serializer = PreferencesSerializer(UserPreferences.load(request.user), data=request.data, partial=True)
         serializer.is_valid(raise_exception=True)
-        serializer.save()
+        prefs = serializer.save()
+        remember_language(request, prefs.language)
         return Response(serializer.data)
 
 

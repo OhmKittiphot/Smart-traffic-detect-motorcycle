@@ -1,0 +1,771 @@
+#
+msgid ""
+msgstr ""
+"Project-Id-Version: CCTV dashboard\n"
+"Language: th\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Plural-Forms: nplurals=1; plural=0;\n"
+
+msgid "%(n)s missing"
+msgstr "ขาด %(n)s ไฟล์"
+
+msgid "%(s)s s"
+msgstr "%(s)s วินาที"
+
+msgid "0 = not checked"
+msgstr "0 = ไม่ตรวจ"
+
+msgid "Administrators only"
+msgstr "สำหรับผู้ดูแลระบบเท่านั้น"
+
+msgid "All"
+msgstr "ทั้งหมด"
+
+msgid "All live cameras"
+msgstr "กล้องสดทั้งหมด"
+
+msgid "All motorcycles"
+msgstr "รถจักรยานยนต์ทั้งหมด"
+
+msgid "All provinces"
+msgstr "ทุกจังหวัด"
+
+msgid "All sources"
+msgstr "ทุกแหล่งวิดีโอ"
+
+msgid "All video files"
+msgstr "ไฟล์วิดีโอทั้งหมด"
+
+msgid "Auto"
+msgstr "อัตโนมัติ"
+
+msgid "Back"
+msgstr "ย้อนกลับ"
+
+msgid "Back %(n)s seconds"
+msgstr "ย้อนกลับ %(n)s วินาที"
+
+msgid "Calibrate speed"
+msgstr "ปรับเทียบความเร็ว"
+
+msgid "Calibration distances"
+msgstr "ระยะของการปรับเทียบ"
+
+msgid "Calibration points"
+msgstr "จุดปรับเทียบ"
+
+msgid "Camera"
+msgstr "กล้อง"
+
+msgid "Camera view"
+msgstr "ภาพจากกล้อง"
+
+msgid "Cancel"
+msgstr "ยกเลิก"
+
+msgid "Change password"
+msgstr "เปลี่ยนรหัสผ่าน"
+
+msgid "Change theme"
+msgstr "เปลี่ยนธีม"
+
+msgid "Changed by %(name)s, %(when)s"
+msgstr "แก้ไขโดย %(name)s, %(when)s"
+
+msgid "Choose a live camera"
+msgstr "เลือกกล้องสด"
+
+msgid "Choose a video file"
+msgstr "เลือกไฟล์วิดีโอ"
+
+msgid "Choose at most %(days)s days"
+msgstr "เลือกได้ไม่เกิน %(days)s วัน"
+
+msgid "Choose one of the skip lengths"
+msgstr "เลือกระยะการข้ามจากตัวเลือกที่มี"
+
+msgid "Clean up now"
+msgstr "ล้างข้อมูลเก่าตอนนี้"
+
+msgid "Clear points"
+msgstr "ล้างจุด"
+
+msgid ""
+"Click 4 points on the road that form a rectangle, in order: <b>1</b> far-left, <b>2</b> far-right, <b>3</b> near-"
+"right, <b>4</b> near-left. Drag a point to move it. Then enter the real size of that rectangle on the ground (measure "
+"on site, or use known markings such as the lane width)."
+msgstr ""
+"คลิก 4 จุดบนถนนให้เป็นรูปสี่เหลี่ยมผืนผ้า ตามลำดับ: <b>1</b> ซ้ายไกล, <b>2</b> ขวาไกล, <b>3</b> ขวาใกล้, <b>4</b> "
+"ซ้ายใกล้ ลากจุดเพื่อย้ายได้ จากนั้นกรอกขนาดจริงของสี่เหลี่ยมนั้นบนพื้น (วัดที่หน้างาน หรือใช้เครื่องหมายที่รู้ขนาด "
+"เช่น ความกว้างของช่องจราจร)"
+
+msgid "Click a plate to search it"
+msgstr "คลิกป้ายทะเบียนเพื่อค้นหา"
+
+msgid "Click exactly 4 points"
+msgstr "ต้องคลิก 4 จุดพอดี"
+
+msgid "Close"
+msgstr "ปิด"
+
+msgid "Close settings"
+msgstr "ปิดการตั้งค่า"
+
+msgid "Confirm event"
+msgstr "ยืนยันเหตุการณ์"
+
+msgid "Confirmed"
+msgstr "ยืนยันแล้ว"
+
+msgid "Could not capture a frame"
+msgstr "จับภาพเฟรมไม่ได้"
+
+msgid "counts riders and checks their helmets"
+msgstr "นับจำนวนคนบนรถและตรวจหมวกกันน็อก"
+
+msgid "Current password"
+msgstr "รหัสผ่านปัจจุบัน"
+
+msgid "Current video frame"
+msgstr "เฟรมวิดีโอปัจจุบัน"
+
+msgid "Dashboard"
+msgstr "หน้าหลัก"
+
+msgid "days"
+msgstr "วัน"
+
+msgid "Delete"
+msgstr "ลบ"
+
+msgid "Delete all"
+msgstr "ลบทั้งหมด"
+
+msgid "Delete all motorcycle records?"
+msgstr "ลบบันทึกรถจักรยานยนต์ทั้งหมด?"
+
+msgid "Delete selected"
+msgstr "ลบที่เลือก"
+
+msgid "Detail"
+msgstr "รายละเอียด"
+
+msgid "Detection and records"
+msgstr "การตรวจจับและบันทึก"
+
+msgid "Detection engine"
+msgstr "ระบบตรวจจับ"
+
+msgid "Detection is not ready yet"
+msgstr "ระบบตรวจจับยังไม่พร้อม"
+
+msgid "Display"
+msgstr "การแสดงผล"
+
+msgid "e.g. 1กข987"
+msgstr "เช่น 1กข987"
+
+msgid "Error"
+msgstr "ผิดพลาด"
+
+msgid "Evidence photo"
+msgstr "ภาพหลักฐาน"
+
+msgid "File"
+msgstr "ไฟล์"
+
+msgid "file missing"
+msgstr "ไม่พบไฟล์"
+
+msgid "Files in the input folder that staff can play"
+msgstr "ไฟล์ในโฟลเดอร์ input ที่เจ้าหน้าที่เปิดเล่นได้"
+
+msgid "finds motorcycles in the frame"
+msgstr "หารถจักรยานยนต์ในเฟรม"
+
+msgid "finds the licence plate on each motorcycle"
+msgstr "หาป้ายทะเบียนของรถจักรยานยนต์แต่ละคัน"
+
+msgid "Forward %(n)s seconds"
+msgstr "ข้ามไป %(n)s วินาที"
+
+msgid "Frames processed per second"
+msgstr "จำนวนเฟรมที่ประมวลผลต่อวินาที"
+
+msgid "From"
+msgstr "ตั้งแต่"
+
+msgid "Go to the live view"
+msgstr "ไปที่หน้าดูสด"
+
+msgid "GPU is catching up…"
+msgstr "GPU กำลังประมวลผลตามให้ทัน…"
+
+msgid "Healthy"
+msgstr "ปกติ"
+
+msgid "Helmet"
+msgstr "หมวกกันน็อก"
+
+msgid "helmet / no helmet on each head"
+msgstr "สวม / ไม่สวมหมวกกันน็อก ของแต่ละศีรษะ"
+
+msgid "Helmet detector"
+msgstr "ตัวตรวจจับหมวกกันน็อก"
+
+msgid "Imperial (mph, ft)"
+msgstr "ไมล์/ชม., ฟุต"
+
+msgid "Incorrect username or password."
+msgstr "ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง"
+
+msgid "IP camera (RTSP)"
+msgstr "กล้อง IP (RTSP)"
+
+msgid "Keep data"
+msgstr "การเก็บข้อมูล"
+
+msgid "Keep photos for"
+msgstr "ระยะเวลาเก็บภาพ"
+
+msgid "Keep records for"
+msgstr "ระยะเวลาเก็บบันทึก"
+
+msgid "Language"
+msgstr "ภาษา"
+
+msgid "Last 30 days"
+msgstr "30 วันล่าสุด"
+
+msgid "Last 7 days"
+msgstr "7 วันล่าสุด"
+
+msgid "Last changed"
+msgstr "แก้ไขล่าสุด"
+
+msgid "Length"
+msgstr "ความยาว"
+
+msgid "Live camera"
+msgstr "กล้องสด"
+
+msgid "Live camera (RTSP)"
+msgstr "กล้องสด (RTSP)"
+
+msgid "Live camera status"
+msgstr "สถานะกล้องสด"
+
+msgid "Live cameras"
+msgstr "กล้องสด"
+
+msgid "Live view"
+msgstr "หน้าดูสด"
+
+msgid "Load more"
+msgstr "โหลดเพิ่ม"
+
+msgid "Loading"
+msgstr "กำลังโหลด"
+
+msgid "Loading models to GPU…"
+msgstr "กำลังโหลดโมเดลเข้า GPU…"
+
+msgid "Loading…"
+msgstr "กำลังโหลด…"
+
+msgid "Log in"
+msgstr "เข้าสู่ระบบ"
+
+msgid "Log out"
+msgstr "ออกจากระบบ"
+
+msgid "Manage users & roles"
+msgstr "จัดการผู้ใช้และบทบาท"
+
+msgid "Metric (km/h, m)"
+msgstr "กม./ชม., เมตร"
+
+msgid "Models"
+msgstr "โมเดล"
+
+msgid "Motorcycle detection"
+msgstr "ระบบตรวจจับรถจักรยานยนต์"
+
+msgid "Motorcycle detector"
+msgstr "ตัวตรวจจับรถจักรยานยนต์"
+
+msgid "Motorcycles per day"
+msgstr "รถจักรยานยนต์ต่อวัน"
+
+msgid "New frame"
+msgstr "เฟรมใหม่"
+
+msgid "New password"
+msgstr "รหัสผ่านใหม่"
+
+msgid "New password again"
+msgstr "รหัสผ่านใหม่อีกครั้ง"
+
+msgid "New violations"
+msgstr "การฝ่าฝืนใหม่"
+
+msgid "No evidence photo"
+msgstr "ไม่มีภาพหลักฐาน"
+
+msgid "No files in the input/ folder"
+msgstr "ไม่มีไฟล์ในโฟลเดอร์ input/"
+
+msgid "No helmet"
+msgstr "ไม่สวมหมวกกันน็อก"
+
+msgid "No motorcycles yet"
+msgstr "ยังไม่มีรถจักรยานยนต์"
+
+msgid "NO SIGNAL"
+msgstr "ไม่มีสัญญาณ"
+
+msgid "No video files in the input folder"
+msgstr "ไม่มีไฟล์วิดีโอในโฟลเดอร์ input"
+
+msgid "No video signal"
+msgstr "ไม่มีสัญญาณวิดีโอ"
+
+msgid "No video signal from this source"
+msgstr "ไม่มีสัญญาณวิดีโอจากแหล่งนี้"
+
+msgid "No video signal to calibrate on"
+msgstr "ไม่มีสัญญาณวิดีโอให้ปรับเทียบ"
+
+msgid "None"
+msgstr "ไม่มี"
+
+msgid "Normal"
+msgstr "ปกติ"
+
+msgid "normal / rejected"
+msgstr "ปกติ / ปฏิเสธแล้ว"
+
+msgid "Normal only"
+msgstr "เฉพาะปกติ"
+
+msgid "Not reviewed"
+msgstr "ยังไม่ตรวจสอบ"
+
+msgid "Not reviewed yet"
+msgstr "ยังไม่ได้ตรวจสอบ"
+
+msgid "not used while the rider classifier is there"
+msgstr "ไม่ได้ใช้เมื่อมีตัวจำแนกผู้ขับขี่"
+
+msgid "Note"
+msgstr "หมายเหตุ"
+
+msgid "Notifications"
+msgstr "การแจ้งเตือน"
+
+msgid "offline / back online"
+msgstr "ออฟไลน์ / กลับมาออนไลน์"
+
+msgid "Only a video file can be paused"
+msgstr "หยุดชั่วคราวได้เฉพาะไฟล์วิดีโอ"
+
+msgid "Only a video file can be seeked"
+msgstr "เลื่อนตำแหน่งได้เฉพาะไฟล์วิดีโอ"
+
+msgid "optional"
+msgstr "ไม่บังคับ"
+
+msgid "optional, saved with the review"
+msgstr "ไม่บังคับ บันทึกพร้อมผลการตรวจสอบ"
+
+msgid "Other devices logged in as %(name)s are logged out."
+msgstr "อุปกรณ์อื่นที่เข้าสู่ระบบเป็น %(name)s จะถูกออกจากระบบ"
+
+msgid "over"
+msgstr "เร็วเกิน"
+
+msgid "Passing motorcycles"
+msgstr "รถจักรยานยนต์ที่ผ่าน"
+
+msgid "Password"
+msgstr "รหัสผ่าน"
+
+msgid "Password changed"
+msgstr "เปลี่ยนรหัสผ่านแล้ว"
+
+msgid "Pause"
+msgstr "หยุดชั่วคราว"
+
+msgid "people"
+msgstr "คน"
+
+msgid "Photo"
+msgstr "ภาพ"
+
+msgid "Photo space"
+msgstr "พื้นที่เก็บภาพ"
+
+msgid "Photos"
+msgstr "ภาพ"
+
+msgid "Photos cannot be kept longer than the records they belong to"
+msgstr "เก็บภาพนานกว่าบันทึกที่ภาพนั้นสังกัดอยู่ไม่ได้"
+
+msgid "Plate"
+msgstr "ป้ายทะเบียน"
+
+msgid "Plate detector"
+msgstr "ตัวตรวจจับป้ายทะเบียน"
+
+msgid "Plate OCR"
+msgstr "OCR ป้ายทะเบียน"
+
+msgid "Plate search"
+msgstr "ค้นหาป้ายทะเบียน"
+
+msgid "Plates matching the search | separate several plates with commas(,)"
+msgstr "ป้ายทะเบียนที่ตรงกับคำค้นหา | ค้นหาหลายป้ายได้โดยคั่นด้วยจุลภาค (,)"
+
+msgid "Play / pause"
+msgstr "เล่น / หยุดชั่วคราว"
+
+msgid "point 1 → 2"
+msgstr "จุด 1 → 2"
+
+msgid "point 2 → 3"
+msgstr "จุด 2 → 3"
+
+msgid "Points must be inside the frame"
+msgstr "จุดต้องอยู่ภายในเฟรม"
+
+msgid "Problem"
+msgstr "มีปัญหา"
+
+msgid "Processing"
+msgstr "ประมวลผล"
+
+msgid "Processing %(fps).1f fps"
+msgstr "ประมวลผล %(fps).1f fps"
+
+msgid "Processing frame…"
+msgstr "กำลังประมวลผลเฟรม…"
+
+msgid "Processing speed · last 2 minutes"
+msgstr "ความเร็วการประมวลผล · 2 นาทีล่าสุด"
+
+msgid "Province"
+msgstr "จังหวัด"
+
+msgid "reads the plate's letters and number"
+msgstr "อ่านตัวอักษรและตัวเลขบนป้ายทะเบียน"
+
+msgid "Real size on the ground of the rectangle staff clicked. The 4 points stay as they are."
+msgstr "ขนาดจริงบนพื้นของสี่เหลี่ยมที่เจ้าหน้าที่คลิกไว้ จุดทั้ง 4 ยังคงอยู่ที่เดิม"
+
+msgid "Records"
+msgstr "บันทึก"
+
+msgid "Records today / total"
+msgstr "บันทึกวันนี้ / ทั้งหมด"
+
+msgid "Reject"
+msgstr "ปฏิเสธ"
+
+msgid "Rejected"
+msgstr "ปฏิเสธแล้ว"
+
+msgid "Remove"
+msgstr "ลบออก"
+
+msgid "Remove speed calibration?"
+msgstr "ลบการปรับเทียบความเร็ว?"
+
+msgid "Repeat offenders"
+msgstr "ผู้ฝ่าฝืนซ้ำ"
+
+msgid "Reset"
+msgstr "รีเซ็ต"
+
+msgid "Reset speed calibration?"
+msgstr "รีเซ็ตการปรับเทียบความเร็ว?"
+
+msgid "Response"
+msgstr "เวลาตอบสนอง"
+
+msgid "Results"
+msgstr "ผลการค้นหา"
+
+msgid "Review"
+msgstr "การตรวจสอบ"
+
+msgid "Rider classifier"
+msgstr "ตัวจำแนกผู้ขับขี่"
+
+msgid "Riders"
+msgstr "จำนวนคน"
+
+msgid "Riders allowed"
+msgstr "จำนวนคนที่อนุญาต"
+
+msgid "Save"
+msgstr "บันทึก"
+
+msgid "Save calibration"
+msgstr "บันทึกการปรับเทียบ"
+
+msgid "Saved"
+msgstr "บันทึกแล้ว"
+
+msgid "Search"
+msgstr "ค้นหา"
+
+msgid "Search at most %(n)s plates at once"
+msgstr "ค้นหาได้ครั้งละไม่เกิน %(n)s ป้าย"
+
+msgid "Search plate"
+msgstr "ค้นหาป้ายทะเบียน"
+
+msgid "Search results"
+msgstr "ผลการค้นหา"
+
+msgid "Select every record in this list, also those not loaded yet"
+msgstr "เลือกทุกรายการในรายการนี้ รวมถึงที่ยังไม่ได้โหลด"
+
+msgid "Select the records to delete"
+msgstr "เลือกรายการที่จะลบ"
+
+msgid "Settings"
+msgstr "ตั้งค่า"
+
+msgid "Show all %(n)s"
+msgstr "แสดงทั้งหมด %(n)s รายการ"
+
+msgid "Show each of the live cameras"
+msgstr "แสดงกล้องสดแต่ละตัว"
+
+msgid "Show each of the video files"
+msgstr "แสดงไฟล์วิดีโอแต่ละไฟล์"
+
+msgid "Size"
+msgstr "ขนาด"
+
+msgid "Skip back / forward"
+msgstr "ย้อน / ข้าม"
+
+msgid "Source"
+msgstr "แหล่งวิดีโอ"
+
+msgid "Speed"
+msgstr "ความเร็ว"
+
+msgid "Speed calibration"
+msgstr "การปรับเทียบความเร็ว"
+
+msgid "Speed chart"
+msgstr "กราฟความเร็ว"
+
+msgid "Speed limit"
+msgstr "จำกัดความเร็ว"
+
+msgid "Speeding"
+msgstr "ขับเร็วเกินกำหนด"
+
+msgid "Speeds are no longer measured on this source until it is calibrated again."
+msgstr "จะไม่วัดความเร็วของแหล่งวิดีโอนี้อีกจนกว่าจะปรับเทียบใหม่"
+
+msgid "Speeds are no longer measured on this source until staff calibrate it again."
+msgstr "จะไม่วัดความเร็วของแหล่งวิดีโอนี้อีกจนกว่าเจ้าหน้าที่จะปรับเทียบใหม่"
+
+msgid "Standby"
+msgstr "พร้อมทำงาน"
+
+msgid "Starting"
+msgstr "กำลังเริ่ม"
+
+msgid "Starting…"
+msgstr "กำลังเริ่ม…"
+
+msgid "Starts when staff open the live view"
+msgstr "เริ่มทำงานเมื่อเจ้าหน้าที่เปิดหน้าดูสด"
+
+msgid "Status"
+msgstr "สถานะ"
+
+msgid "Stopping…"
+msgstr "กำลังหยุด…"
+
+msgid "Switch source"
+msgstr "เปลี่ยนแหล่งวิดีโอ"
+
+msgid "System status"
+msgstr "สถานะระบบ"
+
+msgid "Table shows"
+msgstr "ตารางแสดง"
+
+msgid "Take a new frame from the video"
+msgstr "ดึงเฟรมใหม่จากวิดีโอ"
+
+msgid "The 4 points must outline a rectangle on the road, clicked in order"
+msgstr "จุดทั้ง 4 ต้องเป็นรูปสี่เหลี่ยมบนถนน และคลิกตามลำดับ"
+
+msgid "The camera is offline, so the points cannot be redrawn now; Edit opens the full editor once it is online."
+msgstr "กล้องออฟไลน์อยู่จึงวาดจุดใหม่ไม่ได้ในตอนนี้ เมื่อกล้องกลับมาออนไลน์ ปุ่มแก้ไขจะเปิดตัวแก้ไขแบบเต็ม"
+
+msgid "The current password is wrong"
+msgstr "รหัสผ่านปัจจุบันไม่ถูกต้อง"
+
+msgid "The frame expired; open the editor again"
+msgstr "เฟรมหมดอายุแล้ว กรุณาเปิดตัวแก้ไขอีกครั้ง"
+
+msgid "The records and their evidence photos are removed permanently. This cannot be undone."
+msgstr "บันทึกและภาพหลักฐานจะถูกลบถาวร ไม่สามารถกู้คืนได้"
+
+msgid "The selected camera is not available"
+msgstr "กล้องที่เลือกใช้งานไม่ได้"
+
+msgid "The selected video file was not found"
+msgstr "ไม่พบไฟล์วิดีโอที่เลือก"
+
+msgid "The start date is after the end date"
+msgstr "วันเริ่มต้นอยู่หลังวันสิ้นสุด"
+
+msgid "The two new passwords do not match"
+msgstr "รหัสผ่านใหม่ทั้งสองช่องไม่ตรงกัน"
+
+msgid "Theme"
+msgstr "ธีม"
+
+msgid "This account is not allowed to use the dashboard."
+msgstr "บัญชีนี้ไม่มีสิทธิ์ใช้งานแดชบอร์ด"
+
+msgid "This permanently removes every row in the table and its evidence photos. It cannot be undone."
+msgstr "ทุกแถวในตารางและภาพหลักฐานจะถูกลบถาวร ไม่สามารถกู้คืนได้"
+
+msgid "This source has no saved calibration; staff set the points from the live view"
+msgstr "แหล่งวิดีโอนี้ยังไม่มีการปรับเทียบที่บันทึกไว้ เจ้าหน้าที่ต้องกำหนดจุดจากหน้าดูสด"
+
+msgid "This video source is not configured"
+msgstr "ยังไม่ได้ตั้งค่าแหล่งวิดีโอนี้"
+
+msgid "Time"
+msgstr "เวลา"
+
+msgid "To"
+msgstr "ถึง"
+
+msgid "Today"
+msgstr "วันนี้"
+
+msgid "Too many failed login attempts. This account is locked for %(cooloff_minutes)s minutes."
+msgstr "เข้าสู่ระบบผิดหลายครั้งเกินไป บัญชีนี้ถูกล็อกไว้ %(cooloff_minutes)s นาที"
+
+msgid "Too many riders"
+msgstr "บรรทุกคนเกิน"
+
+msgid "Type a new password"
+msgstr "กรอกรหัสผ่านใหม่"
+
+msgid "Type a plate to search the recorded motorcycles"
+msgstr "พิมพ์ป้ายทะเบียนเพื่อค้นหารถจักรยานยนต์ที่บันทึกไว้"
+
+msgid "Type at least %(n)s plate characters for each plate (“%(plate)s” is too short)"
+msgstr "พิมพ์อย่างน้อย %(n)s ตัวอักษรต่อป้าย (“%(plate)s” สั้นเกินไป)"
+
+msgid "Type the new password again"
+msgstr "กรอกรหัสผ่านใหม่อีกครั้ง"
+
+msgid "Type your current password"
+msgstr "กรอกรหัสผ่านปัจจุบัน"
+
+msgid "Undo point"
+msgstr "ย้อนจุดล่าสุด"
+
+msgid "Undo review"
+msgstr "ยกเลิกการตรวจสอบ"
+
+msgid "Units"
+msgstr "หน่วย"
+
+msgid "Unknown province"
+msgstr "ไม่รู้จักจังหวัดนี้"
+
+msgid "Unknown video source"
+msgstr "ไม่รู้จักแหล่งวิดีโอนี้"
+
+msgid "Username"
+msgstr "ชื่อผู้ใช้"
+
+msgid "Vehicles today"
+msgstr "รถวันนี้"
+
+msgid "Video"
+msgstr "วิดีโอ"
+
+msgid "Video arrives but no frame is being processed"
+msgstr "ได้รับวิดีโอแต่ไม่มีเฟรมใดถูกประมวลผล"
+
+msgid "Video file"
+msgstr "ไฟล์วิดีโอ"
+
+msgid "Video files"
+msgstr "ไฟล์วิดีโอ"
+
+msgid "Video paused"
+msgstr "วิดีโอหยุดชั่วคราว"
+
+msgid "Video position"
+msgstr "ตำแหน่งวิดีโอ"
+
+msgid "Video source"
+msgstr "แหล่งวิดีโอ"
+
+msgid "Violation"
+msgstr "ฝ่าฝืน"
+
+msgid "Violation = no helmet · more than %(n)s riders"
+msgstr "ฝ่าฝืน = ไม่สวมหมวกกันน็อก · มีคนบนรถเกิน %(n)s คน"
+
+msgid "Violation rules"
+msgstr "เกณฑ์การฝ่าฝืน"
+
+msgid "Violation statistics"
+msgstr "สถิติการฝ่าฝืน"
+
+msgid "Violations"
+msgstr "การฝ่าฝืน"
+
+msgid "Violations by time of day"
+msgstr "การฝ่าฝืนตามช่วงเวลา"
+
+msgid "Violations by type"
+msgstr "การฝ่าฝืนแยกตามประเภท"
+
+msgid "Violations not reviewed"
+msgstr "การฝ่าฝืนที่ยังไม่ตรวจสอบ"
+
+msgid "Violations only"
+msgstr "เฉพาะที่ฝ่าฝืน"
+
+msgid "Violations stats"
+msgstr "สถิติการฝ่าฝืน"
+
+msgid "Violations today"
+msgstr "การฝ่าฝืนวันนี้"
+
+msgid "Width"
+msgstr "ความกว้าง"
+
+msgid "{name} is required"
+msgstr "ต้องกรอก{name}"
+
+msgid "{name} must be a number"
+msgstr "{name}ต้องเป็นตัวเลข"
+
+msgid "{name} must be a whole number from {low} to {high} {unit}"
+msgstr "{name}ต้องเป็นจำนวนเต็มตั้งแต่ {low} ถึง {high} {unit}"
+
+msgid "{name} must be between 0.1 and {max} m"
+msgstr "{name}ต้องอยู่ระหว่าง 0.1 ถึง {max} ม."

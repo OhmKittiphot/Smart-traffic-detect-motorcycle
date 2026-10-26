@@ -60,16 +60,16 @@
     const chip = $("engine-chip");
     chip.dataset.state = s.state;
     $("engine-text").textContent =
-      s.state === "running" ? "Detection running" :
-      s.state === "error" ? "System error: " + s.error : "Loading models…";
+      s.state === "running" ? gettext("Detection running") :
+      s.state === "error" ? interpolate(gettext("System error: %s"), [s.error]) : gettext("Loading models…");
 
     const badge = $("source-badge");
     let kind = "nosignal";
-    let label = "NO SIGNAL";
+    let label = gettext("NO SIGNAL");
     if (s.signal) {
-      if (s.paused) { kind = "paused"; label = "PAUSED"; }
-      else if (s.mode === "live") { kind = "live"; label = "LIVE"; }
-      else { kind = "file"; label = "FILE"; }
+      if (s.paused) { kind = "paused"; label = gettext("PAUSED"); }
+      else if (s.mode === "live") { kind = "live"; label = gettext("LIVE"); }
+      else { kind = "file"; label = gettext("FILE"); }
     }
     badge.dataset.kind = kind;
     badge.textContent = label;
@@ -94,7 +94,7 @@
       seekInput.max = s.total_ms;
       $("total-text").textContent = fmtTime(s.total_ms);
       playBtn.classList.toggle("is-paused", s.paused);
-      playBtn.setAttribute("aria-label", s.paused ? "Play" : "Pause");
+      playBtn.setAttribute("aria-label", s.paused ? gettext("Play") : gettext("Pause"));
       drawPosition();
     }
 
@@ -190,7 +190,7 @@
     const visible = [...rowsEl.children].some((tr) =>
       filter === "all" || (filter === "violation") === tr.classList.contains("row-bad"));
     emptyMsg.hidden = visible;
-    emptyMsg.textContent = rowsEl.children.length ? "No motorcycles match this filter" : "No motorcycles yet";
+    emptyMsg.textContent = rowsEl.children.length ? gettext("No motorcycles match this filter") : gettext("No motorcycles yet");
   }
 
   async function pollVehicles() {
@@ -266,12 +266,12 @@
     ev.preventDefault();
     const mode = selectedMode();
     if (mode === "file" && !fileSelect.value) {
-      showMsg("No video file to choose", "error");
+      showMsg(gettext("No video file to choose"), "error");
       return;
     }
     busy = true;
     applyBtn.disabled = true;
-    showMsg("Switching source…", "busy");
+    showMsg(gettext("Switching source…"), "busy");
     try {
       const s = await api("/api/source/", {
         method: "POST",
@@ -282,7 +282,7 @@
         }),
       });
       renderStatus(s);
-      showMsg("Source switched", "ok");
+      showMsg(gettext("Source switched"), "ok");
       reloadStream();
     } catch (e) {
       showMsg(e.message, "error");
@@ -394,9 +394,9 @@
     calibBtn.disabled = s.state !== "running" || !s.signal;
     calibBtn.classList.toggle("btn-ok", s.speed_calibrated);
     calibBtn.classList.toggle("btn-warn", !s.speed_calibrated);
-    calibBtn.textContent = s.speed_calibrated ? "Speed calibrated" : "Calibrate speed";
-    calibBtn.title = calibBtn.disabled ? "Needs a video signal"
-      : s.speed_calibrated ? "Click to redraw the calibration" : "Speed is not measured until calibrated";
+    calibBtn.textContent = s.speed_calibrated ? gettext("Speed calibrated") : gettext("Calibrate speed");
+    calibBtn.title = calibBtn.disabled ? gettext("Needs a video signal")
+      : s.speed_calibrated ? gettext("Click to redraw the calibration") : gettext("Speed is not measured until calibrated");
     calibReset.hidden = !s.speed_calibrated || s.state !== "running";
   }
 
@@ -407,7 +407,7 @@
         ...c,
         frameUrl: "/api/calibration/frame/",
         save: (body) => api("/api/calibration/save/", { method: "POST", body: JSON.stringify(body) }),
-        onSaved: () => { showMsg("Speed calibration saved", "ok"); pollStatus(); },
+        onSaved: () => { showMsg(gettext("Speed calibration saved"), "ok"); pollStatus(); },
       });
     } catch (e) {
       showMsg(e.message, "error");
@@ -423,7 +423,7 @@
     if (resetDialog.returnValue !== "confirm") return;
     try {
       await api("/api/calibration/remove/", { method: "POST", body: "{}" });
-      showMsg("Speed calibration reset", "ok");
+      showMsg(gettext("Speed calibration reset"), "ok");
       pollStatus();
     } catch (e) {
       showMsg(e.message, "error");
@@ -463,9 +463,11 @@
     Object.assign(prefs, ev.detail);
     selectFilter(prefs.table_filter);
     showChart(prefs.show_fps_chart);
-    for (const [id, way] of [["back-btn", "Back"], ["fwd-btn", "Forward"]]) {
-      $(id).title = `${way} ${prefs.seek_step_s} seconds (${way === "Back" ? "←" : "→"})`;
-      $(id).setAttribute("aria-label", `${way} ${prefs.seek_step_s} seconds`);
+    const steps = [["back-btn", gettext("Back %s seconds"), "←"], ["fwd-btn", gettext("Forward %s seconds"), "→"]];
+    for (const [id, text, key] of steps) {
+      const label = interpolate(text, [prefs.seek_step_s]);
+      $(id).title = `${label} (${key})`;
+      $(id).setAttribute("aria-label", label);
     }
   });
 

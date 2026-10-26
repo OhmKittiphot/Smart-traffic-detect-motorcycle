@@ -1,5 +1,6 @@
 from django.contrib.auth.views import LogoutView
 from django.urls import path
+from django.views.i18n import JavaScriptCatalog
 
 from .views import calibration, live, pages, records, settings, system
 
@@ -11,6 +12,8 @@ urlpatterns = [
     path("system/", pages.system_status, name="system_status"),
     path("login/", pages.LoginView.as_view(), name="login"),
     path("logout/", LogoutView.as_view(), name="logout"),
+    # gettext() and the Thai texts for the dashboard's JavaScript (djangojs.po)
+    path("jsi18n/", JavaScriptCatalog.as_view(packages=["dashboard"]), name="javascript-catalog"),
 
     # Live view
     path("stream/", live.stream, name="stream"),
@@ -25,6 +28,7 @@ urlpatterns = [
     path("snapshot/<int:pk>/", records.snapshot, name="snapshot"),
     path("snapshot/<int:pk>/plate/", records.snapshot, {"field": "plate_snapshot"}, name="plate_snapshot"),
     path("api/stats/", records.StatsView.as_view(), name="api_stats"),
+    path("api/stats/repeat/", records.RepeatOffendersView.as_view(), name="api_stats_repeat"),
     path("api/violations/new/", records.NewViolationsView.as_view(), name="api_violations_new"),
     path("api/vehicles/search/", records.PlateSearchView.as_view(), name="api_vehicles_search"),
     path("api/vehicles/<int:pk>/review/", records.VehicleReviewView.as_view(), name="api_vehicle_review"),

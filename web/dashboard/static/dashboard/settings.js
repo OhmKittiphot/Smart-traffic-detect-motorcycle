@@ -29,11 +29,16 @@
   async function send(form) {
     const buttons = form.querySelectorAll("button");
     buttons.forEach((b) => { b.disabled = true; });
-    showMsg(form, "Saving…", "busy");
+    showMsg(form, gettext(gettext("Saving…")), "busy");
     try {
       const saved = await api(form.dataset.api, { method: "POST", body: JSON.stringify(formData(form)) });
       if ("reset" in form.dataset) form.reset();   // never leave passwords in the fields
       if ("autosave" in form.dataset) {
+        // The page's texts come from the server: a new language shows after a reload
+        if (saved.language && saved.language !== document.documentElement.lang) {
+          location.reload();
+          return;
+        }
         document.dispatchEvent(new CustomEvent("settings:preferences", { detail: saved }));
       }
       showMsg(form, form.dataset.ok, "ok");
@@ -56,11 +61,12 @@
     const form = cleanupBtn.closest("form");
     cleanupBtn.addEventListener("click", async () => {
       cleanupBtn.disabled = true;
-      showMsg(form, "Cleaning up…", "busy");
+      showMsg(form, gettext(gettext("Cleaning up…")), "busy");
       try {
         const r = await api(cleanupBtn.dataset.api, { method: "POST", body: "{}" });
         const mb = (r.bytes_freed / 1024 / 1024).toFixed(1);
-        showMsg(form, `Removed ${r.records_deleted} old records and the photos of ${r.photos_removed} (${mb} MB)`, "ok");
+        showMsg(form, interpolate(gettext("Removed %(records)s old records and the photos of %(photos)s (%(mb)s MB)"),
+          { records: r.records_deleted, photos: r.photos_removed, mb }, true), "ok");
       } catch (e) {
         showMsg(form, e.message, "error");
       } finally {

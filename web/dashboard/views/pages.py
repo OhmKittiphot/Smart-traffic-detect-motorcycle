@@ -4,6 +4,7 @@ from pathlib import Path
 from django.conf import settings
 from django.contrib.auth import views as auth_views
 from django.shortcuts import render
+from django.utils.translation import gettext as _
 from django.views.decorators.http import require_GET
 
 from ..engine import get_service
@@ -32,7 +33,7 @@ def dashboard(request):
     prefs = UserPreferences.load(request.user)
     return render(request, "dashboard/dashboard.html", {
         "video_files": list_video_files(),
-        "live_sources": [(key, label) for key, (label, _) in list_live_sources().items()],
+        "live_sources": [(key, label) for key, (label, _url) in list_live_sources().items()],
         "saved": CameraSettings.load(),
         "rules": SystemSettings.load(),
         "prefs": prefs,
@@ -45,10 +46,10 @@ def _source_options():
     cameras, the files in the input folder, and any other source records were saved from (e.g. a file
     since removed). The value is "<source_mode>:<source_name>", as the records store it and as
     PlateSearchSerializer.source takes it (add-on cameras are saved under their label, the IP camera as "")."""
-    names = {"live": {"", *(label for label, _ in list_live_sources().values())}, "file": set(list_video_files())}
+    names = {"live": {"", *(label for label, _url in list_live_sources().values())}, "file": set(list_video_files())}
     for mode, name in VehicleRecord.objects.order_by().values_list("source_mode", "source_name").distinct():
         names.setdefault(mode, set()).add(name)
-    label = lambda mode, name: name or ("IP camera (RTSP)" if mode == "live" else "Video file")
+    label = lambda mode, name: name or (_("IP camera (RTSP)") if mode == "live" else _("Video file"))
     return {mode: [(f"{mode}:{name}", label(mode, name)) for name in sorted(found, key=lambda n: (n != "", n.lower()))]
             for mode, found in names.items()}
 
@@ -82,12 +83,12 @@ def _detection_models(config):
 
     rider_found = found(config.rider_model_path)
     models = [
-        ("Motorcycle detector", config.motorcycle_model_path, "finds motorcycles in the frame"),
-        ("Plate detector", config.plate_model_path, "finds the licence plate on each motorcycle"),
-        ("Plate OCR", config.plate_ocr_model_path, "reads the plate's letters and number"),
-        ("Rider classifier", config.rider_model_path, "counts riders and checks their helmets"),
-        ("Helmet detector", config.helmet_model_path,
-         "not used while the rider classifier is there" if rider_found else "helmet / no helmet on each head"),
+        (_("Motorcycle detector"), config.motorcycle_model_path, _("finds motorcycles in the frame")),
+        (_("Plate detector"), config.plate_model_path, _("finds the licence plate on each motorcycle")),
+        (_("Plate OCR"), config.plate_ocr_model_path, _("reads the plate's letters and number")),
+        (_("Rider classifier"), config.rider_model_path, _("counts riders and checks their helmets")),
+        (_("Helmet detector"), config.helmet_model_path,
+         _("not used while the rider classifier is there") if rider_found else _("helmet / no helmet on each head")),
     ]
     return [{"name": name, "file": Path(path).name, "purpose": purpose, "found": found(path)}
             for name, path, purpose in models]

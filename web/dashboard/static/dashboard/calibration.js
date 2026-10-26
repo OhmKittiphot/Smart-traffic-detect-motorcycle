@@ -5,7 +5,7 @@
 // server uses. Exposed as window.CalibrationEditor.open(options).
 window.CalibrationEditor = (() => {
   const SVG_NS = "http://www.w3.org/2000/svg";
-  const POINT_NAMES = ["far-left", "far-right", "near-right", "near-left"];
+  const POINT_NAMES = [gettext("far-left"), gettext("far-right"), gettext("near-right"), gettext("near-left")];
   const MIN_M = 0.1;   // allowed width / length in metres (the server checks the same range)
   const MAX_M = 500;
   const { units } = window.Dashboard;
@@ -60,7 +60,8 @@ window.CalibrationEditor = (() => {
       svg.append(g);
     });
     $("calib-next").textContent = points.length < 4
-      ? `Click point ${points.length + 1}: ${POINT_NAMES[points.length]}` : "";
+      ? interpolate(gettext("Click point %(n)s: %(name)s"), { n: points.length + 1, name: POINT_NAMES[points.length] }, true)
+      : "";
     updateSave();
   }
 
@@ -74,7 +75,7 @@ window.CalibrationEditor = (() => {
     loading.hidden = !on && !error;
     loading.querySelector(".loader").hidden = !on;
     loadingText.classList.toggle("is-error", Boolean(error));
-    loadingText.textContent = error || "Loading…";
+    loadingText.textContent = error || gettext("Loading…");
     stage.hidden = on || Boolean(error);
     $("calib-refresh").disabled = on;
   }
@@ -99,14 +100,14 @@ window.CalibrationEditor = (() => {
       const res = await fetch(options.frameUrl, { credentials: "same-origin", cache: "no-store" });
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
-        throw new Error(data.detail || "Could not load a frame from the video");
+        throw new Error(data.detail || gettext("Could not load a frame from the video"));
       }
       const url = URL.createObjectURL(await res.blob());
       if (no !== frameNo) return;
       if (img.src.startsWith("blob:")) URL.revokeObjectURL(img.src);
       await new Promise((resolve, reject) => {
         img.onload = resolve;
-        img.onerror = () => reject(new Error("Could not load a frame from the video"));
+        img.onerror = () => reject(new Error(gettext("Could not load a frame from the video")));
         img.src = url;
       });
       svg.setAttribute("viewBox", `0 0 ${img.naturalWidth} ${img.naturalHeight}`);
@@ -148,7 +149,7 @@ window.CalibrationEditor = (() => {
 
   saveBtn.addEventListener("click", async () => {
     saveBtn.disabled = true;
-    status("Saving…", "busy");
+    status(gettext("Saving…"), "busy");
     try {
       // Typed in the account's units (m or ft); always saved in metres
       await options.save({ points, width_m: units.toMetres(Number(widthInput.value)),

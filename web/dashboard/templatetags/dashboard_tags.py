@@ -3,7 +3,7 @@ from django import template
 from django.urls import reverse
 from django.utils.html import format_html, format_html_join
 
-from dashboard.models import SEEK_STEPS_S, SystemSettings, Units, UserPreferences
+from dashboard.models import SEEK_STEPS_S, Language, SystemSettings, Units, UserPreferences
 
 register = template.Library()
 
@@ -23,6 +23,7 @@ def settings_panel(context):
         "cameras": user.has_perm("dashboard.view_system_status"),
         "seek_steps": SEEK_STEPS_S,
         "units": Units.choices,
+        "languages": Language.choices,
     }
 
 

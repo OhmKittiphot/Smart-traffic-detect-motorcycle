@@ -1,11 +1,11 @@
 """Recorded vehicles: plate search, reviewing and deleting records, violation statistics, evidence photos
 and the notifications of new violations."""
-from datetime import timedelta
+from datetime import datetime, time, timedelta
 from pathlib import Path
 
 from django.conf import settings
 from django.db.models import Count, Max, Q
-from django.db.models.functions import TruncDate
+from django.db.models.functions import ExtractHour, ExtractIsoWeekDay, TruncDate
 from django.http import FileResponse, Http404
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
@@ -15,9 +15,9 @@ from rest_framework.views import APIView
 
 from .. import storage
 from ..models import Review, VehicleRecord, Violation
-from ..plate_search import normalize_query, rank_plates, split_queries
-from ..serializers import (PlateSearchSerializer, ReviewSerializer, VehicleDeleteSerializer, VehicleQuerySerializer,
-                           VehicleRecordSerializer)
+from ..plate_search import group_plates, normalize_query, rank_plates, split_queries
+from ..serializers import (PlateSearchSerializer, ReviewSerializer, StatsQuerySerializer, VehicleDeleteSerializer,
+                           VehicleQuerySerializer, VehicleRecordSerializer)
 from .common import audit
 
 # Plate search: lowest similarity shown, and how many matching plates / rows are returned
@@ -28,8 +28,11 @@ _SEARCH_MAX_ROWS = 300
 _BROWSE_PAGE_ROWS = 100
 # Violations sent per poll for the in-page notifications (the others are only counted)
 _MAX_NOTIFY_ROWS = 3
-# Violation statistics cover this many days, today included
-_STATS_DAYS = 30
+# Repeat offenders: how alike two plates must be to count as one motorcycle (one look-alike character
+# passes, one different character does not), the most frequent plates compared, and the groups returned
+_REPEAT_MIN_SCORE = 0.9
+_REPEAT_MAX_PLATES = 300
+_REPEAT_ROWS = 8
 
 
 # ---------- finding records ----------
@@ -147,33 +150,94 @@ class VehicleDeleteView(APIView):
 
 # ---------- statistics and photos ----------
 
+def _in_days(first, last):
+    """Records detected from the start of local day `first` to the end of local day `last`."""
+    def midnight(day):
+        return timezone.make_aware(datetime.combine(day, time.min))
+    return VehicleRecord.objects.filter(detected_at__gte=midnight(first),
+                                        detected_at__lt=midnight(last + timedelta(days=1)))
+
+
+def _per_day(first, last) -> list:
+    """Motorcycles and violations of each day from first to last, days without any included."""
+    counts = {row["day"]: row for row in _in_days(first, last)
+              .annotate(day=TruncDate("detected_at", tzinfo=timezone.get_current_timezone()))
+              .values("day")
+              .annotate(total=Count("id"), violation=Count("id", filter=Q(is_violation=True)))}
+    days = [first + timedelta(days=i) for i in range((last - first).days + 1)]
+    return [{"date": d.strftime("%d/%m"),
+             "total": counts.get(d, {}).get("total", 0),
+             "violation": counts.get(d, {}).get("violation", 0)} for d in days]
+
+
+def _by_hour(violations) -> list:
+    """Violations by weekday (Monday first) and hour of the day: 7 rows of 24 counts."""
+    tz = timezone.get_current_timezone()
+    grid = [[0] * 24 for _ in range(7)]
+    for row in (violations.annotate(weekday=ExtractIsoWeekDay("detected_at", tzinfo=tz),
+                                    hour=ExtractHour("detected_at", tzinfo=tz))
+                .values("weekday", "hour").annotate(n=Count("id"))):
+        grid[row["weekday"] - 1][row["hour"]] = row["n"]
+    return grid
+
+
+def _stats_range(request):
+    query = StatsQuerySerializer(data=request.query_params)
+    query.is_valid(raise_exception=True)
+    return query.validated_data["start"], query.validated_data["end"]
+
+
 class StatsView(APIView):
     def get(self, request):
-        """Violation statistics for the search page: totals, violations by type and per day."""
-        today = timezone.localtime().replace(hour=0, minute=0, second=0, microsecond=0)
-        start = today - timedelta(days=_STATS_DAYS - 1)
-        records = VehicleRecord.objects.filter(detected_at__gte=start)
-        violations = records.filter(is_violation=True)
-
-        per_day = {row["day"]: row for row in records
-                   .annotate(day=TruncDate("detected_at", tzinfo=timezone.get_current_timezone()))
-                   .values("day")
-                   .annotate(total=Count("id"), violation=Count("id", filter=Q(is_violation=True)))}
-        days = [(start + timedelta(days=i)).date() for i in range(_STATS_DAYS)]
+        """Violation statistics for the violations page. The last 7 days always end today; the rest covers
+        the chosen date range: totals, violations by type, per day and by time of day."""
+        first, last = _stats_range(request)
+        today = timezone.localdate()
+        violations = _in_days(first, last).filter(is_violation=True)
         return Response({
-            "days": _STATS_DAYS,
-            "today": violations.filter(detected_at__gte=today).count(),
-            "week": violations.filter(detected_at__gte=today - timedelta(days=6)).count(),
+            "start": first.isoformat(),
+            "end": last.isoformat(),
+            "days": (last - first).days + 1,
+            "last_week": _per_day(today - timedelta(days=6), today),
             "violation": violations.count(),
-            "total": records.count(),
+            "total": _in_days(first, last).count(),
             "pending_review": violations.filter(review=Review.PENDING).count(),
             "confirmed": violations.filter(review=Review.CONFIRMED).count(),
             "by_type": [{"label": v.label, "count": violations.filter(violations__contains=v.value).count()}
                         for v in Violation],
-            "per_day": [{"date": d.strftime("%d/%m"),
-                         "total": per_day.get(d, {}).get("total", 0),
-                         "violation": per_day.get(d, {}).get("violation", 0)} for d in days],
+            "per_day": _per_day(first, last),
+            "by_hour": _by_hour(violations),
         })
+
+
+class RepeatOffendersView(APIView):
+    def get(self, request):
+        """Plates with more than one violation in the chosen date range, most violations first. Plates OCR
+        read slightly differently count as one motorcycle (plate_search.group_plates); rejected events
+        are left out."""
+        first, last = _stats_range(request)
+        violations = (_in_days(first, last).filter(is_violation=True)
+                      .exclude(review=Review.REJECTED).exclude(plate_text=""))
+        counts = dict(violations.values("plate_text").annotate(n=Count("id")).order_by("-n")
+                      .values_list("plate_text", "n")[:_REPEAT_MAX_PLATES])
+        groups = [g for g in group_plates(counts, _REPEAT_MIN_SCORE) if sum(counts[p] for p in g) > 1]
+        groups.sort(key=lambda g: -sum(counts[p] for p in g))
+
+        rows = []
+        for plates in groups[:_REPEAT_ROWS]:
+            seen = violations.filter(plate_text__in=plates)
+            province = (seen.exclude(province_text="").values("province_text")
+                        .annotate(n=Count("id")).order_by("-n").first())
+            rows.append({
+                "plate": plates[0],
+                "also_read_as": plates[1:],
+                "province": province["province_text"] if province else "",
+                "count": sum(counts[p] for p in plates),
+                "types": [v.label for v in Violation if seen.filter(violations__contains=v.value).exists()],
+                "last_seen": timezone.localtime(seen.aggregate(last=Max("detected_at"))["last"])
+                                     .strftime("%d/%m %H:%M"),
+            })
+        return Response({"rows": rows})
 
 
 @require_GET

@@ -6,7 +6,7 @@
 (() => {
   const KEY = "cctv-theme";
   const CHOICES = ["auto", "light", "dark"];
-  const LABELS = { auto: "Auto", light: "Light", dark: "Dark" };
+  const LABELS = { auto: gettext("Auto"), light: gettext("Light"), dark: gettext("Dark") };
   const DAY_START = 6;
   const DAY_END = 18;
   const FADE_MS = 400;
@@ -66,8 +66,9 @@
     if (btn) {
       btn.querySelector(".theme-label").textContent = LABELS[pref];
       btn.title = pref === "auto"
-        ? `Theme: Auto (light ${DAY_START}:00–${DAY_END}:00, now ${root.dataset.theme}). Click to change.`
-        : `Theme: ${LABELS[pref]}. Click to change.`;
+        ? interpolate(gettext("Theme: Auto (light %(start)s:00–%(end)s:00, now %(now)s). Click to change."),
+                      { start: DAY_START, end: DAY_END, now: LABELS[root.dataset.theme] }, true)
+        : interpolate(gettext("Theme: %s. Click to change."), [LABELS[pref]]);
     }
   }
 

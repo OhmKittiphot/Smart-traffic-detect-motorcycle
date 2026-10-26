@@ -7,9 +7,9 @@
   const $ = (id) => document.getElementById(id);
 
   const CAMERA_STATES = {
-    online: ["tag-ok", "Online"],
-    offline: ["tag-bad", "Offline"],
-    unconfigured: ["tag-muted", "Not configured"],
+    online: ["tag-ok", gettext("Online")],
+    offline: ["tag-bad", gettext("Offline")],
+    unconfigured: ["tag-muted", gettext("Not configured")],
   };
 
   function bytes(n) {
@@ -23,7 +23,7 @@
 
   // Name of a camera / file, marked when it is the source being processed now
   function sourceCell(name, source) {
-    return el("td", {}, name, source.in_use ? el("span", { class: "tag tag-ok sys-in-use" }, "In use") : null);
+    return el("td", {}, name, source.in_use ? el("span", { class: "tag tag-ok sys-in-use" }, gettext("In use")) : null);
   }
 
   const canCalibrate = $("system-page").dataset.canCalibrate === "true";
@@ -37,18 +37,18 @@
     sourcesByKey.set(source.source_key, { ...source, name });
     const c = source.calibration;
     const cell = el("td", { class: "sys-calib" });
-    if (c) cell.append(el("span", { class: "tag tag-ok" }, `Calibrated · ${c.width_m} × ${c.length_m} m`));
-    else if (source.calibration_from_env) cell.append(el("span", { class: "tag tag-ok" }, "Calibrated (.env)"));
-    else cell.append(el("span", { class: "tag tag-muted" }, "Not calibrated"));
+    if (c) cell.append(el("span", { class: "tag tag-ok" }, interpolate(gettext("Calibrated · %(width)s × %(length)s m"), { width: c.width_m, length: c.length_m }, true)));
+    else if (source.calibration_from_env) cell.append(el("span", { class: "tag tag-ok" }, gettext("Calibrated (.env)")));
+    else cell.append(el("span", { class: "tag tag-muted" }, gettext("Not calibrated")));
     if (canCalibrate && (c || canRedraw(source))) {
-      const title = canRedraw(source) ? "Redraw the points and change the size"
-        : "Change the size (the camera is offline, so the points cannot be redrawn now)";
+      const title = canRedraw(source) ? gettext("Redraw the points and change the size")
+        : gettext("Change the size (the camera is offline, so the points cannot be redrawn now)");
       cell.append(el("button", { type: "button", class: "btn btn-sm btn-ghost", "data-edit": source.source_key, title },
-        c ? "Edit" : "Calibrate"));
+        c ? gettext("Edit") : gettext("Calibrate")));
     }
     if (canCalibrate && c) {
       cell.append(el("button", { type: "button", class: "btn btn-sm btn-danger-ghost", "data-remove": source.source_key },
-        "Remove"));
+        gettext("Remove")));
     }
     return cell;
   }
@@ -66,20 +66,22 @@
   function renderStorage(s) {
     const share = s.photos_limit ? Math.round((s.photos / s.photos_limit) * 100) : 0;
     const line = $("storage-use");
-    line.textContent = `Photos ${bytes(s.photos)} of ${bytes(s.photos_limit)} (${share}%) · database ${bytes(s.database)}`
-      + ` · ${bytes(s.disk_free)} free on disk`;
+    line.textContent = interpolate(
+      gettext("Photos %(used)s of %(limit)s (%(share)s%) · database %(db)s · %(free)s free on disk"),
+      { used: bytes(s.photos), limit: bytes(s.photos_limit), share, db: bytes(s.database), free: bytes(s.disk_free) }, true);
     line.classList.toggle("is-warning", share >= 90);
   }
 
   function renderRecords(records) {
     $("records").textContent = `${records.today} / ${records.total}`;
-    $("last-record").textContent = `Last detection: ${time(records.last_detected_at)}`;
+    $("last-record").textContent = interpolate(gettext("Last detection: %s"), [time(records.last_detected_at)]);
     $("pending").textContent = records.pending_review;
-    $("violations-today").textContent = `${records.violations_today} violations today`;
+    $("violations-today").textContent = interpolate(ngettext("%s violation today", "%s violations today", records.violations_today),
+      [records.violations_today]);
   }
 
   function renderCameras(cameras, checkedAt) {
-    $("cameras-checked").textContent = `Checked ${time(checkedAt)}`;
+    $("cameras-checked").textContent = interpolate(gettext("Checked %s"), [time(checkedAt)]);
     $("camera-rows").replaceChildren(...cameras.map((c) => {
       const [kind, label] = CAMERA_STATES[c.state];
       return el("tr", {},
@@ -127,7 +129,7 @@
       return;
     }
     if (!editing.calibration) {   // the camera went offline since the buttons were drawn
-      $("sys-msg").textContent = "No video signal to calibrate on";
+      $("sys-msg").textContent = gettext("No video signal to calibrate on");
       return;
     }
     $("dist-source").textContent = editing.name;
@@ -139,7 +141,7 @@
 
   async function saveDistances(ev) {
     ev.preventDefault();
-    showDistMsg("Saving…", "busy");
+    showDistMsg(gettext("Saving…"), "busy");
     try {
       await api("/api/system/calibration/", {
         method: "POST",
@@ -168,7 +170,7 @@
       });
       refresh();
     } catch (e) {
-      $("sys-msg").textContent = `Could not remove calibration: ${e.message}`;
+      $("sys-msg").textContent = interpolate(gettext("Could not remove calibration: %s"), [e.message]);
     }
   });
 
@@ -195,7 +197,7 @@
   function setModelsOpen(open) {
     modelCard.classList.toggle("is-open", open);
     modelToggle.setAttribute("aria-expanded", String(open));
-    modelToggle.textContent = open ? "Show less" : modelCount;
+    modelToggle.textContent = open ? gettext("Show less") : modelCount;
   }
   modelToggle.addEventListener("click", () => setModelsOpen(!modelCard.classList.contains("is-open")));
   // Opened, the card covers the table below it: a click elsewhere or Esc closes it
@@ -223,7 +225,7 @@
       $("system-page").removeAttribute("aria-busy");
       $("sys-msg").textContent = "";
     } catch (e) {
-      $("sys-msg").textContent = `Could not load status: ${e.message}`;
+      $("sys-msg").textContent = interpolate(gettext("Could not load status: %s"), [e.message]);
     }
   }
 

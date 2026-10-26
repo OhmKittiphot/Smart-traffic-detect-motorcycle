@@ -1,0 +1,450 @@
+#
+msgid ""
+msgstr ""
+"Project-Id-Version: CCTV dashboard\n"
+"Language: th\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Plural-Forms: nplurals=1; plural=0;\n"
+
+msgid "%(date)s: %(violations)s violations of %(total)s"
+msgstr "%(date)s: ฝ่าฝืน %(violations)s จาก %(total)s คัน"
+
+msgid "%(rate)s% of %(total)s motorcycles"
+msgstr "%(rate)s% ของรถจักรยานยนต์ %(total)s คัน"
+
+msgid "%(review)s by %(user)s · %(when)s"
+msgstr "%(review)s โดย %(user)s · %(when)s"
+
+msgid "%(reviewed)s of %(violations)s reviewed · %(confirmed)s confirmed"
+msgstr "ตรวจสอบแล้ว %(reviewed)s จาก %(violations)s · ยืนยัน %(confirmed)s"
+
+msgid "%s back online"
+msgstr "กลับมาออนไลน์ %s ตัว"
+
+msgid "%s cameras changed"
+msgstr "กล้องเปลี่ยนสถานะ %s ตัว"
+
+msgid "%s min ago"
+msgstr "%s นาทีก่อน"
+
+msgid "%s motorcycle found"
+msgid_plural "%s motorcycles found"
+msgstr[0] "พบรถจักรยานยนต์ %s คัน"
+
+msgid "%s offline"
+msgstr "ออฟไลน์ %s ตัว"
+
+msgid "%s violation"
+msgid_plural "%s violations"
+msgstr[0] "ฝ่าฝืน %s ครั้ง"
+
+msgid "%s violation today"
+msgid_plural "%s violations today"
+msgstr[0] "วันนี้ฝ่าฝืน %s ครั้ง"
+
+msgid "%s vs yesterday"
+msgstr "%s เทียบกับเมื่อวาน"
+
+msgid "(best %s shown)"
+msgstr "(แสดง %s รายการที่ใกล้เคียงที่สุด)"
+
+msgid "(newest %s shown)"
+msgstr "(แสดง %s รายการล่าสุด)"
+
+msgid "+%s more violation"
+msgid_plural "+%s more violations"
+msgstr[0] "+ การฝ่าฝืนอีก %s ครั้ง"
+
+msgid "a deleted user"
+msgstr "ผู้ใช้ที่ถูกลบ"
+
+msgid "All %s motorcycles"
+msgstr "รถจักรยานยนต์ทั้งหมด %s คัน"
+
+msgid "also read as %s"
+msgstr "อ่านได้อีกแบบว่า %s"
+
+msgid "Auto"
+msgstr "อัตโนมัติ"
+
+msgid "average %s fps"
+msgstr "เฉลี่ย %s fps"
+
+msgid "Back %s seconds"
+msgstr "ย้อนกลับ %s วินาที"
+
+msgid "Busiest: %s"
+msgstr "มากที่สุด: %s"
+
+msgid "Calibrate"
+msgstr "ปรับเทียบ"
+
+msgid "Calibrate speed"
+msgstr "ปรับเทียบความเร็ว"
+
+msgid "Calibrated (.env)"
+msgstr "ปรับเทียบแล้ว (.env)"
+
+msgid "Calibrated · %(width)s × %(length)s m"
+msgstr "ปรับเทียบแล้ว · %(width)s × %(length)s ม."
+
+msgid "Camera back online"
+msgstr "กล้องกลับมาออนไลน์"
+
+msgid "Camera offline"
+msgstr "กล้องออฟไลน์"
+
+msgid "Change the size (the camera is offline, so the points cannot be redrawn now)"
+msgstr "เปลี่ยนขนาด (กล้องออฟไลน์อยู่จึงวาดจุดใหม่ไม่ได้ในตอนนี้)"
+
+msgid "Checked %s"
+msgstr "ตรวจสอบเมื่อ %s"
+
+msgid "Cleaning up…"
+msgstr "กำลังล้างข้อมูล…"
+
+msgid "Click point %(n)s: %(name)s"
+msgstr "คลิกจุดที่ %(n)s: %(name)s"
+
+msgid "Click to redraw the calibration"
+msgstr "คลิกเพื่อวาดการปรับเทียบใหม่"
+
+msgid "Could not load a frame from the video"
+msgstr "โหลดเฟรมจากวิดีโอไม่ได้"
+
+msgid "Could not load repeat offenders: %s"
+msgstr "โหลดผู้ฝ่าฝืนซ้ำไม่ได้: %s"
+
+msgid "Could not load statistics: %s"
+msgstr "โหลดสถิติไม่ได้: %s"
+
+msgid "Could not load status: %s"
+msgstr "โหลดสถานะไม่ได้: %s"
+
+msgid "Could not remove calibration: %s"
+msgstr "ลบการปรับเทียบไม่ได้: %s"
+
+msgid "Dark"
+msgstr "มืด"
+
+msgid "Date & time"
+msgstr "วันและเวลา"
+
+msgid "Delete %s selected motorcycle?"
+msgid_plural "Delete %s selected motorcycles?"
+msgstr[0] "ลบรถจักรยานยนต์ที่เลือก %s คัน?"
+
+msgid "Delete all %s motorcycles in this list?"
+msgstr "ลบรถจักรยานยนต์ทั้ง %s คันในรายการนี้?"
+
+msgid "Delete all (%s)"
+msgstr "ลบทั้งหมด (%s)"
+
+msgid "Delete selected"
+msgstr "ลบที่เลือก"
+
+msgid "Delete selected (%s)"
+msgstr "ลบที่เลือก (%s)"
+
+msgid "Deleted %s record"
+msgid_plural "Deleted %s records"
+msgstr[0] "ลบแล้ว %s รายการ"
+
+msgid "Deleting…"
+msgstr "กำลังลบ…"
+
+msgid "Details of %s"
+msgstr "รายละเอียดของ %s"
+
+msgid "detection off"
+msgstr "ปิดการตรวจจับ"
+
+msgid "Detection off"
+msgstr "ปิดการตรวจจับ"
+
+msgid "Detection running"
+msgstr "กำลังตรวจจับ"
+
+msgid "Dismiss"
+msgstr "ปิด"
+
+msgid "Edit"
+msgstr "แก้ไข"
+
+msgid "far-left"
+msgstr "ซ้ายไกล"
+
+msgid "far-right"
+msgstr "ขวาไกล"
+
+msgid "FILE"
+msgstr "ไฟล์"
+
+msgid "Forward %s seconds"
+msgstr "ข้ามไป %s วินาที"
+
+msgid "Fri"
+msgstr "ศ."
+
+msgid "Helmet"
+msgstr "หมวกกันน็อก"
+
+msgid "Helmet %s"
+msgstr "สวมหมวก %s"
+
+msgid "In use"
+msgstr "กำลังใช้งาน"
+
+msgid "last %s"
+msgstr "ล่าสุด %s"
+
+msgid "Last %s days"
+msgstr "%s วันล่าสุด"
+
+msgid "Last detection: %s"
+msgstr "ตรวจพบล่าสุด: %s"
+
+msgid "Light"
+msgstr "สว่าง"
+
+msgid "LIVE"
+msgstr "สด"
+
+msgid "Loading models…"
+msgstr "กำลังโหลดโมเดล…"
+
+msgid "Loading…"
+msgstr "กำลังโหลด…"
+
+msgid "Mon"
+msgstr "จ."
+
+msgid "near-left"
+msgstr "ซ้ายใกล้"
+
+msgid "near-right"
+msgstr "ขวาใกล้"
+
+msgid "Needs a video signal"
+msgstr "ต้องมีสัญญาณวิดีโอ"
+
+msgid "No helmet %s"
+msgstr "ไม่สวมหมวก %s"
+
+msgid "No motorcycles match this filter"
+msgstr "ไม่มีรถจักรยานยนต์ที่ตรงกับตัวกรองนี้"
+
+msgid "No motorcycles recorded"
+msgstr "ยังไม่มีรถจักรยานยนต์ที่บันทึกไว้"
+
+msgid "No motorcycles yet"
+msgstr "ยังไม่มีรถจักรยานยนต์"
+
+msgid "No plate has more than one violation"
+msgstr "ไม่มีป้ายทะเบียนใดฝ่าฝืนมากกว่าหนึ่งครั้ง"
+
+msgid "No plate looks like “%s”"
+msgstr "ไม่มีป้ายทะเบียนที่คล้าย “%s”"
+
+msgid "NO SIGNAL"
+msgstr "ไม่มีสัญญาณ"
+
+msgid "No video file to choose"
+msgstr "ไม่มีไฟล์วิดีโอให้เลือก"
+
+msgid "No video signal to calibrate on"
+msgstr "ไม่มีสัญญาณวิดีโอให้ปรับเทียบ"
+
+msgid "No violations"
+msgstr "ไม่มีการฝ่าฝืน"
+
+msgid "Normal"
+msgstr "ปกติ"
+
+msgid "Not answering"
+msgstr "ไม่ตอบสนอง"
+
+msgid "Not calibrated"
+msgstr "ยังไม่ได้ปรับเทียบ"
+
+msgid "Not configured"
+msgstr "ยังไม่ได้ตั้งค่า"
+
+msgid "Note"
+msgstr "หมายเหตุ"
+
+msgid "Nothing to review"
+msgstr "ไม่มีรายการให้ตรวจสอบ"
+
+msgid "now"
+msgstr "ตอนนี้"
+
+msgid "OCR confidence"
+msgstr "ความมั่นใจของ OCR"
+
+msgid "Offline"
+msgstr "ออฟไลน์"
+
+msgid "Online"
+msgstr "ออนไลน์"
+
+msgid "Pause"
+msgstr "หยุดชั่วคราว"
+
+msgid "PAUSED"
+msgstr "หยุดชั่วคราว"
+
+msgid "Paused"
+msgstr "หยุดชั่วคราว"
+
+msgid "Photos %(used)s of %(limit)s (%(share)s%) · database %(db)s · %(free)s free on disk"
+msgstr "ภาพ %(used)s จาก %(limit)s (%(share)s%) · ฐานข้อมูล %(db)s · พื้นที่ดิสก์ว่าง %(free)s"
+
+msgid "Plate"
+msgstr "ป้ายทะเบียน"
+
+msgid "Plate %s"
+msgstr "ป้ายทะเบียน %s"
+
+msgid "Plate photo"
+msgstr "ภาพป้ายทะเบียน"
+
+msgid "Play"
+msgstr "เล่น"
+
+msgid "Processing speed over the last %s minutes"
+msgstr "ความเร็วการประมวลผลใน %s นาทีล่าสุด"
+
+msgid "Province"
+msgstr "จังหวัด"
+
+msgid "Redraw the points and change the size"
+msgstr "วาดจุดใหม่และเปลี่ยนขนาด"
+
+msgid "Remove"
+msgstr "ลบออก"
+
+msgid "Removed %(records)s old records and the photos of %(photos)s (%(mb)s MB)"
+msgstr "ลบบันทึกเก่า %(records)s รายการ และภาพของ %(photos)s รายการ (%(mb)s MB)"
+
+msgid "Results"
+msgstr "ผลการค้นหา"
+
+msgid "Review"
+msgstr "การตรวจสอบ"
+
+msgid "Review undone"
+msgstr "ยกเลิกการตรวจสอบแล้ว"
+
+msgid "Riders"
+msgstr "จำนวนคน"
+
+msgid "Same as yesterday"
+msgstr "เท่ากับเมื่อวาน"
+
+msgid "Sat"
+msgstr "ส."
+
+msgid "Saved: %s"
+msgstr "บันทึกแล้ว: %s"
+
+msgid "Saving…"
+msgstr "กำลังบันทึก…"
+
+msgid "Searching…"
+msgstr "กำลังค้นหา…"
+
+msgid "See them on the system status page"
+msgstr "ดูได้ที่หน้าสถานะระบบ"
+
+msgid "See them on the violations page"
+msgstr "ดูได้ที่หน้าสถิติการฝ่าฝืน"
+
+msgid "Select %s"
+msgstr "เลือก %s"
+
+msgid "Select record"
+msgstr "เลือกรายการ"
+
+msgid "Show less"
+msgstr "แสดงน้อยลง"
+
+msgid "Source"
+msgstr "แหล่งวิดีโอ"
+
+msgid "Source switched"
+msgstr "เปลี่ยนแหล่งวิดีโอแล้ว"
+
+msgid "Speed"
+msgstr "ความเร็ว"
+
+msgid "Speed calibrated"
+msgstr "ปรับเทียบความเร็วแล้ว"
+
+msgid "Speed calibration reset"
+msgstr "รีเซ็ตการปรับเทียบความเร็วแล้ว"
+
+msgid "Speed calibration saved"
+msgstr "บันทึกการปรับเทียบความเร็วแล้ว"
+
+msgid "Speed is not measured until calibrated"
+msgstr "จะไม่วัดความเร็วจนกว่าจะปรับเทียบ"
+
+msgid "Status"
+msgstr "สถานะ"
+
+msgid "Sun"
+msgstr "อา."
+
+msgid "Switching source…"
+msgstr "กำลังเปลี่ยนแหล่งวิดีโอ…"
+
+msgid "System error: %s"
+msgstr "ระบบขัดข้อง: %s"
+
+msgid "Theme: %s. Click to change."
+msgstr "ธีม: %s คลิกเพื่อเปลี่ยน"
+
+msgid "Theme: Auto (light %(start)s:00–%(end)s:00, now %(now)s). Click to change."
+msgstr "ธีม: อัตโนมัติ (สว่าง %(start)s:00–%(end)s:00, ตอนนี้ %(now)s) คลิกเพื่อเปลี่ยน"
+
+msgid "Thu"
+msgstr "พฤ."
+
+msgid "Track ID"
+msgstr "รหัสการติดตาม"
+
+msgid "Tue"
+msgstr "อ."
+
+msgid "Type a plate to search the recorded motorcycles"
+msgstr "พิมพ์ป้ายทะเบียนเพื่อค้นหารถจักรยานยนต์ที่บันทึกไว้"
+
+msgid "Unknown"
+msgstr "ไม่ทราบ"
+
+msgid "Unreadable"
+msgstr "อ่านไม่ได้"
+
+msgid "Unreadable plate"
+msgstr "อ่านป้ายทะเบียนไม่ได้"
+
+msgid "updated %s"
+msgstr "อัปเดต %s"
+
+msgid "View evidence photo"
+msgstr "ดูภาพหลักฐาน"
+
+msgid "View plate photo"
+msgstr "ดูภาพป้ายทะเบียน"
+
+msgid "Violation"
+msgstr "ฝ่าฝืน"
+
+msgid "Violations"
+msgstr "การฝ่าฝืน"
+
+msgid "Wed"
+msgstr "พ."

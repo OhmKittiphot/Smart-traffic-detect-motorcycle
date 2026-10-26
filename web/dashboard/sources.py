@@ -10,6 +10,7 @@ from typing import Optional
 
 import numpy as np
 from django.conf import settings
+from django.utils.translation import gettext as _
 
 # The IP camera's key part in a source key ("live:ip")
 IP_CAMERA = "ip"
@@ -118,12 +119,12 @@ def grab_frame(source_key: str) -> np.ndarray:
 
     url = VideoSource.from_key(source_key).capture_url(rtsp_url())
     if not url:
-        raise RuntimeError("This video source is not configured")
+        raise RuntimeError(_("This video source is not configured"))
     cap = open_capture(url)
     try:
         ok, frame = cap.read() if cap.isOpened() else (False, None)
     finally:
         cap.release()
     if not ok or frame is None:
-        raise RuntimeError("No video signal from this source")
+        raise RuntimeError(_("No video signal from this source"))
     return frame

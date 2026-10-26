@@ -1,27 +1,27 @@
 {% extends "dashboard/base.html" %}
-{% load static %}
-{% block title %}Dashboard · CCTV Control{% endblock %}
+{% load i18n static %}
+{% block title %}{% translate "Dashboard" %} · CCTV Control{% endblock %}
 {% block body %}
 {% include "dashboard/_topbar.html" %}
 
 <main class="layout">
-  <section class="video-panel" aria-label="Video">
+  <section class="video-panel" aria-label="{% translate "Video" %}">
     <div class="video-head">
       <div>
-        <span class="badge" id="source-badge" data-kind="nosignal">NO SIGNAL</span>
+        <span class="badge" id="source-badge" data-kind="nosignal">{% translate "NO SIGNAL" %}</span>
         <span id="source-text" class="source-text">—</span>
       </div>
       <div class="video-meta">
-        <span title="Frames processed per second">Processing <b id="fps">0</b> fps</span>
-        <button type="button" class="btn btn-sm btn-warn" id="calib-btn" disabled>Calibrate speed</button>
-        <button type="button" class="btn btn-sm btn-danger" id="calib-reset" hidden>Reset</button>
+        <span title="{% translate "Frames processed per second" %}">{% translate "Processing" %} <b id="fps">0</b> fps</span>
+        <button type="button" class="btn btn-sm btn-warn" id="calib-btn" disabled>{% translate "Calibrate speed" %}</button>
+        <button type="button" class="btn btn-sm btn-danger" id="calib-reset" hidden>{% translate "Reset" %}</button>
       </div>
     </div>
     <div class="video-frame">
-      <img id="stream" src="{% url 'stream' %}" alt="Camera view">
+      <img id="stream" src="{% url 'stream' %}" alt="{% translate "Camera view" %}">
       <div class="loading-overlay" id="loading" role="status" aria-live="polite" hidden>
         <span class="loader" aria-hidden="true"></span>
-        <span class="loading-text">Loading…</span>
+        <span class="loading-text">{% translate "Loading…" %}</span>
       </div>
       <div class="pause-overlay" id="pause-overlay" aria-hidden="true" hidden>
         <svg viewBox="0 0 24 24" width="40" height="40"><path fill="currentColor" d="M7 5h4v14H7zM13 5h4v14h-4z"/></svg>
@@ -31,55 +31,55 @@
       </div>
       <div class="skip-hint" id="skip-hint" aria-hidden="true"></div>
       <div class="engine-chip" id="engine-chip" data-state="starting" role="status">
-        <span class="chip-dot"></span><span id="engine-text">Starting…</span>
+        <span class="chip-dot"></span><span id="engine-text">{% translate "Starting…" %}</span>
       </div>
     </div>
 
     <div class="seekbar" id="seekbar" hidden>
-      <button type="button" class="btn btn-sm btn-skip" id="back-btn" title="Back {{ prefs.seek_step_s }} seconds (←)" aria-label="Back {{ prefs.seek_step_s }} seconds">&lt;&lt;&lt;</button>
-      <button type="button" class="btn btn-sm btn-icon" id="play-btn" title="Play / pause (Space)" aria-label="Pause">
+      <button type="button" class="btn btn-sm btn-skip" id="back-btn" title="{% blocktranslate with n=prefs.seek_step_s %}Back {{ n }} seconds{% endblocktranslate %} (←)" aria-label="{% blocktranslate with n=prefs.seek_step_s %}Back {{ n }} seconds{% endblocktranslate %}">&lt;&lt;&lt;</button>
+      <button type="button" class="btn btn-sm btn-icon" id="play-btn" title="{% translate "Play / pause" %} (Space)" aria-label="{% translate "Pause" %}">
         <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true" class="icon-pause"><path fill="currentColor" d="M7 5h4v14H7zM13 5h4v14h-4z"/></svg>
         <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true" class="icon-play"><path fill="currentColor" d="M8 5v14l11-7z"/></svg>
       </button>
-      <button type="button" class="btn btn-sm btn-skip" id="fwd-btn" title="Forward {{ prefs.seek_step_s }} seconds (→)" aria-label="Forward {{ prefs.seek_step_s }} seconds">&gt;&gt;&gt;</button>
-      <input type="range" id="seek" min="0" max="0" step="100" value="0" aria-label="Video position">
+      <button type="button" class="btn btn-sm btn-skip" id="fwd-btn" title="{% blocktranslate with n=prefs.seek_step_s %}Forward {{ n }} seconds{% endblocktranslate %} (→)" aria-label="{% blocktranslate with n=prefs.seek_step_s %}Forward {{ n }} seconds{% endblocktranslate %}">&gt;&gt;&gt;</button>
+      <input type="range" id="seek" min="0" max="0" step="100" value="0" aria-label="{% translate "Video position" %}">
       <span class="seek-time"><span id="pos-text">0:00</span> / <span id="total-text">0:00</span></span>
     </div>
 
     <form id="source-form" class="controls">
-      <fieldset class="segmented" aria-label="Video source">
-        <legend class="sr-only">Video source</legend>
-        <label><input type="radio" name="mode" value="live" {% if saved.mode == "live" %}checked{% endif %}><span>Live camera</span></label>
-        <label><input type="radio" name="mode" value="file" {% if saved.mode == "file" %}checked{% endif %}><span>Video file</span></label>
+      <fieldset class="segmented" aria-label="{% translate "Video source" %}">
+        <legend class="sr-only">{% translate "Video source" %}</legend>
+        <label><input type="radio" name="mode" value="live" {% if saved.mode == "live" %}checked{% endif %}><span>{% translate "Live camera" %}</span></label>
+        <label><input type="radio" name="mode" value="file" {% if saved.mode == "file" %}checked{% endif %}><span>{% translate "Video file" %}</span></label>
       </fieldset>
       {% if live_sources %}
-      <select id="live-select" name="live" aria-label="Choose a live camera">
-        <option value="">IP camera (RTSP)</option>
+      <select id="live-select" name="live" aria-label="{% translate "Choose a live camera" %}">
+        <option value="">{% translate "IP camera (RTSP)" %}</option>
         {% for key, label in live_sources %}
           <option value="{{ key }}" {% if key == saved.live_source %}selected{% endif %}>{{ label }}</option>
         {% endfor %}
       </select>
       {% endif %}
-      <select id="file-select" name="file" aria-label="Choose a video file" {% if not video_files %}disabled{% endif %}>
+      <select id="file-select" name="file" aria-label="{% translate "Choose a video file" %}" {% if not video_files %}disabled{% endif %}>
         {% for f in video_files %}
           <option value="{{ f }}" {% if f == saved.video_file %}selected{% endif %}>{{ f }}</option>
         {% empty %}
-          <option value="">No files in the input/ folder</option>
+          <option value="">{% translate "No files in the input/ folder" %}</option>
         {% endfor %}
       </select>
-      <button type="submit" class="btn btn-primary" id="apply-btn">Switch source</button>
+      <button type="submit" class="btn btn-primary" id="apply-btn">{% translate "Switch source" %}</button>
       <span id="form-msg" class="form-msg" role="status" aria-live="polite"></span>
     </form>
   </section>
 
-  <section class="stats" aria-label="Today">
-    <div class="stat"><span class="stat-label">Vehicles today</span><span class="stat-value" id="stat-total">0</span></div>
-    <div class="stat stat-ok"><span class="stat-label">Normal</span><span class="stat-value" id="stat-normal">0</span></div>
-    <div class="stat stat-bad"><span class="stat-label">Violations</span><span class="stat-value" id="stat-violation">0</span></div>
-    <p class="rules muted">Violation = no helmet · more than {{ rules.max_riders }} riders{% if rules.speed_limit_kmh %} · over <span data-kmh="{{ rules.speed_limit_kmh }}">{{ rules.speed_limit_kmh }} km/h</span>{% endif %}</p>
+  <section class="stats" aria-label="{% translate "Today" %}">
+    <div class="stat"><span class="stat-label">{% translate "Vehicles today" %}</span><span class="stat-value" id="stat-total">0</span></div>
+    <div class="stat stat-ok"><span class="stat-label">{% translate "Normal" %}</span><span class="stat-value" id="stat-normal">0</span></div>
+    <div class="stat stat-bad"><span class="stat-label">{% translate "Violations" %}</span><span class="stat-value" id="stat-violation">0</span></div>
+    <p class="rules muted">{% blocktranslate trimmed with n=rules.max_riders %}Violation = no helmet · more than {{ n }} riders{% endblocktranslate %}{% if rules.speed_limit_kmh %} · {% translate "over" %} <span data-kmh="{{ rules.speed_limit_kmh }}">{{ rules.speed_limit_kmh }} km/h</span>{% endif %}</p>
     <div class="fps-chart" id="fps-chart"{% if not prefs.show_fps_chart %} hidden{% endif %}>
       <div class="fps-head">
-        <span class="stat-label">Processing speed · last 2 minutes</span>
+        <span class="stat-label">{% translate "Processing speed · last 2 minutes" %}</span>
         <span><b id="fps-now">—</b> <span class="muted" id="fps-avg"></span></span>
       </div>
       <div class="fps-plot"></div>
@@ -87,29 +87,29 @@
     </div>
   </section>
 
-  <section class="table-panel" aria-label="Passing motorcycles">
+  <section class="table-panel" aria-label="{% translate "Passing motorcycles" %}">
     <div class="table-head">
       <div class="table-head-main">
-        <h2>Passing motorcycles</h2>
+        <h2>{% translate "Passing motorcycles" %}</h2>
         <div class="filter-row">
           <div class="filters" role="tablist">
             {# The filter chosen first is this account's preference (settings page) #}
             {% with f=prefs.table_filter %}
-            <button type="button" class="filter{% if f == 'all' %} is-active{% endif %}" data-filter="all" role="tab" aria-selected="{% if f == 'all' %}true{% else %}false{% endif %}">All</button>
-            <button type="button" class="filter{% if f == 'normal' %} is-active{% endif %}" data-filter="normal" role="tab" aria-selected="{% if f == 'normal' %}true{% else %}false{% endif %}"><span class="dot dot-ok"></span>Normal</button>
-            <button type="button" class="filter{% if f == 'violation' %} is-active{% endif %}" data-filter="violation" role="tab" aria-selected="{% if f == 'violation' %}true{% else %}false{% endif %}"><span class="dot dot-bad"></span>Violation</button>
+            <button type="button" class="filter{% if f == 'all' %} is-active{% endif %}" data-filter="all" role="tab" aria-selected="{% if f == 'all' %}true{% else %}false{% endif %}">{% translate "All" %}</button>
+            <button type="button" class="filter{% if f == 'normal' %} is-active{% endif %}" data-filter="normal" role="tab" aria-selected="{% if f == 'normal' %}true{% else %}false{% endif %}"><span class="dot dot-ok"></span>{% translate "Normal" %}</button>
+            <button type="button" class="filter{% if f == 'violation' %} is-active{% endif %}" data-filter="violation" role="tab" aria-selected="{% if f == 'violation' %}true{% else %}false{% endif %}"><span class="dot dot-bad"></span>{% translate "Violation" %}</button>
             {% endwith %}
           </div>
           <a class="filter" href="{% url 'plate_search' %}">
             <svg viewBox="0 0 16 16" width="13" height="13" aria-hidden="true"><circle cx="6.5" cy="6.5" r="5" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="m10.5 10.5 4 4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
-            Search plate
+            {% translate "Search plate" %}
           </a>
         </div>
       </div>
       {% if perms.dashboard.delete_records %}
       <!-- Trash icon: Bootstrap Icons "trash3" (MIT), inlined because the CSP allows no external files -->
       <button type="button" class="btn btn-sm btn-danger-ghost btn-clear" id="clear-btn">
-        <span>Delete all</span>
+        <span>{% translate "Delete all" %}</span>
         <svg class="bi" xmlns="http://www.w3.org/2000/svg" width="15" height="15" fill="currentColor" viewBox="0 0 16 16" aria-hidden="true"><path d="M6.5 1h3a.5.5 0 0 1 .5.5v1H6v-1a.5.5 0 0 1 .5-.5M11 2.5v-1A1.5 1.5 0 0 0 9.5 0h-3A1.5 1.5 0 0 0 5 1.5v1H1.5a.5.5 0 0 0 0 1h.538l.853 10.66A2 2 0 0 0 4.885 16h6.23a2 2 0 0 0 1.994-1.84l.853-10.66h.538a.5.5 0 0 0 0-1zm1.958 1-.846 10.58a1 1 0 0 1-.997.92h-6.23a1 1 0 0 1-.997-.92L3.042 3.5zm-7.487 1a.5.5 0 0 1 .528.47l.5 8.5a.5.5 0 0 1-.998.06L5 5.03a.5.5 0 0 1 .47-.53Zm5.058 0a.5.5 0 0 1 .47.53l-.5 8.5a.5.5 0 1 1-.998-.06l.5-8.5a.5.5 0 0 1 .528-.47M8 4.5a.5.5 0 0 1 .5.5v8.5a.5.5 0 0 1-1 0V5a.5.5 0 0 1 .5-.5"/></svg>
       </button>
       {% endif %}
@@ -118,39 +118,39 @@
       <table class="vehicles" id="vehicles" data-filter="{{ prefs.table_filter }}">
         <thead>
           <tr>
-            <th>Time</th><th>Photo</th><th>Plate</th><th>Province</th><th class="num">Riders</th>
-            <th>Helmet</th><th class="num">Speed</th><th>Status</th>
+            <th>{% translate "Time" %}</th><th>{% translate "Photo" %}</th><th>{% translate "Plate" %}</th><th>{% translate "Province" %}</th><th class="num">{% translate "Riders" %}</th>
+            <th>{% translate "Helmet" %}</th><th class="num">{% translate "Speed" %}</th><th>{% translate "Status" %}</th>
           </tr>
         </thead>
         <tbody id="vehicle-rows"></tbody>
       </table>
-      <p class="empty muted" id="empty-msg">No motorcycles yet</p>
+      <p class="empty muted" id="empty-msg">{% translate "No motorcycles yet" %}</p>
     </div>
   </section>
 </main>
 
 <dialog id="snap-dialog" class="snap-dialog">
-  <img id="snap-img" alt="Evidence photo">
-  <form method="dialog"><button class="btn">Close</button></form>
+  <img id="snap-img" alt="{% translate "Evidence photo" %}">
+  <form method="dialog"><button class="btn">{% translate "Close" %}</button></form>
 </dialog>
 
 <dialog id="clear-dialog" class="confirm-dialog" aria-labelledby="clear-title">
-  <h3 id="clear-title">Delete all motorcycle records?</h3>
-  <p class="muted">This permanently removes every row in the table and its evidence photos. It cannot be undone.</p>
+  <h3 id="clear-title">{% translate "Delete all motorcycle records?" %}</h3>
+  <p class="muted">{% translate "This permanently removes every row in the table and its evidence photos. It cannot be undone." %}</p>
   <form method="dialog" class="confirm-actions">
-    <button class="btn" value="cancel" autofocus>Cancel</button>
-    <button class="btn btn-danger" value="confirm"><svg class="bi" xmlns="http://www.w3.org/2000/svg" width="15" height="15" fill="currentColor" viewBox="0 0 16 16" aria-hidden="true"><path d="M6.5 1h3a.5.5 0 0 1 .5.5v1H6v-1a.5.5 0 0 1 .5-.5M11 2.5v-1A1.5 1.5 0 0 0 9.5 0h-3A1.5 1.5 0 0 0 5 1.5v1H1.5a.5.5 0 0 0 0 1h.538l.853 10.66A2 2 0 0 0 4.885 16h6.23a2 2 0 0 0 1.994-1.84l.853-10.66h.538a.5.5 0 0 0 0-1zm1.958 1-.846 10.58a1 1 0 0 1-.997.92h-6.23a1 1 0 0 1-.997-.92L3.042 3.5zm-7.487 1a.5.5 0 0 1 .528.47l.5 8.5a.5.5 0 0 1-.998.06L5 5.03a.5.5 0 0 1 .47-.53Zm5.058 0a.5.5 0 0 1 .47.53l-.5 8.5a.5.5 0 1 1-.998-.06l.5-8.5a.5.5 0 0 1 .528-.47M8 4.5a.5.5 0 0 1 .5.5v8.5a.5.5 0 0 1-1 0V5a.5.5 0 0 1 .5-.5"/></svg><span>Delete all</span></button>
+    <button class="btn" value="cancel" autofocus>{% translate "Cancel" %}</button>
+    <button class="btn btn-danger" value="confirm"><svg class="bi" xmlns="http://www.w3.org/2000/svg" width="15" height="15" fill="currentColor" viewBox="0 0 16 16" aria-hidden="true"><path d="M6.5 1h3a.5.5 0 0 1 .5.5v1H6v-1a.5.5 0 0 1 .5-.5M11 2.5v-1A1.5 1.5 0 0 0 9.5 0h-3A1.5 1.5 0 0 0 5 1.5v1H1.5a.5.5 0 0 0 0 1h.538l.853 10.66A2 2 0 0 0 4.885 16h6.23a2 2 0 0 0 1.994-1.84l.853-10.66h.538a.5.5 0 0 0 0-1zm1.958 1-.846 10.58a1 1 0 0 1-.997.92h-6.23a1 1 0 0 1-.997-.92L3.042 3.5zm-7.487 1a.5.5 0 0 1 .528.47l.5 8.5a.5.5 0 0 1-.998.06L5 5.03a.5.5 0 0 1 .47-.53Zm5.058 0a.5.5 0 0 1 .47.53l-.5 8.5a.5.5 0 1 1-.998-.06l.5-8.5a.5.5 0 0 1 .528-.47M8 4.5a.5.5 0 0 1 .5.5v8.5a.5.5 0 0 1-1 0V5a.5.5 0 0 1 .5-.5"/></svg><span>{% translate "Delete all" %}</span></button>
   </form>
 </dialog>
 
 {% include "dashboard/_calibration_dialog.html" %}
 
 <dialog id="calib-reset-dialog" class="confirm-dialog" aria-labelledby="calib-reset-title">
-  <h3 id="calib-reset-title">Reset speed calibration?</h3>
-  <p class="muted"><span id="calib-reset-source"></span><br>Speeds are no longer measured on this source until it is calibrated again.</p>
+  <h3 id="calib-reset-title">{% translate "Reset speed calibration?" %}</h3>
+  <p class="muted"><span id="calib-reset-source"></span><br>{% translate "Speeds are no longer measured on this source until it is calibrated again." %}</p>
   <form method="dialog" class="confirm-actions">
-    <button class="btn" value="cancel" autofocus>Cancel</button>
-    <button class="btn btn-danger" value="confirm">Reset</button>
+    <button class="btn" value="cancel" autofocus>{% translate "Cancel" %}</button>
+    <button class="btn btn-danger" value="confirm">{% translate "Reset" %}</button>
   </form>
 </dialog>
 

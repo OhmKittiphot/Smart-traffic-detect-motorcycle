@@ -105,6 +105,25 @@ def similarity(query: tuple, plate: tuple) -> float:
     return score
 
 
+def group_plates(counts: dict, min_score: float) -> list:
+    """Plates that are most likely one motorcycle read slightly differently by OCR, as lists headed by the
+    most frequent spelling; counts is {plate: times seen}. Only whole plates (series and number) are grouped,
+    since a number alone could be any of many motorcycles, and a plate with an unread '?' only joins a group.
+    A plate is compared with the head of each group, not with every other plate."""
+    heads, groups = [], []
+    for plate in sorted(counts, key=lambda p: (-counts[p], p)):
+        parts = split_plate(plate)
+        if not all(parts):
+            continue
+        match = next((i for i, head in enumerate(heads) if similarity(head, parts) >= min_score), None)
+        if match is not None:
+            groups[match].append(plate)
+        elif UNKNOWN not in plate:
+            heads.append(parts)
+            groups.append([plate])
+    return groups
+
+
 def rank_plates(query: str, plates, min_score: float) -> dict:
     """{plate: score} of the plates scoring at least min_score. query may hold several plates separated by
     commas; each plate scores its best match against any of them."""

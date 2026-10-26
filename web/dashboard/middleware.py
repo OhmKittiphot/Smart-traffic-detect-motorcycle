@@ -2,11 +2,45 @@ from django.contrib.auth import logout
 from django.contrib.auth.views import redirect_to_login
 from django.http import HttpResponseForbidden, JsonResponse
 from django.shortcuts import redirect
+from django.utils import translation
+from django.utils.translation import gettext as _
+
+from .models import Language, UserPreferences
+
+# The account's language, kept in the session so it is not read from the database on every request
+_LANGUAGE_SESSION_KEY = "dashboard_language"
+
+
+def remember_language(request, language):
+    request.session[_LANGUAGE_SESSION_KEY] = language
+
+
+class UserLanguageMiddleware:
+    """Pages, API messages and Django admin in the language the account chose in Settings; English before
+    logging in. The JavaScript gets the same language from /jsi18n/."""
+
+    def __init__(self, get_response):
+        self.get_response = get_response
+
+    def __call__(self, request):
+        language = Language.EN.value
+        if request.user.is_authenticated:
+            language = request.session.get(_LANGUAGE_SESSION_KEY)
+            if language is None:   # first request of this session
+                # str(): a new account's default is a Language member, which a response header cannot hold
+                language = str(UserPreferences.load(request.user).language)
+                remember_language(request, language)
+        translation.activate(language)
+        request.LANGUAGE_CODE = language
+        response = self.get_response(request)
+        response.headers.setdefault("Content-Language", language)
+        return response
 
 
 class PagePermissionMiddleware:
     # Open without the check: Django admin checks its own permissions
-    allowed_paths = ["/login/", "/logout/", "/admin/", "/static/"]
+    # /jsi18n/: the translated texts of the JavaScript, also needed on the login page
+    allowed_paths = ["/login/", "/logout/", "/admin/", "/static/", "/jsi18n/"]
     # Permission needed per path prefix (first match wins; None = any logged-in user);
     # every other page needs use_dashboard
     path_permissions = [
@@ -61,4 +95,4 @@ class PagePermissionMiddleware:
             if user.has_perm(perm):
                 return redirect(page)
         logout(request)
-        return HttpResponseForbidden("This account is not allowed to use the dashboard.")
+        return HttpResponseForbidden(_("This account is not allowed to use the dashboard."))

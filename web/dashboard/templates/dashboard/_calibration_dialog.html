@@ -1,45 +1,46 @@
+{% load i18n %}
 {# Speed calibration editor (calibration.js): click the 4 points on a frame and enter the real size #}
 <dialog id="calib-dialog" class="calib-dialog" aria-labelledby="calib-title">
   <div class="calib-head">
-    <h3 id="calib-title">Speed calibration</h3>
+    <h3 id="calib-title">{% translate "Speed calibration" %}</h3>
     <span class="muted" id="calib-source"></span>
   </div>
   <p class="calib-help muted">
-    Click 4 points on the road that form a rectangle, in order:
+    {% blocktranslate trimmed %}Click 4 points on the road that form a rectangle, in order:
     <b>1</b> far-left, <b>2</b> far-right, <b>3</b> near-right, <b>4</b> near-left.
     Drag a point to move it. Then enter the real size of that rectangle on the ground
-    (measure on site, or use known markings such as the lane width).
+    (measure on site, or use known markings such as the lane width).{% endblocktranslate %}
   </p>
   <div class="calib-stage-wrap">
     <div class="calib-stage" id="calib-stage">
-      <img id="calib-img" alt="Current video frame">
-      <svg id="calib-svg" class="calib-svg" xmlns="http://www.w3.org/2000/svg" aria-label="Calibration points"></svg>
+      <img id="calib-img" alt="{% translate "Current video frame" %}">
+      <svg id="calib-svg" class="calib-svg" xmlns="http://www.w3.org/2000/svg" aria-label="{% translate "Calibration points" %}"></svg>
       <p class="calib-next" id="calib-next"></p>
     </div>
     <div class="loading-overlay calib-loading" id="calib-loading" role="status" aria-live="polite" hidden>
       <span class="loader" aria-hidden="true"></span>
-      <span class="loading-text" id="calib-loading-text">Loading…</span>
+      <span class="loading-text" id="calib-loading-text">{% translate "Loading…" %}</span>
     </div>
   </div>
   <div class="calib-form">
     <label class="calib-field">
-      <span>Width <small class="muted">point 1 → 2</small></span>
+      <span>{% translate "Width" %} <small class="muted">{% translate "point 1 → 2" %}</small></span>
       <span class="input-unit"><input type="number" id="calib-w" min="0.1" max="500" step="0.01" inputmode="decimal" required><span class="calib-unit">m</span></span>
     </label>
     <label class="calib-field">
-      <span>Length <small class="muted">point 2 → 3</small></span>
+      <span>{% translate "Length" %} <small class="muted">{% translate "point 2 → 3" %}</small></span>
       <span class="input-unit"><input type="number" id="calib-l" min="0.1" max="500" step="0.01" inputmode="decimal" required><span class="calib-unit">m</span></span>
     </label>
     <div class="calib-point-tools">
-      <button type="button" class="btn btn-sm" id="calib-undo">Undo point</button>
-      <button type="button" class="btn btn-sm" id="calib-clear-pts">Clear points</button>
-      <button type="button" class="btn btn-sm" id="calib-refresh" title="Take a new frame from the video">New frame</button>
+      <button type="button" class="btn btn-sm" id="calib-undo">{% translate "Undo point" %}</button>
+      <button type="button" class="btn btn-sm" id="calib-clear-pts">{% translate "Clear points" %}</button>
+      <button type="button" class="btn btn-sm" id="calib-refresh" title="{% translate "Take a new frame from the video" %}">{% translate "New frame" %}</button>
     </div>
   </div>
   <p class="form-msg" id="calib-msg" role="status" aria-live="polite"></p>
   <div class="calib-actions">
     <span class="spacer"></span>
-    <button type="button" class="btn" id="calib-cancel">Cancel</button>
-    <button type="button" class="btn btn-primary" id="calib-save" disabled>Save calibration</button>
+    <button type="button" class="btn" id="calib-cancel">{% translate "Cancel" %}</button>
+    <button type="button" class="btn btn-primary" id="calib-save" disabled>{% translate "Save calibration" %}</button>
   </div>
 </dialog>

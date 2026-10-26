@@ -76,6 +76,7 @@ MIDDLEWARE = [
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
     # Headers first, so they also apply to the redirects / 401s of the access check below
     "dashboard.security.SecurityHeadersMiddleware",
+    "dashboard.middleware.UserLanguageMiddleware",
     "dashboard.middleware.PagePermissionMiddleware",
     # Must be last: blocks requests from locked-out users / IPs
     "axes.middleware.AxesMiddleware",
@@ -97,6 +98,7 @@ TEMPLATES = [
         "OPTIONS": {
             "context_processors": [
                 "django.template.context_processors.request",
+                "django.template.context_processors.i18n",
                 "django.contrib.auth.context_processors.auth",
                 "django.contrib.messages.context_processors.messages",
             ],
@@ -120,7 +122,9 @@ AUTH_PASSWORD_VALIDATORS = [
     {"NAME": "django.contrib.auth.password_validation.NumericPasswordValidator"},
 ]
 
-LANGUAGE_CODE = "en-us"
+# Pages are in English until an account picks Thai in Settings (dashboard.middleware.UserLanguageMiddleware)
+LANGUAGE_CODE = "en"
+LANGUAGES = [("en", "English"), ("th", "ไทย")]
 TIME_ZONE = "Asia/Bangkok"
 USE_I18N = True
 USE_TZ = True

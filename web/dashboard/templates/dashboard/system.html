@@ -1,6 +1,6 @@
 {% extends "dashboard/base.html" %}
-{% load static dashboard_tags %}
-{% block title %}System status · CCTV Control{% endblock %}
+{% load i18n static dashboard_tags %}
+{% block title %}{% translate "System status" %} · CCTV Control{% endblock %}
 {% block body %}
 {% include "dashboard/_topbar.html" %}
 
@@ -9,51 +9,51 @@
 <main class="search-page system-page" id="system-page" inert aria-busy="true"
       data-can-calibrate="{% if perms.dashboard.manage_calibration %}true{% endif %}">
   <div class="table-head">
-    <h2>System status</h2>
+    <h2>{% translate "System status" %}</h2>
     <span class="form-msg" id="sys-msg" role="status" aria-live="polite"></span>
   </div>
 
-  <section class="stats system-stats" aria-label="Detection and records">
+  <section class="stats system-stats" aria-label="{% translate "Detection and records" %}">
     <div class="stat" id="engine-card">
-      <span class="stat-label">Detection engine</span>
-      <span class="stat-value" id="engine-state"><span class="skeleton skeleton-value" aria-label="Loading"></span></span>
+      <span class="stat-label">{% translate "Detection engine" %}</span>
+      <span class="stat-value" id="engine-state"><span class="skeleton skeleton-value" aria-label="{% translate "Loading" %}"></span></span>
       <span class="muted" id="engine-detail"><span class="skeleton skeleton-line"></span></span>
     </div>
     {# As tall as the other cards; "Show all" (system.js) opens this card alone, over what is below it #}
     <div class="model-slot">
     <div class="stat model-card" id="model-card">
-      <span class="stat-label">Models{% if models_missing %} <span class="tag tag-bad">{{ models_missing }} missing</span>{% endif %}</span>
+      <span class="stat-label">{% translate "Models" %}{% if models_missing %} <span class="tag tag-bad">{% blocktranslate with n=models_missing %}{{ n }} missing{% endblocktranslate %}</span>{% endif %}</span>
       <dl class="model-list" id="model-list">
         {% for m in models %}
           <dt>{{ m.file }}</dt>
-          <dd><b>{{ m.name }}</b>: {{ m.purpose }}{% if not m.found %} <span class="tag tag-bad">file missing</span>{% endif %}</dd>
+          <dd><b>{{ m.name }}</b>: {{ m.purpose }}{% if not m.found %} <span class="tag tag-bad">{% translate "file missing" %}</span>{% endif %}</dd>
         {% endfor %}
       </dl>
-      <button type="button" class="link-btn" id="model-toggle" aria-controls="model-list" aria-expanded="false" hidden>Show all {{ models|length }}</button>
+      <button type="button" class="link-btn" id="model-toggle" aria-controls="model-list" aria-expanded="false" hidden>{% blocktranslate with n=models|length %}Show all {{ n }}{% endblocktranslate %}</button>
     </div>
     </div>
     <div class="stat">
-      <span class="stat-label">Records today / total</span>
-      <span class="stat-value" id="records"><span class="skeleton skeleton-value" aria-label="Loading"></span></span>
+      <span class="stat-label">{% translate "Records today / total" %}</span>
+      <span class="stat-value" id="records"><span class="skeleton skeleton-value" aria-label="{% translate "Loading" %}"></span></span>
       <span class="muted" id="last-record"><span class="skeleton skeleton-line"></span></span>
       <span class="muted" id="storage-use"><span class="skeleton skeleton-line"></span></span>
     </div>
     <div class="stat">
-      <span class="stat-label">Violations not reviewed</span>
-      <span class="stat-value" id="pending"><span class="skeleton skeleton-value" aria-label="Loading"></span></span>
+      <span class="stat-label">{% translate "Violations not reviewed" %}</span>
+      <span class="stat-value" id="pending"><span class="skeleton skeleton-value" aria-label="{% translate "Loading" %}"></span></span>
       <span class="muted" id="violations-today"><span class="skeleton skeleton-line"></span></span>
     </div>
   </section>
 
-  <section class="table-panel search-results sys-section" aria-label="Live cameras">
+  <section class="table-panel search-results sys-section" aria-label="{% translate "Live cameras" %}">
     <div class="table-head">
-      <h2>Live cameras</h2>
+      <h2>{% translate "Live cameras" %}</h2>
       <span class="muted" id="cameras-checked"></span>
     </div>
     <div class="table-wrap">
       <table class="vehicles">
         <thead>
-          <tr><th>Camera</th><th>Status</th><th class="num">Response</th><th>Speed calibration</th><th>Detail</th></tr>
+          <tr><th>{% translate "Camera" %}</th><th>{% translate "Status" %}</th><th class="num">{% translate "Response" %}</th><th>{% translate "Speed calibration" %}</th><th>{% translate "Detail" %}</th></tr>
         </thead>
         {# Skeleton rows until the first poll answers #}
         <tbody id="camera-rows" aria-busy="true">
@@ -63,53 +63,53 @@
     </div>
   </section>
 
-  <section class="table-panel search-results sys-section" aria-label="Video files">
+  <section class="table-panel search-results sys-section" aria-label="{% translate "Video files" %}">
     <div class="table-head">
-      <h2>Video files</h2>
-      <span class="muted">Files in the input folder that staff can play</span>
+      <h2>{% translate "Video files" %}</h2>
+      <span class="muted">{% translate "Files in the input folder that staff can play" %}</span>
     </div>
     <div class="table-wrap">
       <table class="vehicles">
         <thead>
-          <tr><th>File</th><th class="num">Size</th><th>Last changed</th><th>Speed calibration</th></tr>
+          <tr><th>{% translate "File" %}</th><th class="num">{% translate "Size" %}</th><th>{% translate "Last changed" %}</th><th>{% translate "Speed calibration" %}</th></tr>
         </thead>
         <tbody id="file-rows" aria-busy="true">
           {% skeleton_rows 2 4 %}
         </tbody>
       </table>
-      <p class="empty muted" id="no-files" hidden>No video files in the input folder</p>
+      <p class="empty muted" id="no-files" hidden>{% translate "No video files in the input folder" %}</p>
     </div>
   </section>
 </main>
 
 <dialog id="dist-dialog" class="confirm-dialog" aria-labelledby="dist-title">
-  <h3 id="dist-title">Calibration distances</h3>
+  <h3 id="dist-title">{% translate "Calibration distances" %}</h3>
   <p class="muted"><span id="dist-source"></span><br>
-    Real size on the ground of the rectangle staff clicked. The 4 points stay as they are.<br>
-    The camera is offline, so the points cannot be redrawn now; Edit opens the full editor once it is online.</p>
+    {% translate "Real size on the ground of the rectangle staff clicked. The 4 points stay as they are." %}<br>
+    {% translate "The camera is offline, so the points cannot be redrawn now; Edit opens the full editor once it is online." %}</p>
   <form id="dist-form" class="calib-form">
     <label class="calib-field">
-      <span>Width <small class="muted">point 1 → 2</small></span>
+      <span>{% translate "Width" %} <small class="muted">{% translate "point 1 → 2" %}</small></span>
       <span class="input-unit"><input type="number" id="dist-w" min="0.1" max="500" step="0.01" inputmode="decimal" required><span>m</span></span>
     </label>
     <label class="calib-field">
-      <span>Length <small class="muted">point 2 → 3</small></span>
+      <span>{% translate "Length" %} <small class="muted">{% translate "point 2 → 3" %}</small></span>
       <span class="input-unit"><input type="number" id="dist-l" min="0.1" max="500" step="0.01" inputmode="decimal" required><span>m</span></span>
     </label>
   </form>
   <p class="form-msg" id="dist-msg" role="status" aria-live="polite"></p>
   <div class="confirm-actions">
-    <button type="button" class="btn" id="dist-cancel">Cancel</button>
-    <button type="submit" class="btn btn-primary" form="dist-form">Save</button>
+    <button type="button" class="btn" id="dist-cancel">{% translate "Cancel" %}</button>
+    <button type="submit" class="btn btn-primary" form="dist-form">{% translate "Save" %}</button>
   </div>
 </dialog>
 
 <dialog id="remove-dialog" class="confirm-dialog" aria-labelledby="remove-title">
-  <h3 id="remove-title">Remove speed calibration?</h3>
-  <p class="muted"><span id="remove-source"></span><br>Speeds are no longer measured on this source until staff calibrate it again.</p>
+  <h3 id="remove-title">{% translate "Remove speed calibration?" %}</h3>
+  <p class="muted"><span id="remove-source"></span><br>{% translate "Speeds are no longer measured on this source until staff calibrate it again." %}</p>
   <form method="dialog" class="confirm-actions">
-    <button class="btn" value="cancel" autofocus>Cancel</button>
-    <button class="btn btn-danger" value="confirm">Remove</button>
+    <button class="btn" value="cancel" autofocus>{% translate "Cancel" %}</button>
+    <button class="btn btn-danger" value="confirm">{% translate "Remove" %}</button>
   </form>
 </dialog>
 
