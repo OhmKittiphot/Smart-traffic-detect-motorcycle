@@ -30,9 +30,11 @@ urlpatterns = [
     path("api/stats/", records.StatsView.as_view(), name="api_stats"),
     path("api/stats/repeat/", records.RepeatOffendersView.as_view(), name="api_stats_repeat"),
     path("api/violations/new/", records.NewViolationsView.as_view(), name="api_violations_new"),
-    path("api/vehicles/search/", records.PlateSearchView.as_view(), name="api_vehicles_search"),
-    path("api/vehicles/<int:pk>/review/", records.VehicleReviewView.as_view(), name="api_vehicle_review"),
     path("api/vehicles/delete/", records.VehicleDeleteView.as_view(), name="api_vehicles_delete"),
+    # Records list and details pop-up, as HTML for htmx
+    path("vehicles/rows/", records.vehicle_rows, name="vehicle_rows"),
+    path("vehicles/<int:pk>/", records.vehicle_detail, name="vehicle_detail"),
+    path("vehicles/review/<int:pk>/", records.review_vehicle, name="vehicle_review"),
 
     # Speed calibration: current source (live view) and any source (system page)
     path("api/calibration/", calibration.CalibrationView.as_view(), name="api_calibration"),

@@ -223,6 +223,9 @@ a.brand:focus-visible { outline: 2px solid var(--accent); outline-offset: 4px; }
   border-radius: 50%; border: 2px solid var(--border-strong); border-top-color: var(--accent);
   animation: spin .7s linear infinite; }
 .form-msg.is-busy::before { margin-right: 7px; vertical-align: -1px; }
+/* htmx: an indicator shows only while its request runs */
+.htmx-indicator { display: none; }
+.htmx-indicator.htmx-request { display: inline; }
 .stat-value .value-loading { width: 20px; height: 20px; vertical-align: middle; }
 .chart-loading { text-align: center; padding: 18px 0; margin: 0; }
 

@@ -1,0 +1,2 @@
+{% load l10n %}{# A speed in km/h; common.js shows it in mph instead when the account chose imperial units #}
+{% if record.speed_kmh is None %}—{% else %}<span data-kmh="{{ record.speed_kmh|unlocalize }}">{{ record.speed_kmh|floatformat:0 }} km/h</span>{% endif %}

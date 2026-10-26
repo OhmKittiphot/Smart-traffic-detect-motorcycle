@@ -1,0 +1,55 @@
+{% load i18n %}
+{# The rows of the records list (views.records.vehicle_rows), put into #result-rows by htmx. The parts around #}
+{# the table are sent with them and replace their old copies (hx-swap-oob) #}
+{# A row opens its details on "open-detail", which search.js sends when the row is clicked #}
+{% for record in rows %}
+<tr class="{% if record.is_violation %}row-bad{% else %}row-ok{% endif %} is-clickable" tabindex="0"
+    hx-get="{% url 'vehicle_detail' record.id %}" hx-target="#detail-dialog" hx-trigger="open-detail"
+    aria-label="{% blocktranslate with plate=record.plate_text %}Details of {{ plate }}{% endblocktranslate %}">
+  {% if can_delete %}
+  <td class="check-col"><span class="check-wrap"><input type="checkbox" data-select="{{ record.id }}"
+      aria-label="{% if record.plate_text %}{% blocktranslate with plate=record.plate_text %}Select {{ plate }}{% endblocktranslate %}{% else %}{% translate "Select record" %}{% endif %}"></span></td>
+  {% endif %}
+  <td class="time-cell">{{ record.detected_at|date:"H:i:s" }}<small>{{ record.detected_at|date:"d/m/Y" }}</small></td>
+  <td>{% if record.snapshot %}<button type="button" class="thumb-btn" data-snap="{{ record.id }}" aria-label="{% translate "View evidence photo" %}"><img class="thumb" src="{% url 'snapshot' record.id %}" alt="" loading="lazy"></button>{% else %}<span class="muted">—</span>{% endif %}</td>
+  {# The plate photo beside the text when one was saved (opens larger like the evidence photo) #}
+  <td class="plate">
+    {% if record.plate_snapshot %}{% url 'plate_snapshot' record.id as plate_src %}
+    <span class="plate-with-photo"><button type="button" class="thumb-btn" data-snap="{{ record.id }}" data-snap-src="{{ plate_src }}" aria-label="{% translate "View plate photo" %}"><img class="plate-thumb" src="{{ plate_src }}" alt="" loading="lazy"></button>
+    {% endif %}
+    {% if record.plate_text %}{{ record.plate_text }}{% else %}<span class="muted">{% translate "Unreadable" %}</span>{% endif %}
+    {% if record.plate_snapshot %}</span>{% endif %}
+  </td>
+  <td>{{ record.province_text|default:"—" }}</td>
+  <td class="num">{{ record.riders|default_if_none:"—" }}</td>
+  <td>{% include "dashboard/_helmet_tags.html" %}</td>
+  <td class="num">{% include "dashboard/_speed.html" %}</td>
+  <td>{% include "dashboard/_status_tags.html" %}</td>
+  <td>{% include "dashboard/_review_tag.html" %}</td>
+  <td class="muted">{{ record.source_name|default:record.get_source_mode_display }}</td>
+</tr>
+{% endfor %}
+
+{# data-params: the list's filters, for deleting every record of it (search.js) #}
+<h2 id="result-title" hx-swap-oob="true" data-total="{{ total }}" data-params="{{ params }}">
+  {% if not total %}{% translate "Results" %}
+  {% elif query %}{% blocktranslate count n=total %}{{ n }} motorcycle found{% plural %}{{ n }} motorcycles found{% endblocktranslate %}
+  {% else %}{% blocktranslate with n=total %}All {{ n }} motorcycles{% endblocktranslate %}{% endif %}
+  {% if shown < total %}
+    {% if query %}{% blocktranslate with n=shown %}(best {{ n }} shown){% endblocktranslate %}
+    {% else %}{% blocktranslate with n=shown %}(newest {{ n }} shown){% endblocktranslate %}{% endif %}
+  {% endif %}
+</h2>
+
+<p class="empty muted" id="empty-msg" hx-swap-oob="true"{% if shown %} hidden{% endif %}>
+  {% if query %}{% blocktranslate %}No plate looks like “{{ query }}”{% endblocktranslate %}
+  {% elif browse %}{% translate "No motorcycles recorded" %}
+  {% else %}{% translate "Type a plate to search the recorded motorcycles" %}{% endif %}
+</p>
+
+{# The next page goes under the rows already shown #}
+<button type="button" class="btn btn-sm load-more" id="load-more" hx-swap-oob="true"
+        {% if next_before %}hx-get="{% url 'vehicle_rows' %}?{{ params }}&amp;before={{ next_before }}" hx-target="#result-rows"
+        hx-swap="beforeend" hx-indicator="#search-busy"{% else %}hidden{% endif %}>{% translate "Load more" %}</button>
+
+{% include "dashboard/_search_msg.html" %}

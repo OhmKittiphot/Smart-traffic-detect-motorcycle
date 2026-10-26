@@ -55,7 +55,8 @@ class StatsQuerySerializer(serializers.Serializer):
 class PlateSearchSerializer(serializers.Serializer):
     """?q=<plate or part of it, or several separated by commas>&province=<Thai name>&source=<mode>:<name>
     &violations_only=true
-    An empty q lists every record, newest first, a page at a time (&before=<id of the last row shown>)."""
+    An empty q with browse=true (the violations page) lists every record, newest first, a page at a time
+    (&before=<id of the last row shown>); without browse it lists nothing until a plate is typed."""
     q = serializers.CharField(max_length=300, required=False, allow_blank=True, default="")
     # Thai name, as stored on the records; the page lists them by their English names
     province = serializers.ChoiceField(choices=THAI_PROVINCES, required=False, allow_blank=True, default="",
@@ -64,6 +65,7 @@ class PlateSearchSerializer(serializers.Serializer):
     # or a whole group as "<source_mode>" ("live" = every live camera, "file" = every video file)
     source = serializers.CharField(max_length=300, required=False, allow_blank=True, default="")
     violations_only = serializers.BooleanField(default=False)
+    browse = serializers.BooleanField(default=False)
     before = serializers.IntegerField(min_value=1, required=False, default=None)
 
     def validate_source(self, source):

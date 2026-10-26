@@ -130,6 +130,16 @@ window.Dashboard = (() => {
     return el("span", {}, ...r.violations.map((v) => el("span", { class: "tag tag-bad" }, v)));
   }
 
+  // ---------- htmx (the records list of the search pages) ----------
+
+  // Requests made by htmx send the CSRF token like api(), and a lost session goes to the login page
+  document.addEventListener("htmx:configRequest", (ev) => { ev.detail.headers["X-CSRFToken"] = csrf; });
+  document.addEventListener("htmx:responseError", (ev) => {
+    if ([401, 403].includes(ev.detail.xhr.status)) window.location.href = "/login/";
+  });
+  // Speeds in the HTML htmx puts into the page are in km/h
+  document.addEventListener("htmx:afterSwap", units.refresh);
+
   // Clicking a thumbnail inside `container` opens the evidence photo in the #snap-dialog
   function openSnapshotsFrom(container) {
     const dialog = document.getElementById("snap-dialog");

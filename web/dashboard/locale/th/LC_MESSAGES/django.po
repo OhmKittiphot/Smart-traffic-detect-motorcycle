@@ -11,8 +11,21 @@ msgstr ""
 msgid "%(n)s missing"
 msgstr "ขาด %(n)s ไฟล์"
 
+msgid "%(n)s motorcycle found"
+msgid_plural "%(n)s motorcycles found"
+msgstr[0] "พบรถจักรยานยนต์ %(n)s คัน"
+
+msgid "%(review)s by %(user)s · %(when)s"
+msgstr "%(review)s โดย %(user)s · %(when)s"
+
 msgid "%(s)s s"
 msgstr "%(s)s วินาที"
+
+msgid "(best %(n)s shown)"
+msgstr "(แสดง %(n)s รายการที่ใกล้เคียงที่สุด)"
+
+msgid "(newest %(n)s shown)"
+msgstr "(แสดง %(n)s รายการล่าสุด)"
 
 msgid "0 = not checked"
 msgstr "0 = ไม่ตรวจ"
@@ -22,6 +35,9 @@ msgstr "สำหรับผู้ดูแลระบบเท่านั้
 
 msgid "All"
 msgstr "ทั้งหมด"
+
+msgid "All %(n)s motorcycles"
+msgstr "รถจักรยานยนต์ทั้งหมด %(n)s คัน"
 
 msgid "All live cameras"
 msgstr "กล้องสดทั้งหมด"
@@ -121,6 +137,69 @@ msgstr "ยืนยันแล้ว"
 
 msgid "Could not capture a frame"
 msgstr "ดึงเฟรมจากวิดีโอไม่ได้"
+
+msgid "Date & time"
+msgstr "วันที่และเวลา"
+
+msgid "Details of %(plate)s"
+msgstr "รายละเอียดของ %(plate)s"
+
+msgid "Helmet %(n)s"
+msgstr "สวมหมวกนิรภัย %(n)s"
+
+msgid "No helmet %(n)s"
+msgstr "ไม่สวมหมวกนิรภัย %(n)s"
+
+msgid "No motorcycles recorded"
+msgstr "ยังไม่มีรถจักรยานยนต์ที่บันทึกไว้"
+
+msgid "No plate looks like “%(query)s”"
+msgstr "ไม่มีป้ายทะเบียนที่คล้าย “%(query)s”"
+
+msgid "OCR confidence"
+msgstr "ความมั่นใจของ OCR"
+
+msgid "Plate %(plate)s"
+msgstr "ป้ายทะเบียน %(plate)s"
+
+msgid "Plate photo"
+msgstr "ภาพป้ายทะเบียน"
+
+msgid "Review undone"
+msgstr "ยกเลิกการตรวจสอบแล้ว"
+
+msgid "Saved: %(review)s"
+msgstr "บันทึกแล้ว: %(review)s"
+
+msgid "Saving…"
+msgstr "กำลังบันทึก…"
+
+msgid "Searching…"
+msgstr "กำลังค้นหา…"
+
+msgid "Select %(plate)s"
+msgstr "เลือก %(plate)s"
+
+msgid "Select record"
+msgstr "เลือกรายการ"
+
+msgid "Track ID"
+msgstr "หมายเลขติดตาม"
+
+msgid "Unknown"
+msgstr "ไม่ทราบ"
+
+msgid "Unreadable"
+msgstr "อ่านไม่ได้"
+
+msgid "View evidence photo"
+msgstr "ดูภาพหลักฐาน"
+
+msgid "View plate photo"
+msgstr "ดูภาพป้ายทะเบียน"
+
+msgid "a deleted user"
+msgstr "ผู้ใช้ที่ถูกลบ"
 
 msgid "counts riders and checks their helmets"
 msgstr "นับจำนวนคนบนรถและตรวจหมวกนิรภัย"

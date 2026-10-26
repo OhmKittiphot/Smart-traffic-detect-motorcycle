@@ -77,10 +77,13 @@
     </div>
   </section>
 
-  {% include "dashboard/_plate_search.html" with violations_only=True browse=True plain_rows=True deletable=True %}
+  {% include "dashboard/_plate_search.html" with violations_only=True browse=True plain_rows=True %}
 </main>
 
 <meta name="csrf-token" content="{{ csrf_token }}">
+{# htmx (the records list): no inline styles, which the CSP blocks (app.css styles .htmx-indicator), and no eval #}
+<meta name="htmx-config" content='{"includeIndicatorStyles": false, "allowEval": false}'>
+<script src="{% static 'dashboard/vendor/htmx.min.js' %}" defer></script>
 <script src="{% static 'dashboard/common.js' %}" defer></script>
 <script src="{% static 'dashboard/stats.js' %}" defer></script>
 <script src="{% static 'dashboard/search.js' %}" defer></script>
