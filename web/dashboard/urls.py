@@ -2,7 +2,7 @@ from django.contrib.auth.views import LogoutView
 from django.urls import path
 from django.views.i18n import JavaScriptCatalog
 
-from .views import calibration, live, pages, records, settings, system
+from .views import calibration, events, live, pages, records, settings, system
 
 urlpatterns = [
     # Pages
@@ -20,6 +20,8 @@ urlpatterns = [
     path("api/status/", live.StatusView.as_view(), name="api_status"),
     path("api/vehicles/", live.VehicleListView.as_view(), name="api_vehicles"),
     path("api/vehicles/clear/", live.VehicleClearView.as_view(), name="api_vehicles_clear"),
+    # New records as they are saved (Server-Sent Events): the live view's table and the notifications
+    path("api/events/records/", events.record_events, name="api_record_events"),
     path("api/source/", live.SourceView.as_view(), name="api_source"),
     path("api/pause/", live.PauseView.as_view(), name="api_pause"),
     path("api/seek/", live.SeekView.as_view(), name="api_seek"),
@@ -29,7 +31,6 @@ urlpatterns = [
     path("snapshot/<int:pk>/plate/", records.snapshot, {"field": "plate_snapshot"}, name="plate_snapshot"),
     path("api/stats/", records.StatsView.as_view(), name="api_stats"),
     path("api/stats/repeat/", records.RepeatOffendersView.as_view(), name="api_stats_repeat"),
-    path("api/violations/new/", records.NewViolationsView.as_view(), name="api_violations_new"),
     path("api/vehicles/delete/", records.VehicleDeleteView.as_view(), name="api_vehicles_delete"),
     # Records list and details pop-up, as HTML for htmx
     path("vehicles/rows/", records.vehicle_rows, name="vehicle_rows"),

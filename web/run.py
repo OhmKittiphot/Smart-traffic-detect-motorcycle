@@ -61,8 +61,8 @@ def main():
 
     print(f"\nCCTV dashboard: http://{'127.0.0.1' if host == '0.0.0.0' else host}:{port}\n")
     try:
-        # Each open video stream holds one thread, so keep plenty for API requests
-        serve(application, host=host, port=port, threads=24, ident="cctv",
+        # Each open video stream and event stream (views/events.py) holds one thread, so keep plenty for API requests
+        serve(application, host=host, port=port, threads=48, ident="cctv",
               channel_timeout=60, connection_limit=200)
     finally:
         stop_service()

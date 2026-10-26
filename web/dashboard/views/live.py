@@ -11,13 +11,12 @@ from rest_framework.views import APIView
 from .. import storage
 from ..engine import get_service
 from ..models import CameraSettings, VehicleRecord
-from ..serializers import PauseSerializer, SeekSerializer, SourceSerializer, VehicleQuerySerializer, VehicleRecordSerializer
+from ..serializers import PauseSerializer, SeekSerializer, SourceSerializer, VehicleRecordSerializer
 from ..sources import VideoSource
 from .common import audit, bad_request, conflict
 
-# Rows sent on first load / per poll
+# Rows the table starts with; newer ones arrive on the event stream (events.py)
 _INITIAL_ROWS = 100
-_MAX_NEW_ROWS = 200
 
 
 class StatusView(APIView):
@@ -34,16 +33,8 @@ class StatusView(APIView):
 
 class VehicleListView(APIView):
     def get(self, request):
-        """New rows after ?after=<id>, or the latest rows on first load (newest first)."""
-        query = VehicleQuerySerializer(data=request.query_params)
-        query.is_valid(raise_exception=True)
-        after = query.validated_data["after"]
-
-        records = VehicleRecord.objects.select_related("reviewed_by")
-        if after > 0:
-            records = records.filter(id__gt=after)[:_MAX_NEW_ROWS]
-        else:
-            records = records[:_INITIAL_ROWS]
+        """The latest rows, newest first, that the table starts with."""
+        records = VehicleRecord.objects.select_related("reviewed_by")[:_INITIAL_ROWS]
         return Response({"rows": VehicleRecordSerializer(records, many=True).data})
 
 

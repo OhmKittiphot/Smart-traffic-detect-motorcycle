@@ -48,7 +48,7 @@ class PagePermissionMiddleware:
         ("/api/settings/cleanup/", "dashboard.manage_settings"),
         ("/api/settings/password/", None),
         ("/api/settings/preferences/", None),   # each account's own; the pop-up shows only what applies to it
-        ("/api/violations/new/", "dashboard.view_records"),
+        ("/api/events/records/", None),   # checks itself: every record for the live view, else violations
         ("/system/", "dashboard.view_system_status"),
         ("/api/system/calibration/", "dashboard.manage_calibration"),
         ("/api/system/", "dashboard.view_system_status"),

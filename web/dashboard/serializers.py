@@ -23,9 +23,9 @@ MAX_CALIBRATION_M = 500.0
 
 # ---------- requests ----------
 
-class VehicleQuerySerializer(serializers.Serializer):
-    """?after=<id>: only rows newer than this id; 0 (default) means the latest rows."""
-    after = serializers.IntegerField(min_value=0, default=0)
+class RecordEventsSerializer(serializers.Serializer):
+    """?after=<id> (or the Last-Event-ID header): records newer than this id; none means from now on."""
+    after = serializers.IntegerField(min_value=0, required=False, allow_null=True, default=None)
 
 
 class StatsQuerySerializer(serializers.Serializer):

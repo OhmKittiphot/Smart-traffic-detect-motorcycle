@@ -1,5 +1,6 @@
 from django.apps import AppConfig
 from django.contrib.auth.signals import user_logged_out
+from django.db.models.signals import post_save
 
 
 def _stop_detection(sender, request=None, **kwargs):
@@ -18,3 +19,9 @@ class DashboardConfig(AppConfig):
 
     def ready(self):
         user_logged_out.connect(_stop_detection, dispatch_uid="dashboard_stop_detection")
+
+        from .models import VehicleRecord
+        from .record_feed import record_saved
+
+        # Wakes the event streams that push new records to the pages
+        post_save.connect(record_saved, sender=VehicleRecord, dispatch_uid="dashboard_record_feed")

@@ -140,6 +140,45 @@ window.Dashboard = (() => {
   // Speeds in the HTML htmx puts into the page are in km/h
   document.addEventListener("htmx:afterSwap", units.refresh);
 
+  // ---------- new records, pushed by the server (Server-Sent Events, views/events.py) ----------
+
+  // Calls onRecords({rows, total}, lastId) with the records saved after `after` (rows newest first; total
+  // also counts those not sent), once at the start with no rows, and then as each one is saved. after:
+  // a record id, or null for "from now on"; violations: only violations. The stream is closed while the tab
+  // is hidden, so it holds no server thread, and opened again from the last id seen when it is shown.
+  // The browser reconnects by itself if the stream drops. Returns a function that stops it.
+  function watchRecords({ after = null, violations = false }, onRecords) {
+    let source = null;
+
+    function open() {
+      const params = new URLSearchParams();
+      if (after !== null) params.set("after", after);
+      if (violations) params.set("violations", "true");
+      source = new EventSource(`/api/events/records/?${params}`);
+      source.addEventListener("records", (ev) => {
+        after = Number(ev.lastEventId);
+        onRecords(JSON.parse(ev.data), after);
+      });
+    }
+
+    function close() {
+      source?.close();
+      source = null;
+    }
+
+    function onVisibility() {
+      if (document.hidden) close();
+      else if (!source) open();
+    }
+
+    document.addEventListener("visibilitychange", onVisibility);
+    onVisibility();
+    return () => {
+      document.removeEventListener("visibilitychange", onVisibility);
+      close();
+    };
+  }
+
   // Clicking a thumbnail inside `container` opens the evidence photo in the #snap-dialog
   function openSnapshotsFrom(container) {
     const dialog = document.getElementById("snap-dialog");
@@ -151,5 +190,5 @@ window.Dashboard = (() => {
     });
   }
 
-  return { api, el, units, thumbCell, plateCell, helmetCell, statusCell, openSnapshotsFrom };
+  return { api, el, units, thumbCell, plateCell, helmetCell, statusCell, watchRecords, openSnapshotsFrom };
 })();

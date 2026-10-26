@@ -2,31 +2,36 @@
 
 // In-page notifications, bottom right of every page (#toasts, _settings_panel.html). Each kind is switched on
 // per account in the Settings pop-up:
-// - new violations (off by default): /api/violations/new/ is asked every few seconds for violations recorded
-//   since the last one seen; that id is kept for the browser tab, so moving to another page neither repeats
-//   nor misses one.
+// - new violations (off by default): the server pushes each violation as it is saved (watchRecords in
+//   common.js). The last record id seen is kept for the browser tab, so moving to another page neither
+//   repeats nor misses one.
 // - live camera status (admins, on by default): /api/system/cameras/ is asked every CAMERA_POLL_MS and each
 //   camera's state is compared with the one last seen, also kept for the browser tab.
 (() => {
   const box = document.getElementById("toasts");
   if (!box) return;   // this account cannot see records or the system status
-  const POLL_MS = 3000;
   const SHOW_MS = 10000;   // a notification closes itself after this
   const MAX_SHOWN = 3;     // at most this many violations; the rest are counted in one "+N more" under them
   const KEY = "cctv-notify-after";
   let on = box.dataset.on === "true";
-  let after = readAfter();
+  let stopWatching = null;
   let more = null;         // the "+N more" notification while it is open
   let moreCount = 0;
   let moreTimer = null;
 
+  // The last record id seen in this browser tab, or null: start from now
   function readAfter() {
-    try { return Number(sessionStorage.getItem(KEY)) || 0; } catch (e) { return 0; }
+    try {
+      const id = sessionStorage.getItem(KEY);
+      return id === null ? null : Number(id);
+    } catch (e) { return null; }
   }
 
   function saveAfter(id) {
-    after = id;
-    try { sessionStorage.setItem(KEY, String(id)); } catch (e) { /* only this page remembers it */ }
+    try {
+      if (id === null) sessionStorage.removeItem(KEY);
+      else sessionStorage.setItem(KEY, String(id));
+    } catch (e) { /* only this page remembers it */ }
   }
 
   function addCloseButton(toast, close) {
@@ -87,15 +92,16 @@
           el("small", {}, gettext(gettext("See them on the violations page"))))));
   }
 
-  async function poll() {
-    if (!on || document.hidden) return;
-    try {
-      const data = await window.Dashboard.api(`/api/violations/new/?after=${after}`);
-      // Oldest first, so the newest ends up on top
-      for (const r of [...data.rows].reverse()) show(violationToast(r));
-      if (data.total > data.rows.length) addMore(data.total - data.rows.length);   // not sent, only counted
-      saveAfter(data.last_id);
-    } catch (e) { /* try again on the next poll */ }
+  function onViolations(data, lastId) {
+    // Oldest first, so the newest ends up on top
+    for (const r of [...data.rows].reverse()) show(violationToast(r));
+    if (data.total > data.rows.length) addMore(data.total - data.rows.length);   // not sent, only counted
+    saveAfter(lastId);
+  }
+
+  function watchViolations() {
+    stopWatching?.();
+    stopWatching = on ? window.Dashboard.watchRecords({ after: readAfter(), violations: true }, onViolations) : null;
   }
 
   // ---------- live camera status (admins) ----------
@@ -167,10 +173,8 @@
   document.addEventListener("settings:preferences", (ev) => {
     if (ev.detail.violation_notify !== on) {
       on = ev.detail.violation_notify;
-      if (on) {
-        saveAfter(0);
-        poll();
-      }
+      saveAfter(null);
+      watchViolations();
     }
     if (CAMERA_API && ev.detail.camera_notify !== camerasOn) {
       camerasOn = ev.detail.camera_notify;
@@ -181,17 +185,14 @@
 
   // common.js (window.Dashboard) is loaded after the top bar; it is there once the page has loaded
   document.addEventListener("DOMContentLoaded", () => {
-    poll();
-    setInterval(poll, POLL_MS);
+    watchViolations();
     if (CAMERA_API) {
       pollCameras();
       setInterval(pollCameras, CAMERA_POLL_MS);
     }
   });
-  // Polls skip a hidden tab; catch up as soon as it is shown again
+  // Camera checks skip a hidden tab; catch up as soon as it is shown again
   document.addEventListener("visibilitychange", () => {
-    if (document.hidden) return;
-    poll();
-    if (CAMERA_API) pollCameras();
+    if (!document.hidden && CAMERA_API) pollCameras();
   });
 })();

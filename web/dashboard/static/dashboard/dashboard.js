@@ -2,12 +2,11 @@
 
 (() => {
   const STATUS_EVERY_MS = 1000;
-  const ROWS_EVERY_MS = 2000;
   // This account's live view preferences, rendered into the page by the view and changed from the
   // Settings pop-up (see "preferences" below)
   const prefs = JSON.parse(document.getElementById("prefs").textContent);
   const MAX_ROWS = 300;
-  const { api, el, units, thumbCell, plateCell, helmetCell, statusCell, openSnapshotsFrom } = window.Dashboard;
+  const { api, el, units, thumbCell, plateCell, helmetCell, statusCell, watchRecords, openSnapshotsFrom } = window.Dashboard;
 
   const $ = (id) => document.getElementById(id);
   const streamImg = $("stream");
@@ -193,12 +192,12 @@
     emptyMsg.textContent = rowsEl.children.length ? gettext("No motorcycles match this filter") : gettext("No motorcycles yet");
   }
 
-  async function pollVehicles() {
-    if (document.hidden) return;   // caught up on return (see visibilitychange)
+  // The latest rows, then each new one as the server saves it (pushed, see watchRecords in common.js)
+  async function loadVehicles() {
     try {
-      const data = await api(`/api/vehicles/?after=${lastId}`);
-      addRows(data.rows, lastId > 0);
-    } catch (e) { /* retry next tick */ }
+      addRows((await api("/api/vehicles/")).rows, false);
+    } catch (e) { /* the stream still brings the newest ones */ }
+    watchRecords({ after: lastId }, (data) => addRows(data.rows, true));
   }
 
   function selectFilter(filter) {
@@ -249,14 +248,13 @@
   }
 
   // Close the stream and stop polling while the tab is hidden, so detection stops and frees the GPU;
-  // reopen and catch up on return
+  // reopen and catch up on return (new rows: see loadVehicles)
   document.addEventListener("visibilitychange", () => {
     if (document.hidden) {
       streamImg.removeAttribute("src");
     } else {
       reloadStream();
       pollStatus();
-      pollVehicles();
     }
   });
 
@@ -474,8 +472,7 @@
   // ---------- start ----------
   syncFormState();
   pollStatus();
-  pollVehicles();
+  loadVehicles();
   setInterval(pollStatus, STATUS_EVERY_MS);
-  setInterval(pollVehicles, ROWS_EVERY_MS);
   setInterval(drawPosition, 250);
 })();

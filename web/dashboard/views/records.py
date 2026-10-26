@@ -1,5 +1,4 @@
-"""Recorded vehicles: plate search, reviewing and deleting records, violation statistics, evidence photos
-and the notifications of new violations.
+"""Recorded vehicles: plate search, reviewing and deleting records, violation statistics and evidence photos.
 
 The records list and its details pop-up are answered as HTML that htmx puts into the page (the
 _vehicle_*.html templates); the rest is the JSON API the page's JavaScript reads."""
@@ -21,7 +20,7 @@ from .. import storage
 from ..models import Review, VehicleRecord, Violation
 from ..plate_search import group_plates, normalize_query, rank_plates, split_queries
 from ..serializers import (PlateSearchSerializer, ReviewSerializer, StatsQuerySerializer, VehicleDeleteSerializer,
-                           VehicleQuerySerializer, VehicleRecordSerializer)
+                           VehicleRecordSerializer)
 from .common import audit
 
 # Plate search: lowest similarity shown, and how many matching plates / rows are returned
@@ -30,8 +29,6 @@ _SEARCH_MAX_PLATES = 300
 _SEARCH_MAX_ROWS = 300
 # Rows per page when the violations page lists every record (no plate typed)
 _BROWSE_PAGE_ROWS = 100
-# Violations sent per poll for the in-page notifications (the others are only counted)
-_MAX_NOTIFY_ROWS = 3
 # Repeat offenders: how alike two plates must be to count as one motorcycle (one look-alike character
 # passes, one different character does not), the most frequent plates compared, and the groups returned
 _REPEAT_MIN_SCORE = 0.9
@@ -122,22 +119,6 @@ def vehicle_detail(request, pk: int):
     """The details pop-up of one record (htmx), with the review buttons for staff."""
     record = get_object_or_404(VehicleRecord.objects.select_related("reviewed_by"), pk=pk)
     return render(request, "dashboard/_vehicle_detail.html", {"record": record})
-
-
-class NewViolationsView(APIView):
-    def get(self, request):
-        """Violations recorded after ?after=<id>, for the in-page notifications on every page: the newest few
-        as rows, and how many there are. With after=0 only the id to start from is sent, so violations
-        from before the page opened are not announced."""
-        query = VehicleQuerySerializer(data=request.query_params)
-        query.is_valid(raise_exception=True)
-        after = query.validated_data["after"]
-        last_id = VehicleRecord.objects.aggregate(last=Max("id"))["last"] or 0
-        if after == 0:
-            return Response({"last_id": last_id, "total": 0, "rows": []})
-        new = VehicleRecord.objects.filter(id__gt=after, is_violation=True)
-        return Response({"last_id": last_id, "total": new.count(),
-                         "rows": VehicleRecordSerializer(new[:_MAX_NOTIFY_ROWS], many=True).data})
 
 
 # ---------- changing records ----------
