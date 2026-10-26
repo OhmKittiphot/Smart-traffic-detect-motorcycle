@@ -9,9 +9,12 @@
 
 ```bash
 venv\Scripts\python -m pip install -r requirements.txt
+venv\Scripts\python web\manage.py migrate
 venv\Scripts\python web\manage.py createsuperuser
 venv\Scripts\python web\run.py
 ```
+
+ฐานข้อมูลเป็น SQLite แยกของแต่ละเครื่อง (`web/db.sqlite3` ไม่อยู่ใน git) `migrate` จะสร้างไฟล์นี้ให้ครั้งแรก
 
 เปิด http://127.0.0.1:8000 แล้วเข้าสู่ระบบด้วยบัญชีที่สร้างไว้ ระบบตรวจจับทำงานเฉพาะตอนที่มี staff เปิดหน้า Live view อยู่ ตอนเปิดหน้าจะใช้เวลาโหลดโมเดลประมาณ 10–30 วินาที และเมื่อไม่มีใครเปิดหน้า Live view (ออกจากหน้า หรือสลับไปแท็บอื่น) นาน 60 วินาที ระบบจะหยุดตรวจจับและคืนหน่วยความจำ GPU (`IDLE_STOP_S` ใน `dashboard/engine.py`) ส่วนการออกจากระบบ (logout) ของคนสุดท้ายที่เปิด Live view อยู่ จะหยุดตรวจจับทันที (ถ้ายังมีคนอื่นดูอยู่ ระบบจะทำงานต่อ)
 
