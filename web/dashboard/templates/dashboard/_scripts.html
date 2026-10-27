@@ -6,9 +6,9 @@
 {% load static %}
 <meta name="csrf-token" content="{{ csrf_token }}">
 {% comment %}htmx: no inline styles, which the CSP blocks (app.css styles .htmx-indicator), and no eval.
-  Back / Forward load the page again rather than restoring a copy of it, which would bring back the live
-  view's video and menus as they were, not working{% endcomment %}
-<meta name="htmx-config" content='{"includeIndicatorStyles": false, "allowEval": false, "historyCacheSize": 0, "refreshOnHistoryMiss": true}'>
+  No copies of pages for Back / Forward: they would bring back the live view's video and menus as they were,
+  not working. Back / Forward load the page from the server instead (common.js){% endcomment %}
+<meta name="htmx-config" content='{"includeIndicatorStyles": false, "allowEval": false, "historyCacheSize": 0}'>
 <link rel="stylesheet" href="{% static 'dashboard/vendor/uPlot.min.css' %}">
 <script src="{% static 'dashboard/vendor/htmx.min.js' %}" defer></script>
 <script src="{% static 'dashboard/common.js' %}" defer></script>

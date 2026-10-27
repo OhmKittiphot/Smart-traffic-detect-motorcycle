@@ -133,22 +133,37 @@ window.Dashboard = (() => {
   document.addEventListener("DOMContentLoaded", startPage);
   // A boosted link brings another page: the one shown stops before its body is replaced
   document.addEventListener("htmx:beforeSwap", (ev) => { if (ev.detail.boosted) leavePage(); });
-  document.addEventListener("htmx:afterSettle", (ev) => {
-    if (!ev.detail.boosted) return;
-    // For Back (below): this history entry was reached from a page of this site
-    history.replaceState({ ...history.state, fromSite: true }, "");
-    startPage();
+  document.addEventListener("htmx:afterSettle", (ev) => { if (ev.detail.boosted) startPage(); });
+
+  // Back / Forward load the page of that history entry. htmx would reload it (it keeps no copies of pages,
+  // _scripts.html), but a reload gets no view transition (app.css) and location.replace() does. This listener
+  // comes before htmx's (window.onpopstate, set once the page has loaded), so it can stop it
+  window.addEventListener("popstate", (ev) => {
+    ev.stopImmediatePropagation();
+    location.replace(location.href);
   });
 
   // ---------- Back (_back_link.html) ----------
 
+  // The page before this one in the tab's history, when it is a page of this site (not the login page)
+  function previousPageOfSite() {
+    if (window.navigation) {
+      // Only this site's pages are listed, so there is none when this tab came here from elsewhere
+      const entry = navigation.entries()[navigation.currentEntry.index - 1];
+      return entry ? new URL(entry.url) : null;
+    }
+    // Browsers without the Navigation API: the page that linked here (for a page swapped in by a boosted
+    // link, the one first loaded)
+    const from = document.referrer ? new URL(document.referrer) : null;
+    return from?.origin === location.origin ? from : null;
+  }
+
   // Coming from another page of this site: go back in the browser's history, so pages opened one after another
-  // go back the same way, e.g. stats › search › live. Its href (the live view) is for any other way in. A page
-  // swapped in by a boosted link keeps the referrer of the first page, so it is marked in its history entry.
+  // go back the same way, e.g. stats › search › live. Its href (the live view) is for any other way in.
   document.addEventListener("click", (ev) => {
     if (!ev.target.closest("#back-link")) return;
-    const from = document.referrer ? new URL(document.referrer) : null;
-    if (history.state?.fromSite || (from && from.origin === location.origin && from.pathname !== "/login/")) {
+    const previous = previousPageOfSite();
+    if (previous && previous.pathname !== "/login/") {
       ev.preventDefault();
       history.back();
     }
