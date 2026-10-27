@@ -74,7 +74,7 @@ button, input, select { font: inherit; color: inherit; }
 /* Descriptions (.muted) and other text of 13px or smaller, with what they contain: the looped Thai letters
    are easier to read at small sizes; headings and 14px text keep --font. :where() adds no specificity */
 :where(.muted, .btn-sm, .login-form label, .alert, .plate-link, .video-meta, .loading-overlay, .engine-chip, .seek-time,
-  .badge, .form-msg, .stat-label, .rules, .fps-head, .fps-axis, .fps-tip, .filter, .vehicles, .tag,
+  .badge, .form-msg, .stat-label, .rules, .fps-head, .fps-tip, .filter, .vehicles, .tag,
   .calib-help, .calib-next, .calib-field, .search-field, .search-check, .search-help, .source-btn,
   .source-item, .source-count, .source-none, .detail-note, .model-list, .link-btn, .stats-meta, .kpi-label,
   .chart-title, .kpi-note, .chart-legend, .hbar, .hbar-share, .day-tick, .day-label, .stats-range,
@@ -91,7 +91,6 @@ button, input, select { font: inherit; color: inherit; }
 }
 :lang(th) :is(.kpi-label, .chart-title, .settings-form legend, .loading-text, .heat-weekday,
   .settings-row > span:first-child small) { font-size: 12px; }
-:lang(th) .fps-axis { font-size: 11px; }
 :lang(th) :is(.settings-row > span:first-child small, .toast-text, .calib-next) { line-height: 1.5; }
 .muted { color: var(--muted); }
 .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
@@ -202,7 +201,7 @@ a.brand:focus-visible { outline: 2px solid var(--accent); outline-offset: 4px; }
 .video-meta b { color: var(--text); font-variant-numeric: tabular-nums; }
 .video-frame { background: #000; aspect-ratio: 16 / 9; display: grid; place-items: center; overflow: hidden;
   position: relative; }
-.video-frame img { width: 100%; height: 100%; object-fit: contain; display: block; }
+.video-frame :is(img, video) { width: 100%; height: 100%; object-fit: contain; display: block; }
 
 /* Loading: a thin turning arc in the middle of the video (or calibration frame), over a dimmed frame */
 .loading-overlay { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center;
@@ -335,12 +334,8 @@ a.brand:focus-visible { outline: 2px solid var(--accent); outline-offset: 4px; }
 .fps-head { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; font-size: 13px; }
 .fps-head b { font-variant-numeric: tabular-nums; }
 .fps-plot { height: 96px; margin-top: 4px; cursor: crosshair; }
-.fps-plot svg { display: block; }
-.fps-grid { stroke: var(--border); stroke-width: 1; }
-.fps-axis { fill: var(--muted); font-size: 10px; font-variant-numeric: tabular-nums; }
-.fps-line { fill: none; stroke: var(--accent); stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
-.fps-dot { fill: var(--accent); stroke: var(--panel); stroke-width: 2; }
-.fps-cross { stroke: var(--muted); stroke-width: 1; stroke-dasharray: 3 3; }
+/* uPlot's crosshair (the chart's colours come from these variables, read by fps-chart.js) */
+.fps-plot .u-cursor-x { border-right: 1px dashed var(--muted); }
 .fps-tip { position: absolute; top: 34px; transform: translateX(-50%); padding: 3px 8px; border-radius: 6px;
   background: var(--panel-2); border: 1px solid var(--border-strong); color: var(--text); font-size: 12px;
   white-space: nowrap; pointer-events: none; font-variant-numeric: tabular-nums; }

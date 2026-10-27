@@ -87,3 +87,4 @@ django-axes==8.3.1
 waitress==3.0.2
 whitenoise==6.12.0
 djangorestframework==3.18.3
+aiortc==1.15.0

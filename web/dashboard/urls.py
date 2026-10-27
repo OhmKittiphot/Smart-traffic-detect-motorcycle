@@ -2,7 +2,7 @@ from django.contrib.auth.views import LogoutView
 from django.urls import path
 from django.views.i18n import JavaScriptCatalog
 
-from .views import calibration, events, live, pages, records, settings, system
+from .views import calibration, events, live, pages, records, settings, system, webrtc
 
 urlpatterns = [
     # Pages
@@ -17,6 +17,7 @@ urlpatterns = [
 
     # Live view
     path("stream/", live.stream, name="stream"),
+    path("api/webrtc/offer/", webrtc.WebRTCOfferView.as_view(), name="api_webrtc_offer"),
     path("api/vehicles/", live.VehicleListView.as_view(), name="api_vehicles"),
     path("api/vehicles/clear/", live.VehicleClearView.as_view(), name="api_vehicles_clear"),
     # Pushed by the server (Server-Sent Events): the live view's status, and new records as they are

@@ -235,20 +235,19 @@
     }
   });
 
-  // ---------- source control ----------
+  // ---------- video ----------
 
-  function reloadStream() {
-    if (document.hidden) return;
-    streamImg.src = `/stream/?t=${Date.now()}`;
-  }
+  const reloadStream = () => LiveVideo.reload();
 
-  // Close the video stream while the tab is hidden, so it costs no bandwidth (detection goes on: it runs
-  // while staff are logged in, see engine.py), and reopen it on return. The event streams do the same
+  // Close the video while the tab is hidden, so it costs no bandwidth (detection goes on: it runs while
+  // staff are logged in, see engine.py), and reopen it on return. The event streams do the same
   // (watchEvents in common.js)
   document.addEventListener("visibilitychange", () => {
-    if (document.hidden) streamImg.removeAttribute("src");
+    if (document.hidden) LiveVideo.stop();
     else reloadStream();
   });
+
+  // ---------- source control ----------
 
   form.addEventListener("change", syncFormState);
 

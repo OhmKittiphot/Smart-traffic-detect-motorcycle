@@ -126,6 +126,10 @@ class SeekSerializer(serializers.Serializer):
     pos_ms = serializers.FloatField(min_value=0)   # position in the video, in milliseconds
 
 
+class WebRTCOfferSerializer(serializers.Serializer):
+    sdp = serializers.CharField(max_length=20000)   # the browser's session description (a few KB)
+
+
 def _size_field(name):
     message = format_lazy(_("{name} must be between 0.1 and {max} m"), name=name, max=f"{MAX_CALIBRATION_M:.0f}")
     return serializers.FloatField(min_value=0.1, max_value=MAX_CALIBRATION_M, error_messages={

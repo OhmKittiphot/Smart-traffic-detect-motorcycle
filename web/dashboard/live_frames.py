@@ -1,5 +1,5 @@
-"""The pictures the live view shows: the annotated frame as JPEG for the stream, a card while there is no
-video, and the raw frame to click calibration points on."""
+"""The pictures the live view shows: the annotated frame (as JPEG for the MJPEG stream, as pixels for
+WebRTC), a card while there is no video, and the raw frame to click calibration points on."""
 import threading
 import time
 
@@ -33,35 +33,51 @@ def placeholder_frame(title: str, subtitle: str = "", detail: str = "") -> np.nd
     return frame
 
 
-def encode_jpeg(frame: np.ndarray, quality: int = 80, max_width: int = 0) -> bytes:
-    """JPEG of a frame, scaled down to max_width when it is wider (0 = full size)."""
+def fit_width(frame: np.ndarray, max_width: int) -> np.ndarray:
+    """The frame, scaled down to max_width when it is wider."""
     h, w = frame.shape[:2]
-    if max_width and w > max_width:
-        frame = cv2.resize(frame, (max_width, int(h * max_width / w)), interpolation=cv2.INTER_AREA)
+    if w <= max_width:
+        return frame
+    return cv2.resize(frame, (max_width, int(h * max_width / w)), interpolation=cv2.INTER_AREA)
+
+
+def encode_jpeg(frame: np.ndarray, quality: int = 80) -> bytes:
     ok, buf = cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, quality])
     return buf.tobytes() if ok else b""
 
 
 class LiveFrames:
-    """Frames of one DetectionService, shared by every open stream: each picture is encoded once, and
-    again only when the frame, the detections or the card's text changed."""
+    """Frames of one DetectionService, shared by every open stream: each picture is drawn (and encoded as
+    JPEG) once, and again only when the frame, the detections or the card's text changed."""
 
     def __init__(self, service):
         self._service = service
         self._lock = threading.Lock()
-        self._jpeg = b""
-        self._jpeg_key = None
+        self._frame = None   # the picture now on screen, at most STREAM_MAX_WIDTH wide
+        self._jpeg = None    # self._frame as JPEG, once a stream asked for it
+        self._key = None
+
+    def _refresh(self) -> None:
+        """Draw the picture again if what should be on screen changed (called holding _lock)."""
+        key, make = self._picture()
+        if key != self._key:
+            frame = make()
+            if frame is not None:
+                self._frame, self._jpeg, self._key = fit_width(frame, settings.STREAM_MAX_WIDTH), None, key
+
+    def frame(self):
+        """Current annotated frame (BGR pixels) or a placeholder card, for WebRTC; None before the first."""
+        with self._lock:
+            self._refresh()
+            return self._frame
 
     def jpeg(self) -> bytes:
-        """Current annotated frame as JPEG, or a placeholder card."""
+        """Current annotated frame as JPEG, or a placeholder card, for the MJPEG stream."""
         with self._lock:
-            key, make = self._picture()
-            if key != self._jpeg_key:
-                frame = make()
-                if frame is not None:
-                    self._jpeg = encode_jpeg(frame, max_width=settings.STREAM_MAX_WIDTH)
-                    self._jpeg_key = key
-            return self._jpeg
+            self._refresh()
+            if self._jpeg is None and self._frame is not None:
+                self._jpeg = encode_jpeg(self._frame)
+            return self._jpeg or b""
 
     def _picture(self) -> tuple:
         """(key, make): what should be on screen now, and how to draw it. Cards carry the second they were

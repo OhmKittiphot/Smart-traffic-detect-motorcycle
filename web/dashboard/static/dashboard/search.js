@@ -1,8 +1,8 @@
 "use strict";
 
 // The records list of the plate search and violations pages. htmx sends the search form and puts the rows the
-// server renders into the table (_plate_search.html, _vehicle_rows.html); this script adds the source menu,
-// opening a row's details, and selecting rows to delete them.
+// server renders into the table (_plate_search.html, _vehicle_rows.html); this script searches the source
+// chosen in the source menu, opens a row's details, and selects rows to delete them.
 (() => {
   const { api } = window.Dashboard;
 
@@ -28,49 +28,14 @@
   });
 
   // ---------- source menu ----------
-  // Nested: "All sources", then each group (live cameras, video files) with its sources under it, shown with
-  // the arrow beside the group. Choosing a group lists the records of every source in it. The choice is
+  // The menu itself is an Alpine.js component (menus.js): "All sources", then each group (live cameras, video
+  // files) with its sources under it. Choosing a group lists the records of every source in it. The choice is
   // written into the hidden #search-source, whose "change" makes htmx search again.
 
-  const sourceMenu = $("source-menu");
-  const sourceBtn = sourceMenu.querySelector(".source-btn");
-  const sourceList = $("source-list");
-
-  function openSourceMenu(open) {
-    sourceList.hidden = !open;
-    sourceBtn.setAttribute("aria-expanded", String(open));
-  }
-
-  function expandGroup(group, open) {
-    group.querySelector(".source-children").hidden = !open;
-    group.querySelector(".source-toggle").setAttribute("aria-expanded", String(open));
-  }
-
-  sourceBtn.addEventListener("click", () => openSourceMenu(sourceList.hidden));
-  sourceList.addEventListener("click", (ev) => {
-    const toggle = ev.target.closest(".source-toggle");
-    if (toggle) {
-      const group = toggle.closest(".source-group");
-      expandGroup(group, group.querySelector(".source-children").hidden);
-      return;
-    }
-    const item = ev.target.closest(".source-item");
-    if (!item) return;
-    for (const i of sourceList.querySelectorAll(".source-item")) i.setAttribute("aria-pressed", String(i === item));
-    sourceBtn.querySelector(".source-btn-label").textContent = item.dataset.label;
-    openSourceMenu(false);
-    sourceBtn.focus();
-    if (sourceInput.value !== item.dataset.value) {
-      sourceInput.value = item.dataset.value;
-      sourceInput.dispatchEvent(new Event("change"));
-    }
-  });
-  document.addEventListener("click", (ev) => { if (!sourceMenu.contains(ev.target)) openSourceMenu(false); });
-  sourceMenu.addEventListener("keydown", (ev) => {
-    if (ev.key === "Escape" && !sourceList.hidden) {
-      openSourceMenu(false);
-      sourceBtn.focus();
-    }
+  $("source-menu").addEventListener("source-chosen", (ev) => {
+    if (sourceInput.value === ev.detail.value) return;
+    sourceInput.value = ev.detail.value;
+    sourceInput.dispatchEvent(new Event("change"));
   });
 
   // ---------- select & delete (Admin, violations page) ----------

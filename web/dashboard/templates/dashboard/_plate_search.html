@@ -33,28 +33,29 @@
   <section class="table-panel search-results" aria-label="{% translate "Search results" %}">
     <div class="table-head">
       <h2 id="result-title">{% translate "Results" %}</h2>
-      <div class="source-menu" id="source-menu">
+      {# Alpine.js components (menus.js); search.js puts the chosen source into #search-source #}
+      <div class="source-menu" id="source-menu" x-data="sourceMenu" @click.outside="close" @keydown.escape="escape">
         <input type="hidden" id="search-source" name="source" value="">
-        <button type="button" class="source-btn" aria-haspopup="true" aria-expanded="false" aria-controls="source-list">
-          <span class="source-btn-label">{% translate "All sources" %}</span>
+        <button type="button" class="source-btn" x-ref="button" @click="toggleList" :aria-expanded="open" aria-haspopup="true" aria-expanded="false" aria-controls="source-list">
+          <span class="source-btn-label" x-text="label">{% translate "All sources" %}</span>
           <svg viewBox="0 0 16 16" width="12" height="12" aria-hidden="true"><path d="m4 6 4 4 4-4" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
         </button>
-        <div class="source-list" id="source-list" hidden>
-          <button type="button" class="source-item" data-value="" data-label="{% translate "All sources" %}" aria-pressed="true">{% translate "All sources" %}</button>
+        <div class="source-list" id="source-list" :hidden="closed" hidden>
+          <button type="button" class="source-item" @click="choose" data-value="" data-label="{% translate "All sources" %}" aria-pressed="true">{% translate "All sources" %}</button>
           {% for mode, items in sources.items %}
           {% if mode == "live" %}{% translate "Live cameras" as group %}{% translate "All live cameras" as all %}{% translate "Show each of the live cameras" as show %}{% else %}{% translate "Video files" as group %}{% translate "All video files" as all %}{% translate "Show each of the video files" as show %}{% endif %}
-          <div class="source-group">
+          <div class="source-group" x-data="sourceGroup" data-expanded="false">
             <div class="source-group-head">
-              <button type="button" class="source-toggle" aria-expanded="false" aria-label="{{ show }}">
+              <button type="button" class="source-toggle" @click="toggleGroup" :aria-expanded="expanded" aria-expanded="false" aria-label="{{ show }}">
                 <svg viewBox="0 0 16 16" width="12" height="12" aria-hidden="true"><path d="m6 4 4 4-4 4" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
               </button>
-              <button type="button" class="source-item" data-value="{{ mode }}" data-label="{{ all }}" aria-pressed="false">
+              <button type="button" class="source-item" @click="choose" data-value="{{ mode }}" data-label="{{ all }}" aria-pressed="false">
                 {{ group }} <span class="source-count">{{ items|length }}</span>
               </button>
             </div>
-            <div class="source-children" hidden>
+            <div class="source-children" :hidden="collapsed" hidden>
               {% for value, label in items %}
-              <button type="button" class="source-item" data-value="{{ value }}" data-label="{{ label }}" aria-pressed="false">{{ label }}</button>
+              <button type="button" class="source-item" @click="choose" data-value="{{ value }}" data-label="{{ label }}" aria-pressed="false">{{ label }}</button>
               {% empty %}
               <span class="source-none muted">{% translate "None" %}</span>
               {% endfor %}
