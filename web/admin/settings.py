@@ -59,10 +59,11 @@ INSTALLED_APPS = [
     "django.contrib.contenttypes",
     "django.contrib.sessions",
     "django.contrib.messages",
+    # Before staticfiles: its runserver command (dashboard/management/commands/runserver.py) replaces that one
+    "dashboard",
     "django.contrib.staticfiles",
     "axes",
     "rest_framework",
-    "dashboard",
 ]
 
 MIDDLEWARE = [
