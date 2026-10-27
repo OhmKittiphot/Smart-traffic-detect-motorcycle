@@ -16,6 +16,7 @@ from province import THAI_PROVINCES
 
 from .models import SEEK_STEPS_S, Review, SourceMode, SystemSettings, TableFilter, Units, UserPreferences
 from .plate_search import MAX_QUERIES, MIN_QUERY_LENGTH, normalize_query, split_queries
+from .sources import list_video_files
 
 # Largest real distance accepted for a calibration side, in meters
 MAX_CALIBRATION_M = 500.0
@@ -108,13 +109,23 @@ class SourceSerializer(serializers.Serializer):
     # Video file name inside input/ (mode "file"), or add-on camera key (mode "live", empty = IP camera)
     file = serializers.CharField(required=False, allow_blank=True, default="")
     live = serializers.CharField(required=False, allow_blank=True, default="")
+    # Mode "file": video files to play one after another, in this order, instead of "file" alone
+    playlist = serializers.ListField(child=serializers.CharField(max_length=255), required=False, default=list,
+                                     max_length=500)
 
     def validate(self, data):
         # Only the choice that belongs to the selected mode is kept
         if data["mode"] == SourceMode.LIVE:
-            data["file"] = ""
-        else:
-            data["live"] = ""
+            data["file"], data["playlist"] = "", []
+            return data
+        data["live"] = ""
+        playlist = list(dict.fromkeys(data["playlist"]))   # each file once
+        if not set(playlist) <= set(list_video_files()):
+            raise serializers.ValidationError(_("A file of the playlist was not found"))
+        if playlist:
+            data["file"] = playlist[0]
+        # A single file is not a playlist
+        data["playlist"] = playlist if len(playlist) > 1 else []
         return data
 
 

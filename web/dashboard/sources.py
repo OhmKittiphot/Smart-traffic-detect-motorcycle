@@ -4,7 +4,7 @@ and the live cameras of optional add-ons (itic_cameras.py).
 Requests only ever name a source (a file name or a camera key); capture URLs come from .env and the add-ons,
 so a request can never make the server open a path or URL of its choice.
 """
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Optional
 
@@ -54,8 +54,10 @@ def rtsp_url() -> str:
 class VideoSource:
     """One video source, as the dashboard chooses it."""
     mode: str = "live"      # "live" or "file" (SourceMode)
-    video_file: str = ""    # mode "file": a name from list_video_files()
+    video_file: str = ""    # mode "file": a name from list_video_files(), the one playing
     live_key: str = ""      # mode "live": '' = IP camera, else a key of list_live_sources()
+    # mode "file": files played one after another, video_file among them; () = video_file alone
+    playlist: tuple = ()
 
     @classmethod
     def from_key(cls, source_key: str) -> "VideoSource":
@@ -85,7 +87,17 @@ class VideoSource:
         """Saved as VehicleRecord.source_name: the file name, the add-on camera's label, '' for the IP camera."""
         return self.video_file if self.is_file else self.live_label
 
+    def next_in_playlist(self) -> Optional["VideoSource"]:
+        """The same playlist on its file after this one (the first after the last), or None without one."""
+        if self.video_file not in self.playlist:
+            return None
+        following = (self.playlist.index(self.video_file) + 1) % len(self.playlist)
+        return replace(self, video_file=self.playlist[following])
+
     def describe(self) -> str:
+        if self.video_file in self.playlist:
+            number = self.playlist.index(self.video_file) + 1
+            return f"File: {self.video_file} ({number}/{len(self.playlist)})"
         if self.is_file:
             return f"File: {self.video_file}"
         return f"Live: {self.live_label}" if self.live_key else "Live camera (RTSP)"

@@ -11,8 +11,7 @@ window.Dashboard.onPage("#stream", (page) => {
   const $ = (id) => document.getElementById(id);
   const streamImg = $("stream");
   const form = $("source-form");
-  const fileSelect = $("file-select");
-  const liveSelect = $("live-select");   // only rendered when an add-on adds live cameras
+  const sourceList = $("source-pick-list");   // the source menu, an Alpine.js component (menus.js)
   const applyBtn = $("apply-btn");
   const playBtn = $("play-btn");
   const seekbar = $("seekbar");
@@ -25,6 +24,7 @@ window.Dashboard.onPage("#stream", (page) => {
   const rowsEl = $("vehicle-rows");
   const table = $("vehicles");
   const emptyMsg = $("empty-msg");
+  const loadMoreBtn = $("load-more");
 
   let lastId = 0;
   let busy = false;
@@ -39,18 +39,9 @@ window.Dashboard.onPage("#stream", (page) => {
     formMsg.className = "form-msg" + (kind ? " is-" + kind : "");
   }
 
-  function selectedMode() {
-    return form.querySelector('input[name="mode"]:checked').value;
-  }
-
-  function syncFormState() {
-    const mode = selectedMode();
-    fileSelect.disabled = mode !== "file" || !fileSelect.options.length || !fileSelect.value;
-    if (liveSelect) {
-      // Show only the dropdown that belongs to the selected mode
-      liveSelect.hidden = mode !== "live";
-      fileSelect.hidden = mode === "live";
-    }
+  // The source chosen in the source menu (a .source-item), or null before one is
+  function chosenSource() {
+    return sourceList.querySelector('.source-item[aria-pressed="true"]');
   }
 
   // ---------- status ----------
@@ -169,7 +160,18 @@ window.Dashboard.onPage("#stream", (page) => {
     rowsEl.prepend(frag);
     if (isNew && oldFirst) printRows(oldFirst.offsetTop - rowsEl.firstElementChild.offsetTop);
     lastId = Math.max(lastId, ...rows.map((r) => r.id));
-    while (rowsEl.children.length > MAX_ROWS) rowsEl.lastElementChild.remove();
+    if (rowsEl.children.length > MAX_ROWS) {
+      while (rowsEl.children.length > MAX_ROWS) rowsEl.lastElementChild.remove();
+      loadMoreBtn.hidden = false;   // the rows dropped at the bottom can be loaded again
+    }
+    updateEmpty();
+  }
+
+  // Older rows below the ones shown (Load more)
+  function appendRows(rows) {
+    const frag = document.createDocumentFragment();
+    for (const r of rows) frag.append(buildRow(r));
+    rowsEl.append(frag);
     updateEmpty();
   }
 
@@ -189,14 +191,31 @@ window.Dashboard.onPage("#stream", (page) => {
     emptyMsg.textContent = rowsEl.children.length ? gettext("No motorcycles match this filter") : gettext("No motorcycles yet");
   }
 
-  // The latest rows, then each new one as the server saves it (pushed, see watchRecords in common.js)
+  // The latest few rows, then each new one as the server saves it (pushed, see watchRecords in common.js);
+  // older rows only when Load more is pressed
   async function loadVehicles() {
     try {
-      addRows((await api("/api/vehicles/")).rows, false);
+      const data = await api("/api/vehicles/");
+      addRows(data.rows, false);
+      loadMoreBtn.hidden = !data.more;
     } catch (e) { /* the stream still brings the newest ones */ }
     if (page.signal.aborted) return;   // left while the rows were on their way
     page.onLeave(watchRecords({ after: lastId }, (data) => addRows(data.rows, true)));
   }
+
+  loadMoreBtn.addEventListener("click", async () => {
+    const oldest = rowsEl.lastElementChild?.dataset.id;
+    loadMoreBtn.disabled = true;
+    try {
+      const data = await api(`/api/vehicles/?before=${oldest}`);
+      appendRows(data.rows);
+      loadMoreBtn.hidden = !data.more;
+    } catch (e) {
+      showMsg(e.message, "error");
+    } finally {
+      loadMoreBtn.disabled = false;
+    }
+  });
 
   function selectFilter(filter) {
     for (const b of document.querySelectorAll(".filters .filter")) {
@@ -216,7 +235,7 @@ window.Dashboard.onPage("#stream", (page) => {
   // Evidence snapshot preview
   openSnapshotsFrom(rowsEl);
 
-  // Delete all records (after confirmation); the button is only there with the delete_records permission
+  // Delete all records (after confirmation)
   const clearDialog = $("clear-dialog");
   const clearBtn = $("clear-btn");
   clearBtn?.addEventListener("click", () => {
@@ -229,6 +248,7 @@ window.Dashboard.onPage("#stream", (page) => {
     try {
       await api("/api/vehicles/clear/", { method: "POST", body: "{}" });
       rowsEl.replaceChildren();
+      loadMoreBtn.hidden = true;
       updateEmpty();
     } catch (e) {
       showMsg(e.message, "error");
@@ -250,14 +270,22 @@ window.Dashboard.onPage("#stream", (page) => {
   }, { signal: page.signal });
 
   // ---------- source control ----------
-
-  form.addEventListener("change", syncFormState);
+  // The source menu (menus.js) marks the source chosen; Switch source switches to it
 
   form.addEventListener("submit", async (ev) => {
     ev.preventDefault();
-    const mode = selectedMode();
-    if (mode === "file" && !fileSelect.value) {
+    const source = chosenSource();
+    if (!source) {
       showMsg(gettext("No video file to choose"), "error");
+      return;
+    }
+    const mode = source.dataset.mode;
+    // The playlist item plays the ticked files, in the order listed
+    const playlist = source.dataset.playlist
+      ? [...sourceList.querySelectorAll('input[name="playlist"]:checked')].map((box) => box.value)
+      : [];
+    if (source.dataset.playlist && playlist.length < 2) {
+      showMsg(gettext("Tick at least two files for the playlist"), "error");
       return;
     }
     busy = true;
@@ -268,8 +296,9 @@ window.Dashboard.onPage("#stream", (page) => {
         method: "POST",
         body: JSON.stringify({
           mode,
-          file: mode === "file" ? fileSelect.value : "",
-          live: mode === "live" && liveSelect ? liveSelect.value : "",
+          file: mode === "file" ? source.dataset.value : "",
+          live: mode === "live" ? source.dataset.value : "",
+          playlist,
         }),
       });
       renderStatus(s);
@@ -462,7 +491,6 @@ window.Dashboard.onPage("#stream", (page) => {
   }, { signal: page.signal });
 
   // ---------- start ----------
-  syncFormState();
   page.onLeave(watchEvents(() => "/api/events/status/", { status: onStatus, error: () => { serverLost = true; } }));
   loadVehicles();
   page.every(drawPosition, 250);

@@ -14,6 +14,8 @@ class CameraSettings(models.Model):
     mode = models.CharField(max_length=8, choices=SourceMode.choices, default=SourceMode.LIVE)
     # File name inside VIDEO_INPUT_DIR, never a path
     video_file = models.CharField(max_length=255, blank=True)
+    # File names played one after another, video_file first; empty = video_file alone
+    playlist = models.JSONField(default=list, blank=True)
     # Live mode: '' = IP camera (RTSP_URL), else a key of engine.list_live_sources()
     live_source = models.CharField(max_length=64, blank=True)
     updated_at = models.DateTimeField(auto_now=True)

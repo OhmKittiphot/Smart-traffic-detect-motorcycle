@@ -15,6 +15,8 @@ import re
 LOOKALIKE_GROUPS = [
     "ขฃชซ", "คดตฅ", "บปษ", "ผฝพฟ", "ถภฎฏ", "ทฑ", "มฆ", "รธ", "อฮ", "ลสศ", "ญฌณ",
     "08", "38", "68", "17", "56",
+    # Read differently on the same motorcycle in different runs over input/IMG_9122.MOV
+    "รชซ", "ษฐศ", "ฐม", "ฐอ", "สฆ", "ซว", "ขย", "ษย", "ฑถ", "28", "46",
 ]
 _LOOKALIKES = {frozenset((a, b)) for group in LOOKALIKE_GROUPS for a in group for b in group if a != b}
 

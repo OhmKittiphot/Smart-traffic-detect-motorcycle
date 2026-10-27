@@ -29,7 +29,7 @@ class VideoStream:
     """
 
     def __init__(self, video_camera: str, display_fps: float = 30.0, on_end=None, initial_generation: int = 0,
-                 on_seek=None):
+                 on_seek=None, start_paused: bool = False):
         self.video_camera = video_camera
         self.display_fps = display_fps
         self.on_end = on_end     # called with the new generation when a file ended (back to the start, paused)
@@ -45,7 +45,8 @@ class VideoStream:
         # Start above the previous stream's generation when switching sources, so late results
         # (OCR, YOLO) from the old source are discarded as stale
         self.frames = FrameExchange(initial_generation)
-        self.playback = Playback()
+        # start_paused: a file waits on its first frame until play is pressed (a live stream never pauses)
+        self.playback = Playback(paused=start_paused and self.is_video_file)
         self.source_fps = float(display_fps)
 
         self._running = False
@@ -216,7 +217,8 @@ class VideoStream:
         grab_fail_streak = 0
         frames_since_start = 0
         reconnect_delay = _RECONNECT_MIN_S
-        show_one_frame = False   # a seek while paused still shows (and detects) the new position
+        # A seek while paused still shows (and detects) the new position; a file opened paused, its first frame
+        show_one_frame = self.playback.is_paused()
 
         while self._running:
             if clock and self._apply_seek(cap):

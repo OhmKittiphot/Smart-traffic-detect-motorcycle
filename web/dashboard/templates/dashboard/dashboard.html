@@ -49,26 +49,56 @@
     </div>
 
     <form id="source-form" class="controls">
-      <fieldset class="segmented" aria-label="{% translate "Video source" %}">
-        <legend class="sr-only">{% translate "Video source" %}</legend>
-        <label><input type="radio" name="mode" value="live" {% if saved.mode == "live" %}checked{% endif %}><span>{% translate "Live camera" %}</span></label>
-        <label><input type="radio" name="mode" value="file" {% if saved.mode == "file" %}checked{% endif %}><span>{% translate "Video file" %}</span></label>
-      </fieldset>
-      {% if live_sources %}
-      <select id="live-select" name="live" aria-label="{% translate "Choose a live camera" %}">
-        <option value="">{% translate "IP camera (RTSP)" %}</option>
-        {% for key, label in live_sources %}
-          <option value="{{ key }}" {% if key == saved.live_source %}selected{% endif %}>{{ label }}</option>
-        {% endfor %}
-      </select>
-      {% endif %}
-      <select id="file-select" name="file" aria-label="{% translate "Choose a video file" %}" {% if not video_files %}disabled{% endif %}>
-        {% for f in video_files %}
-          <option value="{{ f }}" {% if f == saved.video_file %}selected{% endif %}>{{ f }}</option>
-        {% empty %}
-          <option value="">{% translate "No files in the input/ folder" %}</option>
-        {% endfor %}
-      </select>
+      {% comment %}
+        One nested menu, like the search page's source menu: each kind of source (live cameras, video files)
+        opens to list its sources under it. The source chosen is switched to with Switch source.
+      {% endcomment %}
+      {# Alpine.js components (menus.js) #}
+      <div class="source-menu" id="source-picker" x-data="sourceMenu" @click.outside="close" @keydown.escape="escape">
+        <button type="button" class="source-btn" x-ref="button" @click="toggleList" :aria-expanded="open" aria-haspopup="true" aria-expanded="false" aria-controls="source-pick-list" aria-label="{% translate "Video source" %}">
+          <span class="source-btn-label" x-text="label">—</span>
+          <svg viewBox="0 0 16 16" width="12" height="12" aria-hidden="true"><path d="m4 6 4 4 4-4" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </button>
+        <div class="source-list" id="source-pick-list" :hidden="closed" hidden>
+          <div class="source-group" x-data="sourceGroup" data-expanded="{% if saved.mode == "live" %}true{% else %}false{% endif %}">
+            <button type="button" class="source-group-btn" @click="toggleGroup" :aria-expanded="expanded" aria-expanded="{% if saved.mode == "live" %}true{% else %}false{% endif %}">
+              <svg viewBox="0 0 16 16" width="12" height="12" aria-hidden="true"><path d="m6 4 4 4-4 4" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg> {% translate "Live camera" %} <span class="source-count">{{ live_sources|length|add:1 }}</span>
+            </button>
+            <div class="source-children" :hidden="collapsed" {% if saved.mode != "live" %}hidden{% endif %}>
+              <button type="button" class="source-item" @click="choose" data-mode="live" data-value="" data-label="{% translate "IP camera (RTSP)" %}" aria-pressed="{% if saved.mode == "live" and not saved.live_source %}true{% else %}false{% endif %}">{% translate "IP camera (RTSP)" %}</button>
+              {% for key, label in live_sources %}
+              <button type="button" class="source-item" @click="choose" data-mode="live" data-value="{{ key }}" data-label="{{ label }}" aria-pressed="{% if saved.mode == "live" and key == saved.live_source %}true{% else %}false{% endif %}">{{ label }}</button>
+              {% endfor %}
+            </div>
+          </div>
+          <div class="source-group" x-data="sourceGroup" data-expanded="{% if saved.mode == "file" %}true{% else %}false{% endif %}">
+            <button type="button" class="source-group-btn" @click="toggleGroup" :aria-expanded="expanded" aria-expanded="{% if saved.mode == "file" %}true{% else %}false{% endif %}">
+              <svg viewBox="0 0 16 16" width="12" height="12" aria-hidden="true"><path d="m6 4 4 4-4 4" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg> {% translate "Video file" %} <span class="source-count">{{ video_files|length }}</span>
+            </button>
+            <div class="source-children" :hidden="collapsed" {% if saved.mode != "file" %}hidden{% endif %}>
+              {% for f in video_files %}
+              <button type="button" class="source-item" @click="choose" data-mode="file" data-value="{{ f }}" data-label="{{ f }}" aria-pressed="{% if saved.mode == "file" and f == saved.video_file and not saved.playlist %}true{% else %}false{% endif %}">{{ f }}</button>
+              {% empty %}
+              <span class="source-none muted">{% translate "No files in the input/ folder" %}</span>
+              {% endfor %}
+            </div>
+          </div>
+          {% if video_files|length > 1 %}
+          {% comment %}Several video files played one after another: the ticked ones, in the order listed{% endcomment %}
+          <div class="source-group" x-data="sourceGroup" data-expanded="{% if saved.mode == "file" and saved.playlist %}true{% else %}false{% endif %}">
+            <button type="button" class="source-group-btn" @click="toggleGroup" :aria-expanded="expanded" aria-expanded="{% if saved.mode == "file" and saved.playlist %}true{% else %}false{% endif %}">
+              <svg viewBox="0 0 16 16" width="12" height="12" aria-hidden="true"><path d="m6 4 4 4-4 4" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg> {% translate "Playlist" %}
+            </button>
+            <div class="source-children" :hidden="collapsed" {% if saved.mode != "file" or not saved.playlist %}hidden{% endif %}>
+              {% for f in video_files %}
+              <label class="source-check"><input type="checkbox" name="playlist" value="{{ f }}" {% if saved.mode == "file" and f in saved.playlist %}checked{% endif %}> <span>{{ f }}</span></label>
+              {% endfor %}
+              <button type="button" class="source-item" @click="choose" data-mode="file" data-value="" data-playlist="true" data-label="{% translate "Playlist" %}" aria-pressed="{% if saved.mode == "file" and saved.playlist %}true{% else %}false{% endif %}">{% translate "Play the ticked files in order" %}</button>
+            </div>
+          </div>
+          {% endif %}
+        </div>
+      </div>
       <button type="submit" class="btn btn-primary" id="apply-btn">{% translate "Switch source" %}</button>
       <span id="form-msg" class="form-msg" role="status" aria-live="polite"></span>
     </form>
@@ -108,13 +138,11 @@
           </a>
         </div>
       </div>
-      {% if perms.dashboard.delete_records %}
       <!-- Trash icon: Bootstrap Icons "trash3" (MIT), inlined because the CSP allows no external files -->
       <button type="button" class="btn btn-sm btn-danger-ghost btn-clear" id="clear-btn">
         <span>{% translate "Delete all" %}</span>
         <svg class="bi" xmlns="http://www.w3.org/2000/svg" width="15" height="15" fill="currentColor" viewBox="0 0 16 16" aria-hidden="true"><path d="M6.5 1h3a.5.5 0 0 1 .5.5v1H6v-1a.5.5 0 0 1 .5-.5M11 2.5v-1A1.5 1.5 0 0 0 9.5 0h-3A1.5 1.5 0 0 0 5 1.5v1H1.5a.5.5 0 0 0 0 1h.538l.853 10.66A2 2 0 0 0 4.885 16h6.23a2 2 0 0 0 1.994-1.84l.853-10.66h.538a.5.5 0 0 0 0-1zm1.958 1-.846 10.58a1 1 0 0 1-.997.92h-6.23a1 1 0 0 1-.997-.92L3.042 3.5zm-7.487 1a.5.5 0 0 1 .528.47l.5 8.5a.5.5 0 0 1-.998.06L5 5.03a.5.5 0 0 1 .47-.53Zm5.058 0a.5.5 0 0 1 .47.53l-.5 8.5a.5.5 0 1 1-.998-.06l.5-8.5a.5.5 0 0 1 .528-.47M8 4.5a.5.5 0 0 1 .5.5v8.5a.5.5 0 0 1-1 0V5a.5.5 0 0 1 .5-.5"/></svg>
       </button>
-      {% endif %}
     </div>
     <div class="table-wrap">
       <table class="vehicles" id="vehicles" data-filter="{{ prefs.table_filter }}">
@@ -127,6 +155,8 @@
         <tbody id="vehicle-rows"></tbody>
       </table>
       <p class="empty muted" id="empty-msg">{% translate "No motorcycles yet" %}</p>
+      {# Only the latest rows are loaded at first; this adds older ones #}
+      <button type="button" class="btn btn-sm load-more" id="load-more" hidden>{% translate "Load more" %}</button>
     </div>
   </section>
 </main>

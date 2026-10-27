@@ -57,7 +57,7 @@ class PagePermissionMiddleware:
         ("/vehicles/review/", "dashboard.use_dashboard"),
         ("/vehicles/", "dashboard.view_records"),
         ("/api/vehicles/delete/", "dashboard.delete_records"),
-        ("/api/vehicles/clear/", "dashboard.delete_records"),
+        ("/api/vehicles/clear/", "dashboard.use_dashboard"),   # Delete all of the live view's table
         ("/api/stats/", "dashboard.view_records"),
         ("/snapshot/", "dashboard.view_records"),
     ]

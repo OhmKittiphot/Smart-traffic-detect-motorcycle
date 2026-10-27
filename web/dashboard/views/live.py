@@ -15,20 +15,29 @@ from ..serializers import PauseSerializer, SeekSerializer, SourceSerializer, Veh
 from ..sources import VideoSource
 from .common import audit, bad_request, conflict, running_service
 
-# Rows the table starts with; newer ones arrive on the event stream (events.py)
-_INITIAL_ROWS = 100
+# Rows the table starts with, and adds each time Load more is pressed; newer ones arrive on the event
+# stream (events.py). Few, so opening the live view loads only a few rows and their photos
+_PAGE_ROWS = 10
 
 
 class VehicleListView(APIView):
     def get(self, request):
-        """The latest rows, newest first, that the table starts with."""
-        records = VehicleRecord.objects.select_related("reviewed_by")[:_INITIAL_ROWS]
-        return Response({"rows": VehicleRecordSerializer(records, many=True).data})
+        """The latest rows, newest first, that the table starts with; with ?before=<id>, the rows older
+        than that one (Load more). "more" says whether older rows are left."""
+        records = VehicleRecord.objects.select_related("reviewed_by")
+        before = request.query_params.get("before", "")
+        if before:
+            if not before.isdigit():
+                return bad_request("before must be a record id")
+            records = records.filter(id__lt=int(before))
+        page = list(records[:_PAGE_ROWS + 1])
+        return Response({"rows": VehicleRecordSerializer(page[:_PAGE_ROWS], many=True).data,
+                         "more": len(page) > _PAGE_ROWS})
 
 
 class VehicleClearView(APIView):
     def post(self, request):
-        """Delete every vehicle record and its evidence snapshot (live view; needs delete_records)."""
+        """Delete every vehicle record and its evidence snapshot (Delete all of the live view, for staff)."""
         deleted = storage.delete_records(VehicleRecord.objects.values_list("id", flat=True))
         audit(request, "clear_vehicles", f"{deleted} records")
         return Response({"deleted": deleted})
@@ -40,7 +49,7 @@ class SourceView(APIView):
         serializer = SourceSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         data = serializer.validated_data
-        source = VideoSource(data["mode"], data["file"], data["live"])
+        source = VideoSource(data["mode"], data["file"], data["live"], tuple(data["playlist"]))
 
         service = running_service()
         try:
@@ -52,6 +61,7 @@ class SourceView(APIView):
 
         saved = CameraSettings.load()
         saved.mode, saved.video_file, saved.live_source = source.mode, source.video_file, source.live_key
+        saved.playlist = list(source.playlist)
         saved.updated_by = request.user
         saved.save()
         audit(request, "switch_source", source.describe())

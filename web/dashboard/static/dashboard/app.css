@@ -311,17 +311,13 @@ a.brand:focus-visible { outline: 2px solid var(--accent); outline-offset: 4px; }
 .badge[data-kind=live]::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: #fff;
   animation: blink 1.2s infinite; }
 .badge[data-kind=file] { background: var(--accent); color: #fff; }
-.badge[data-kind=paused] { background: rgba(0, 0, 0, .55); color: #fff; }
+/* Paused: white with black text on the dark theme, a dark see-through chip on the light theme */
+.badge[data-kind=paused] { background: #fff; color: #000; }
+:root[data-theme="light"] .badge[data-kind=paused] { background: rgba(0, 0, 0, .55); color: #fff; }
 @keyframes blink { 50% { opacity: .25; } }
 @media (prefers-reduced-motion: reduce) { .badge[data-kind=live]::before { animation: none; } }
 
 .controls { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; padding: 12px 0 16px; }
-.segmented { display: inline-flex; border: 1px solid var(--border); border-radius: 8px; padding: 2px; margin: 0; background: var(--bg); }
-.segmented label { position: relative; }
-.segmented input { position: absolute; opacity: 0; inset: 0; cursor: pointer; }
-.segmented span { display: block; padding: 6px 14px; border-radius: 6px; cursor: pointer; color: var(--muted); }
-.segmented input:checked + span { background: var(--panel-2); color: var(--text); box-shadow: inset 0 0 0 1px var(--border); }
-.segmented input:focus-visible + span { outline: 2px solid var(--accent); }
 .form-msg { font-size: 13px; }
 .form-msg.is-error { color: var(--bad-text); }
 .form-msg.is-ok { color: var(--ok-text); }
@@ -517,7 +513,19 @@ a.filter:hover { color: var(--text); border-color: var(--border-strong); }
 /* Sources under their group: indented, with a line down the left like a tree */
 .source-children { margin: 0 0 4px 13px; padding-left: 13px; border-left: 1px solid var(--border); }
 .source-none { display: block; padding: 6px 10px; font-size: 12px; }
-@media (prefers-reduced-motion: reduce) { .source-list { animation: none; } .source-toggle svg { transition: none; } }
+.source-check { display: flex; align-items: center; gap: 8px; padding: 6px 10px; border-radius: 6px; font-size: 13px;
+  cursor: pointer; }
+.source-check:hover { background: var(--panel-2); }
+.source-check span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* Live view's source menu: a kind of source only opens to list its sources (one of them must be chosen) */
+.controls .source-btn { height: 36px; }
+.source-group-btn { display: flex; align-items: center; gap: 6px; width: 100%; padding: 6px 8px; border: 0;
+  border-radius: 6px; background: none; font-size: 13px; font-weight: 600; text-align: left; cursor: pointer; }
+.source-group-btn:hover { background: var(--panel-2); }
+.source-group-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.source-group-btn svg { color: var(--muted); transition: transform .15s ease; }
+.source-group-btn[aria-expanded="true"] svg { transform: rotate(90deg); }
+@media (prefers-reduced-motion: reduce) { .source-list { animation: none; } .source-toggle svg, .source-group-btn svg { transition: none; } }
 /* Violations page (Admin): Delete turns on selection mode. The checkbox column grows in from nothing,
    All / Cancel fade in beside the button, and selected rows are tinted */
 /* Delete and the selection buttons share one spot, right-aligned, and cross-fade */
@@ -627,6 +635,7 @@ a.filter:hover { color: var(--text); border-color: var(--border-strong); }
 @media (prefers-reduced-motion: reduce) { .kpi-meter > span { transition: none; } }
 
 .stats-charts { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 2fr); gap: 1px; background: var(--border); }
+.stats-charts-wide-first { grid-template-columns: minmax(0, 3fr) minmax(0, 2fr); }
 @media (max-width: 900px) { .stats-charts { grid-template-columns: minmax(0, 1fr); } }
 .chart-panel { display: flex; flex-direction: column; gap: 14px; margin: 0; padding: 14px 18px; background: var(--panel); }
 .chart-title { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 8px; }
@@ -678,11 +687,12 @@ a.filter:hover { color: var(--text); border-color: var(--border-strong); }
 .repeat-none { padding: 18px 0; text-align: center; }
 
 /* Month heatmap laid out as a calendar: a column per weekday (Monday first), a row per week, a cell per day,
-   darker for more violations */
+   darker for more violations. The days are squares as wide as the panel allows */
 .cal-nav { display: inline-flex; align-items: center; gap: 4px; font-weight: 600; text-transform: none; letter-spacing: 0;
   font-size: 12px; color: var(--text); }
 #cal-month { min-width: 110px; text-align: center; }
-.calendar { display: grid; grid-template-columns: repeat(7, minmax(0, 40px)); justify-content: center; gap: 3px; font-size: 10px;
+/* Some room on each side, so the days do not run up to the panel's edges */
+.calendar { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 3px; padding: 0 24px; font-size: 10px;
   line-height: 14px; color: var(--muted); }
 .calendar .chart-loading { grid-column: 1 / -1; }
 .heat-weekday { text-align: center; }

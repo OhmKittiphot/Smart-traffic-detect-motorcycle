@@ -109,7 +109,7 @@ class PlateDetector(_YoloModel):
     def detect(self, frame, mc_bboxes, search_rois: bool) -> list:
         """Plate boxes [x1, y1, x2, y2, conf] in frame coordinates. search_rois: look only inside the
         motorcycles (config.plate_search "roi"), else in the whole frame."""
-        options = dict(conf=self.config.detection_conf, classes=self.classes)
+        options = dict(conf=self.config.plate_conf, classes=self.classes)
         if not search_rois:
             results = self._predict(frame, self.config.plate_imgsz, **options)
             return [[x1, y1, x2, y2, conf] for r in results for x1, y1, x2, y2, conf, _ in _boxes(r)]

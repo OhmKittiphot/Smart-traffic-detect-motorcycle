@@ -60,6 +60,9 @@ msgstr[0] "และฝ่าฝืนอีก %s ครั้ง"
 msgid "Detection stopped"
 msgstr "ระบบตรวจจับหยุดทำงาน"
 
+msgid "Tick at least two files for the playlist"
+msgstr "ติ๊กอย่างน้อยสองไฟล์สำหรับเพลย์ลิสต์"
+
 msgid "a deleted user"
 msgstr "ผู้ใช้ที่ถูกลบ"
 
@@ -429,7 +432,7 @@ msgid "Unknown"
 msgstr "ไม่ทราบ"
 
 msgid "Unreadable"
-msgstr "อ่านไม่ได้"
+msgstr "ไม่พบป้ายทะเบียน"
 
 msgid "Unreadable plate"
 msgstr "อ่านป้ายทะเบียนไม่ได้"

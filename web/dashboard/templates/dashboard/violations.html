@@ -57,7 +57,8 @@
           <div id="per-day" class="day-chart"><p class="chart-loading"><span class="value-loading" aria-label="{% translate "Loading" %}"></span></p></div>
         </figure>
       </div>
-      <div class="stats-charts">
+      {# The calendar takes the narrow column, so its square days fill it at about the list's height #}
+      <div class="stats-charts stats-charts-wide-first">
         <figure class="chart-panel">
           <div class="chart-title">{% translate "Repeat offenders" %} <span class="chart-legend">{% translate "Click a plate to search it" %}</span></div>
           <ol id="repeat" class="repeat-list"><li class="chart-loading"><span class="value-loading" aria-label="{% translate "Loading" %}"></span></li></ol>

@@ -30,6 +30,9 @@ msgstr "(แสดง %(n)s รายการล่าสุด)"
 msgid "0 = not checked"
 msgstr "0 = ไม่ตรวจ"
 
+msgid "A file of the playlist was not found"
+msgstr "ไม่พบไฟล์บางไฟล์ในเพลย์ลิสต์"
+
 msgid "Administrators only"
 msgstr "สำหรับผู้ดูแลระบบเท่านั้น"
 
@@ -168,6 +171,12 @@ msgstr "ป้ายทะเบียน %(plate)s"
 msgid "Plate photo"
 msgstr "ภาพป้ายทะเบียน"
 
+msgid "Play the ticked files in order"
+msgstr "เล่นไฟล์ที่ติ๊กไว้ตามลำดับ"
+
+msgid "Playlist"
+msgstr "เพลย์ลิสต์"
+
 msgid "Review undone"
 msgstr "ยกเลิกการตรวจสอบแล้ว"
 
@@ -193,7 +202,7 @@ msgid "Unknown"
 msgstr "ไม่ทราบ"
 
 msgid "Unreadable"
-msgstr "อ่านไม่ได้"
+msgstr "ไม่พบป้ายทะเบียน"
 
 msgid "View evidence photo"
 msgstr "ดูภาพหลักฐาน"

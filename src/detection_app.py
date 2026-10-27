@@ -20,8 +20,13 @@ class DetectionApp:
     (YoloPipeline, in the processing thread) and plate OCR (OcrProcess). Models and the OCR process stay
     loaded when the source is switched. Shown in a desktop window by DesktopViewer, or in the web dashboard."""
 
-    def __init__(self, config, video_camera: str, device, use_half):
+    def __init__(self, config, video_camera: str, device, use_half, start_paused: bool = False,
+                 on_file_end=None):
         self.config = config
+        self.start_paused = start_paused   # video files open paused (the web dashboard: staff press play)
+        # Called (from the capture thread) when a video file has played to its end, e.g. to open the next
+        # file of a playlist
+        self.on_file_end = on_file_end
         if torch.cuda.is_available():
             torch.cuda.empty_cache()
 
@@ -81,13 +86,14 @@ class DetectionApp:
         else:
             print("[Speed] Not calibrated. Press [C] in the video window to calibrate.")
 
-    def _new_stream(self, video_camera: str, initial_generation: int = 0) -> VideoStream:
+    def _new_stream(self, video_camera: str, initial_generation: int = 0, paused=None) -> VideoStream:
         return VideoStream(
             video_camera=video_camera,
             display_fps=self.config.display_fps,
             on_end=self._on_video_end,
             on_seek=self._on_video_seek,
             initial_generation=initial_generation,
+            start_paused=self.start_paused if paused is None else paused,
         )
 
     # ----- media session: tracks, OCR votes and speeds of one stretch of video -----
@@ -112,6 +118,8 @@ class DetectionApp:
         # Motorcycles still in view at the last frame are reported before playback restarts
         with self.det_lock:
             self._reset_media_session()
+        if self.on_file_end:
+            self.on_file_end()
 
     def _on_video_seek(self, _generation: int):
         # Motorcycles in view before the jump were only partly seen: drop them instead of reporting
@@ -171,15 +179,17 @@ class DetectionApp:
         problems += [p for p in (self.ocr.problem(), self.video_stream.error) if p]
         return problems
 
-    def switch_source(self, video_camera: str):
-        """Replace the video source while models and the OCR process keep running."""
+    def switch_source(self, video_camera: str, paused=None):
+        """Replace the video source while models and the OCR process keep running. paused: whether a video
+        file opens paused (None: as start_paused says)."""
         with self._source_lock:
             old = self.video_stream
             old.stop()
             with self.det_lock:
                 self._reset_media_session()
             self.stats.clear()
-            self.video_stream = self._new_stream(video_camera, initial_generation=old.frames.generation + 1)
+            self.video_stream = self._new_stream(video_camera, initial_generation=old.frames.generation + 1,
+                                                 paused=paused)
             if self._workers_started:
                 self.video_stream.start()
 

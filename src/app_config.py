@@ -46,14 +46,19 @@ class AppConfig:
     # 0 = the box itself: on the video it found 138 plates vs 102 with (0.2, 0.1), whose larger region
     # shrinks the plate
     plate_roi_pad: tuple = (0.0, 0.0)
-    # Motorcycles shorter than this (pixels) are too far away for a readable plate and are skipped.
-    # On the 1080p video, OCR read nothing useful from bikes under ~220 px; skipping them cut plate search
-    # from 54 to 17 ms on frames with 5+ bikes (where playback lagged) and kept 93 of 95 plates >= 25 px tall
-    plate_min_bike_h: int = 200
+    # Plate settings favour finding a plate over reading it exactly (the plate search tolerates misreads).
+    # On input/IMG_9122.MOV these four together gave a plate to 40% of motorcycles, against 26% with
+    # the stricter 200 px / 0.2 / 0.25 / 0.40; going lower still (80 px, 0.1) found no more, only partial reads.
+    # Motorcycles shorter than this (pixels) are too far away for a plate and are skipped (it also keeps
+    # plate search fast on frames with many small bikes)
+    plate_min_bike_h: int = 120
     # Plate boxes taller than this fraction of their motorcycle are dropped. On the video real plates
     # were 0.09-0.17 of the bike height; boxes around a whole bike, wheel or rider were 0.23-0.48
-    plate_max_bike_h_ratio: float = 0.2
+    plate_max_bike_h_ratio: float = 0.25
     detection_conf: float = 0.25
+    # Plate detector confidence, lower than the motorcycles': a missed plate costs more than a false one,
+    # which OCR then reads as nothing
+    plate_conf: float = 0.15
     helmet_conf: float = 0.25
     # Lower threshold for counting riders only: a passenger's head behind the driver often scores
     # 0.25-0.4, while single-rider bikes show no extra heads even far below this.
@@ -87,7 +92,8 @@ class AppConfig:
     
     # Display parameters
     display_fps: int = 25
-    ocr_conf_threshold: float = 0.40
+    # Lowest voted OCR confidence a plate is kept with (see the plate settings above)
+    ocr_conf_threshold: float = 0.20
     ocr_cache_ttl_s: float = 5.0
     ocr_cache_distance: float = 120.0
 

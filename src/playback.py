@@ -19,9 +19,9 @@ class Playback:
     holding is True while playback waits for the processing thread (start of the video, after a seek).
     """
 
-    def __init__(self):
+    def __init__(self, paused: bool = False):
         self._lock = threading.Lock()
-        self._paused = False
+        self._paused = paused
         self._position_ms = 0.0
         self._total_ms = 0.0
         self._seek_request_ms: Optional[float] = None

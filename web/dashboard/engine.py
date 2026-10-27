@@ -67,8 +67,8 @@ class DetectionService:
             self.config = replace(AppConfig.from_env(), max_riders=rules.max_riders,
                                   speed_limit_kmh=float(rules.speed_limit_kmh))
             saved = CameraSettings.load()
-            source = VideoSource(saved.mode, saved.video_file if saved.mode == "file" else "",
-                                 saved.live_source if saved.mode == "live" else "")
+            source = (VideoSource("file", saved.video_file, playlist=tuple(saved.playlist))
+                      if saved.mode == "file" else VideoSource("live", live_key=saved.live_source))
             url = source.capture_url(self.config.rtsp_url)
             if url is None:
                 # Saved file or add-on camera no longer exists: fall back to the IP camera
@@ -80,7 +80,9 @@ class DetectionService:
             device, use_half = configure_torch_runtime()
             if device == "cpu":
                 log.warning("CUDA is not available: detection runs on the CPU and will be slow.")
-            self.app = DetectionApp(self.config, url or _UNCONFIGURED_CAMERA, device, use_half)
+            # A video file plays only when staff press play on the live view
+            self.app = DetectionApp(self.config, url or _UNCONFIGURED_CAMERA, device, use_half, start_paused=True,
+                                    on_file_end=self._play_next_file)
             add_report_listener(self._recorder)
             self._apply_calibration()
             self.app.start_workers()
@@ -133,8 +135,9 @@ class DetectionService:
 
     # ----- source control -----
 
-    def switch(self, source: VideoSource) -> None:
-        """Raises ValueError for an invalid choice, RuntimeError while the pipeline is not ready."""
+    def switch(self, source: VideoSource, paused: Optional[bool] = None) -> None:
+        """paused: whether a video file opens paused (None: paused, until staff press play).
+        Raises ValueError for an invalid choice, RuntimeError while the pipeline is not ready."""
         if self.state != self.RUNNING:
             raise RuntimeError(_("Detection is not ready yet"))
         url = source.capture_url(self.config.rtsp_url)
@@ -142,10 +145,29 @@ class DetectionService:
             raise ValueError(_("The selected video file was not found") if source.is_file
                              else _("The selected camera is not available"))
         with self._lock:
-            self.app.switch_source(url or _UNCONFIGURED_CAMERA)
+            self.app.switch_source(url or _UNCONFIGURED_CAMERA, paused)
             self.source = source
             self._apply_calibration()
         log.info("Source switched to %s.", source.describe())
+
+    def _play_next_file(self) -> None:
+        """A video file played to its end: a playlist goes on with its next file, playing, and after its last
+        file opens its first one, paused. Switched in a thread of its own, since the switch stops the capture
+        thread this is called from."""
+        ended = self.source
+        following = ended.next_in_playlist()
+        if following is None:
+            return
+
+        def play():
+            if self.source is not ended:
+                return   # staff chose another source meanwhile
+            try:
+                self.switch(following, paused=following.video_file == following.playlist[0])
+            except (ValueError, RuntimeError) as e:
+                log.warning("The playlist stops: %s", e)
+
+        threading.Thread(target=play, daemon=True, name="PlaylistNext").start()
 
     def _file_playback(self, error: str):
         if self.state != self.RUNNING or not self.source.is_file:
