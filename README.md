@@ -51,7 +51,6 @@ venv\Scripts\python src\main.py
 | โฟลเดอร์ | เนื้อหา |
 |---|---|
 | `src/` | ระบบตรวจจับ (ใช้ร่วมกันทั้งโปรแกรมบนเครื่องและเว็บ) และโปรแกรมบนเครื่อง (`main.py`) |
-| `web/` | เว็บ Django (`dashboard/`) และตัวเปิดเซิร์ฟเวอร์ (`run.py`) |
+| `web/` | เว็บ Django (`dashboard/`), ตัวเปิดเซิร์ฟเวอร์ (`run.py`) และฐานข้อมูล (`database/db.sqlite3`, ไม่อยู่ใน git) |
 | `models/` | โมเดลที่ train แล้ว |
 | `input/` | ไฟล์วิดีโอ (ไม่อยู่ใน git) |
-| `database/` | ฐานข้อมูลของเว็บ `db.sqlite3` (ไม่อยู่ใน git) |

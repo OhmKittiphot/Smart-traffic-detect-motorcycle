@@ -107,8 +107,8 @@ TEMPLATES = [
     },
 ]
 
-# The database has a folder of its own at the repository root (SQLite cannot create it)
-DATA_DIR = PROJECT_DIR / "database"
+# The database has a folder of its own (SQLite cannot create it)
+DATA_DIR = BASE_DIR / "database"
 DATA_DIR.mkdir(exist_ok=True)
 
 DATABASES = {
