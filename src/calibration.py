@@ -5,8 +5,9 @@ from render import draw_text_on_cv_img
 class CalibrationController:
     """Manages interactive ground-plane speed calibration via mouse clicks and keyboard."""
 
-    def __init__(self, speed_estimator, on_pause=None, on_resume=None):
+    def __init__(self, speed_estimator, lock, on_pause=None, on_resume=None):
         self.speed_estimator = speed_estimator
+        self.lock = lock   # DetectionApp.det_lock: the processing thread uses the estimator meanwhile
         self.on_pause = on_pause
         self.on_resume = on_resume
 
@@ -73,7 +74,8 @@ class CalibrationController:
     def _apply_calibration(self, w: float, l: float):
         pts = list(self.pts)
         try:
-            self.speed_estimator.set_calibration(pts, (w, l))
+            with self.lock:
+                self.speed_estimator.set_calibration(pts, (w, l))
         except Exception as e:
             # Let the user re-click instead of leaving the window stuck
             self.pts = []

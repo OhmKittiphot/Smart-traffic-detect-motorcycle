@@ -3,6 +3,7 @@ import queue
 import time
 
 from ocr import ocr_worker
+from utils import log
 
 # First launch can be slow while PaddleOCR downloads/loads its models
 OCR_STARTUP_TIMEOUT_S = 120.0
@@ -22,7 +23,7 @@ class OcrProcess:
         """Start the process and block until it reports ready; raise if it failed or died."""
         self._proc.start()
         self._started = True
-        print("Waiting for OCR Process...")
+        log.info("Waiting for OCR Process...")
         deadline = time.time() + OCR_STARTUP_TIMEOUT_S
         while time.time() < deadline:
             try:
@@ -33,10 +34,10 @@ class OcrProcess:
                 continue
             if isinstance(msg, dict) and "error" in msg:
                 raise RuntimeError(msg["error"])
-            print(f"OCR Process Status: {msg}")
+            log.info("OCR Process Status: %s", msg)
             return
         # First run may still be downloading PaddleOCR models; keep going and let results arrive later
-        print(f"[OCR] Not ready after {OCR_STARTUP_TIMEOUT_S:.0f}s; continuing while it loads.")
+        log.warning("[OCR] Not ready after %.0fs; continuing while it loads.", OCR_STARTUP_TIMEOUT_S)
 
     def problem(self):
         """Why OCR stopped working, or None while it is fine (or not started yet)."""
@@ -59,6 +60,6 @@ class OcrProcess:
             pass
         self._proc.join(timeout=3)
         if self._proc.is_alive():
-            print("[OCR] Process did not exit in time; terminating.")
+            log.warning("[OCR] Process did not exit in time; terminating.")
             self._proc.terminate()
             self._proc.join(timeout=2)

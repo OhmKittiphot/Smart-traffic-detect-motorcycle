@@ -321,9 +321,11 @@ window.Dashboard.onPage("#stream", (page) => {
     node.classList.add(cls);
   }
 
-  async function togglePause() {
+  // paused: true / false sets it; left out, it flips
+  async function setPaused(paused) {
     try {
-      const r = await api("/api/pause/", { method: "POST", body: "{}" });
+      const body = JSON.stringify(paused === undefined ? {} : { paused });
+      const r = await api("/api/pause/", { method: "POST", body });
       playBtn.classList.toggle("is-paused", r.paused);
       pauseOverlay.hidden = !r.paused;   // pops in when shown
       if (!r.paused) restartAnimation(playFlash, "is-shown");
@@ -332,6 +334,8 @@ window.Dashboard.onPage("#stream", (page) => {
       showMsg(e.message, "error");
     }
   }
+
+  const togglePause = () => setPaused();
 
   async function seekTo(posMs) {
     posMs = Math.max(0, Math.min(playback.total, posMs));
@@ -421,15 +425,20 @@ window.Dashboard.onPage("#stream", (page) => {
   }
 
   calibBtn.addEventListener("click", async () => {
+    // A playing video file is paused while its points are clicked, then plays on when the dialog closes
+    const resume = !seekbar.hidden && playback.playing;
     try {
+      if (resume) await setPaused(true);
       const c = await api("/api/calibration/");
       window.CalibrationEditor.open({
         ...c,
         frameUrl: "/api/calibration/frame/",
         save: (body) => api("/api/calibration/save/", { method: "POST", body: JSON.stringify(body) }),
         onSaved: () => showMsg(gettext("Speed calibration saved"), "ok"),
+        onClose: () => { if (resume) setPaused(false); },
       });
     } catch (e) {
+      if (resume) setPaused(false);
       showMsg(e.message, "error");
     }
   });

@@ -12,7 +12,7 @@ from render import draw_calibration, draw_detections, draw_video_overlay
 from report import print_motorcycle_reports
 from speed import SpeedEstimator, parse_calibration
 from tracker import MotorcycleTracker
-from utils import log_error
+from utils import log, log_error
 from video_stream import VideoStream
 from yolo_pipeline import YoloPipeline
 
@@ -84,11 +84,11 @@ class DetectionApp:
         if calib:
             try:
                 self.speed_estimator.set_calibration(*calib)
-                print("[Speed] Calibration loaded from env.")
+                log.info("[Speed] Calibration loaded from env.")
             except Exception as e:
-                print(f"[Speed] Invalid calibration in env ({e}). Press [C] to recalibrate.")
+                log.warning("[Speed] Invalid calibration in env (%s). Press [C] to recalibrate.", e)
         else:
-            print("[Speed] Not calibrated. Press [C] in the video window to calibrate.")
+            log.info("[Speed] Not calibrated. Press [C] in the video window to calibrate.")
 
     def _new_stream(self, video_camera: str, initial_generation: int = 0, paused=None) -> VideoStream:
         return VideoStream(
@@ -102,15 +102,15 @@ class DetectionApp:
 
     # ----- media session: tracks, OCR votes and speeds of one stretch of video -----
 
-    def _report_remaining(self):
-        """Print reports for motorcycles still in view (end of video / shutdown)."""
-        print_motorcycle_reports(self.tracker.drain(), self.speed_estimator.calibrated,
-                                 self.config.report_min_frames)
+    def _report(self, finished) -> None:
+        """Report motorcycles that left (or were still in view at the end). Called without det_lock: a report
+        listener may write to a database and disk (the web dashboard), which must not hold up detection."""
+        print_motorcycle_reports(finished, self.speed_estimator.calibrated, self.config.report_min_frames)
 
-    def _reset_media_session(self, report: bool = True):
-        """Clear tracker / OCR / speed state bound to the playback session."""
-        if report:
-            self._report_remaining()
+    def _reset_media_session(self) -> list:
+        """Clear tracker / OCR / speed state bound to the playback session (called holding det_lock).
+        Returns the motorcycles still in view, for _report() once the lock is released."""
+        finished = self.tracker.drain()
         self.tracker.reset()
         self.ocr_manager.reset()
         self.speed_estimator.reset()
@@ -119,18 +119,20 @@ class DetectionApp:
         self.yolo_pipeline.reset()
         self.latest_detections = []
         self.stats.forget_last()
+        return finished
 
     def _on_video_end(self, _generation: int):
         # Motorcycles still in view at the last frame are reported before playback restarts
         with self.det_lock:
-            self._reset_media_session()
+            finished = self._reset_media_session()
+        self._report(finished)
         if self.on_file_end:
             self.on_file_end()
 
     def _on_video_seek(self, _generation: int):
         # Motorcycles in view before the jump were only partly seen: drop them instead of reporting
         with self.det_lock:
-            self._reset_media_session(report=False)
+            self._reset_media_session()
 
     # ----- moving camera -----
 
@@ -166,12 +168,14 @@ class DetectionApp:
                 continue
 
             current_gen = frames.generation
+            finished = []
             with self.det_lock:
                 if frame_gen < current_gen:
                     continue
                 if frame_gen != self._proc_gen:
-                    self._reset_media_session()
+                    finished = self._reset_media_session()
                     self._proc_gen = frame_gen
+            self._report(finished)
 
             try:
                 self._follow_camera(frame)
@@ -192,7 +196,7 @@ class DetectionApp:
     def start_workers(self):
         """Start OCR, capture and processing in the background. Returns once OCR is ready."""
         self.ocr.start()
-        print("Warming up models...")
+        log.info("Warming up models...")
         self.yolo_pipeline.warmup()
         self.video_stream.start()
         self._worker_threads = [threading.Thread(target=self._yolo_fn, daemon=True, name="YOLO"),
@@ -214,7 +218,8 @@ class DetectionApp:
             old = self.video_stream
             old.stop()
             with self.det_lock:
-                self._reset_media_session()
+                finished = self._reset_media_session()
+            self._report(finished)
             self.stats.clear()
             self.video_stream = self._new_stream(video_camera, initial_generation=old.frames.generation + 1,
                                                  paused=paused)
@@ -228,7 +233,8 @@ class DetectionApp:
         self.ocr_handler.stop()
         self.video_stream.stop()
         with self.det_lock:
-            self._report_remaining()
+            finished = self.tracker.drain()
+        self._report(finished)
         self.ocr.stop()
 
     # ----- drawing -----

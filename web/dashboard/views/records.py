@@ -19,8 +19,7 @@ from rest_framework.views import APIView
 from .. import storage
 from ..models import Review, VehicleRecord, Violation
 from ..plate_search import group_plates, normalize_query, rank_plates, split_queries
-from ..serializers import (PlateSearchSerializer, ReviewSerializer, StatsQuerySerializer, VehicleDeleteSerializer,
-                           VehicleRecordSerializer)
+from ..serializers import PlateSearchSerializer, ReviewSerializer, StatsQuerySerializer, VehicleDeleteSerializer
 from .common import audit
 
 # Plate search: lowest similarity shown, and how many matching plates / rows are returned
@@ -38,18 +37,23 @@ _REPEAT_ROWS = 8
 
 # ---------- finding records ----------
 
+def _from_source(records, source):
+    """records saved from `source` (validated, see serializers._known_source); "" keeps them all."""
+    if source:
+        mode, one_source, name = source.partition(":")
+        records = records.filter(source_mode=mode)
+        if one_source:   # "<mode>:<name>" is one camera or file; "<mode>" alone is the whole group
+            records = records.filter(source_name=name)
+    return records
+
+
 def _filtered(records, filters):
     """records narrowed by the list's filters (validated PlateSearchSerializer data)."""
     if filters["violations_only"]:
         records = records.filter(is_violation=True)
     if filters["province"]:
         records = records.filter(province_text=filters["province"])
-    if filters["source"]:
-        mode, one_source, name = filters["source"].partition(":")
-        records = records.filter(source_mode=mode)
-        if one_source:   # "<mode>:<name>" is one camera or file; "<mode>" alone is the whole group
-            records = records.filter(source_name=name)
-    return records
+    return _from_source(records, filters["source"])
 
 
 def _plate_matches(q, filters) -> list:
@@ -163,17 +167,17 @@ class VehicleDeleteView(APIView):
 
 # ---------- statistics and photos ----------
 
-def _in_days(first, last):
-    """Records detected from the start of local day `first` to the end of local day `last`."""
+def _in_days(first, last, source=""):
+    """Records of `source` detected from the start of local day `first` to the end of local day `last`."""
     def midnight(day):
         return timezone.make_aware(datetime.combine(day, time.min))
-    return VehicleRecord.objects.filter(detected_at__gte=midnight(first),
-                                        detected_at__lt=midnight(last + timedelta(days=1)))
+    return _from_source(VehicleRecord.objects, source).filter(detected_at__gte=midnight(first),
+                                                              detected_at__lt=midnight(last + timedelta(days=1)))
 
 
-def _per_day(first, last) -> list:
+def _per_day(first, last, source="") -> list:
     """Motorcycles and violations of each day from first to last, days without any included."""
-    counts = {row["day"]: row for row in _in_days(first, last)
+    counts = {row["day"]: row for row in _in_days(first, last, source)
               .annotate(day=TruncDate("detected_at", tzinfo=timezone.get_current_timezone()))
               .values("day")
               .annotate(total=Count("id"), violation=Count("id", filter=Q(is_violation=True)))}
@@ -183,11 +187,11 @@ def _per_day(first, last) -> list:
              "violation": counts.get(d, {}).get("violation", 0)} for d in days]
 
 
-def _calendar(month) -> dict:
+def _calendar(month, source="") -> dict:
     """The calendar of `month` (its first day): motorcycles and violations of each of its days up to today."""
     today = timezone.localdate()
     last = min(month.replace(day=calendar.monthrange(month.year, month.month)[1]), today)
-    return {"month": month.strftime("%Y-%m"), "this_month": today.strftime("%Y-%m"), "days": _per_day(month, last)}
+    return {"month": month.strftime("%Y-%m"), "this_month": today.strftime("%Y-%m"), "days": _per_day(month, last, source)}
 
 
 def _stats_query(request) -> dict:
@@ -199,34 +203,35 @@ def _stats_query(request) -> dict:
 class StatsView(APIView):
     def get(self, request):
         """Violation statistics for the violations page. The last 7 days always end today; the rest covers
-        the chosen date range: totals, violations by type and per day. The calendar shows the chosen month."""
+        the chosen date range: totals, violations by type and per day. The calendar shows the chosen month.
+        All of it counts only the records of the chosen video source, if one is chosen."""
         query = _stats_query(request)
-        first, last = query["start"], query["end"]
+        first, last, source = query["start"], query["end"], query["source"]
         today = timezone.localdate()
-        violations = _in_days(first, last).filter(is_violation=True)
+        violations = _in_days(first, last, source).filter(is_violation=True)
         return Response({
             "start": first.isoformat(),
             "end": last.isoformat(),
             "days": (last - first).days + 1,
-            "last_week": _per_day(today - timedelta(days=6), today),
+            "last_week": _per_day(today - timedelta(days=6), today, source),
             "violation": violations.count(),
-            "total": _in_days(first, last).count(),
+            "total": _in_days(first, last, source).count(),
             "pending_review": violations.filter(review=Review.PENDING).count(),
             "confirmed": violations.filter(review=Review.CONFIRMED).count(),
             "by_type": [{"label": v.label, "count": violations.filter(violations__contains=v.value).count()}
                         for v in Violation],
-            "per_day": _per_day(first, last),
-            "calendar": _calendar(query["month"]),
+            "per_day": _per_day(first, last, source),
+            "calendar": _calendar(query["month"], source),
         })
 
 
 class RepeatOffendersView(APIView):
     def get(self, request):
-        """Plates with more than one violation in the chosen date range, most violations first. Plates OCR
-        read slightly differently count as one motorcycle (plate_search.group_plates); rejected events
-        are left out."""
+        """Plates with more than one violation in the chosen date range and source, most violations first.
+        Plates OCR read slightly differently count as one motorcycle (plate_search.group_plates); rejected
+        events are left out."""
         query = _stats_query(request)
-        violations = (_in_days(query["start"], query["end"]).filter(is_violation=True)
+        violations = (_in_days(query["start"], query["end"], query["source"]).filter(is_violation=True)
                       .exclude(review=Review.REJECTED).exclude(plate_text=""))
         counts = dict(violations.values("plate_text").annotate(n=Count("id")).order_by("-n")
                       .values_list("plate_text", "n")[:_REPEAT_MAX_PLATES])

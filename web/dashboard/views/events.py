@@ -4,8 +4,8 @@
   other pages only violations.
 - status: the live view's engine state, playback position and today's counts, every second.
 
-Each open stream holds one server thread (run.py), and ends once its session has expired or the user
-logged out."""
+Each open stream holds one server thread (run.py), and ends once its login is no longer valid
+(security.session_allows: logged out, expired, account disabled, password changed or permission removed)."""
 import json
 import time
 
@@ -17,6 +17,7 @@ from django.views.decorators.http import require_GET
 from ..engine import current_service, stopped_status
 from ..models import VehicleRecord
 from ..record_feed import saved_count, wait_for_record
+from ..security import session_allows
 from ..serializers import RecordEventsSerializer, VehicleRecordSerializer
 
 # Rows sent per event: the live view's table, and the notifications (the other violations are only counted)
@@ -35,10 +36,6 @@ def _message(event: str, data, event_id=None) -> str:
     """One event; its id, if given, is where the browser resumes after reconnecting (Last-Event-ID)."""
     head = f"id: {event_id}\n" if event_id is not None else ""
     return f"{head}event: {event}\ndata: {json.dumps(data, ensure_ascii=False)}\n\n"
-
-
-def _session_ended(session) -> bool:
-    return not session.exists(session.session_key) or session.get_expiry_date() <= timezone.now()
 
 
 def _event_stream(events):
@@ -61,7 +58,8 @@ def record_events(request):
     live view."""
     user = request.user
     violations_only = request.GET.get("violations") == "true" or not user.has_perm("dashboard.use_dashboard")
-    if not user.has_perm("dashboard.view_records" if violations_only else "dashboard.use_dashboard"):
+    perm = "dashboard.view_records" if violations_only else "dashboard.use_dashboard"
+    if not user.has_perm(perm):
         return JsonResponse({"detail": "you do not have permission for this"}, status=403)
     query = RecordEventsSerializer(data={"after": request.headers.get("Last-Event-ID", request.GET.get("after"))})
     if not query.is_valid():
@@ -74,13 +72,13 @@ def record_events(request):
     if violations_only:
         records = records.filter(is_violation=True)
     limit = _MAX_NOTIFY_ROWS if violations_only else _MAX_ROWS
-    session = request.session
+    session_key = request.session.session_key
 
     def events():
         nonlocal after
         # First an event with no rows: tells the page where its stream starts
         yield f"retry: {_RETRY_MS}\n" + _message("records", {"rows": [], "total": 0}, after)
-        while not _session_ended(session):
+        while session_allows(session_key, perm):
             # Up to the newest record now: one saved meanwhile is counted, so the wait below returns at once
             seen = saved_count()
             latest = _latest_id()
@@ -110,11 +108,11 @@ def _today_counts() -> dict:
 def status_events(request):
     """"status" events for the live view, every second: engine state, playback position and today's
     vehicle counts."""
-    session = request.session
+    session_key = request.session.session_key
 
     def events():
         yield f"retry: {_RETRY_MS}\n\n"
-        while not _session_ended(session):
+        while session_allows(session_key, "dashboard.use_dashboard"):
             # Looked up every time, so it follows detection when it stops or starts (never started here:
             # only logging in does, see engine.py)
             service = current_service()

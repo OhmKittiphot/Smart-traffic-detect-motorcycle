@@ -3,6 +3,7 @@
 // Violation statistics at the top of the violations page, with a calendar of one month, from /api/stats/
 // (refreshed every 5 seconds)
 // and /api/stats/repeat/ (every minute, since grouping look-alike plates takes longer), for the chosen dates
+// and video source
 window.Dashboard.onPage("#per-day", (page) => {
   const REFRESH_MS = 5000;
   const REPEAT_REFRESH_MS = 60000;
@@ -179,13 +180,21 @@ window.Dashboard.onPage("#per-day", (page) => {
     return customRange ? `${day(s.start)} – ${day(s.end)}` : interpolate(gettext("Last %s days"), [s.days]);
   }
 
-  function rangeQuery() {
-    return customRange ? `?${new URLSearchParams({ start: startInput.value, end: endInput.value })}` : "";
+  // The range and the video source, unless they are the defaults
+  function filterParams() {
+    const params = new URLSearchParams(customRange ? { start: startInput.value, end: endInput.value } : {});
+    if (source) params.set("source", source);
+    return params;
   }
 
-  // The range plus the month the calendar shows, unless it is the current one
+  function rangeQuery() {
+    const params = filterParams();
+    return params.size ? `?${params}` : "";
+  }
+
+  // The range and source plus the month the calendar shows, unless it is the current one
   function statsQuery() {
-    const params = new URLSearchParams(customRange ? { start: startInput.value, end: endInput.value } : {});
+    const params = filterParams();
     if (calendarMonth) params.set("month", calendarMonth);
     return params.size ? `?${params}` : "";
   }
@@ -207,6 +216,21 @@ window.Dashboard.onPage("#per-day", (page) => {
     customRange = false;
     startInput.value = endInput.value = "";
     $("st-range-reset").hidden = true;
+    reload();
+  });
+
+  // ---------- video source ----------
+  // "" = all sources. The choice is kept in the URL (?source=), so a reload or a link shows the same source;
+  // the template marks it in the menu (_source_menu.html)
+  let source = new URLSearchParams(location.search).get("source") ?? "";
+
+  $("stats-source-menu").addEventListener("source-chosen", (ev) => {
+    if (source === ev.detail.value) return;
+    source = ev.detail.value;
+    const url = new URL(location.href);
+    if (source) url.searchParams.set("source", source);
+    else url.searchParams.delete("source");
+    history.replaceState(history.state, "", url);   // the same history entry, so Back still leaves the page
     reload();
   });
 

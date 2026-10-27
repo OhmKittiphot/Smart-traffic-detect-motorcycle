@@ -3,7 +3,6 @@ import time
 
 from django.conf import settings
 from django.http import StreamingHttpResponse
-from django.utils import timezone
 from django.views.decorators.http import require_GET
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -11,6 +10,7 @@ from rest_framework.views import APIView
 from .. import storage
 from ..engine import current_service
 from ..models import CameraSettings, VehicleRecord
+from ..security import session_allows
 from ..serializers import PauseSerializer, SeekSerializer, SourceSerializer, VehicleRecordSerializer
 from ..sources import VideoSource
 from .common import audit, bad_request, conflict, running_service
@@ -97,7 +97,7 @@ class SeekView(APIView):
 @require_GET
 def stream(request):
     """MJPEG stream of the annotated video (or the No Signal card)."""
-    session = request.session
+    session_key = request.session.session_key
     interval = 1.0 / settings.STREAM_FPS
 
     def frames():
@@ -109,10 +109,10 @@ def stream(request):
         part_head = b"--frame\r\nContent-Type: image/jpeg\r\n\r\n"
         yield part_head
         while True:
-            # A stream outlives its page; stop it once the session has expired or the user logged out
+            # A stream outlives its page; stop it once its login is no longer valid
             if time.time() >= next_check:
                 next_check = time.time() + 1
-                if not session.exists(session.session_key) or session.get_expiry_date() <= timezone.now():
+                if not session_allows(session_key, "dashboard.use_dashboard"):
                     return
             # Looked up every frame, so it follows detection when it restarts. Never starts it: only
             # logging in does (engine.py), not a stream left open after logout

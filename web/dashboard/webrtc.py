@@ -4,7 +4,7 @@ and has less delay; /stream/ stays as the fallback where WebRTC cannot connect (
 
 The browser sends an offer (views/webrtc.py) and the server answers it. aiortc runs on asyncio, so one event
 loop runs in a background thread and the views hand their work to it. A connection ends when the browser
-closes it or the viewer's session ends (logout or expiry)."""
+closes it or the viewer's login is no longer valid (security.session_allows)."""
 import asyncio
 import fractions
 import threading
@@ -15,10 +15,10 @@ from aiortc.mediastreams import MediaStreamError
 from av import VideoFrame
 from django.conf import settings
 from django.db import close_old_connections
-from django.utils import timezone
 
 from .engine import current_service
 from .live_frames import placeholder_frame
+from .security import session_allows
 
 _CLOCK_RATE = 90000   # RTP clock of video
 _TIME_BASE = fractions.Fraction(1, _CLOCK_RATE)
@@ -26,10 +26,15 @@ _TIME_BASE = fractions.Fraction(1, _CLOCK_RATE)
 _SESSION_CHECK_S = 2.0
 # How long a view waits for the answer
 _ANSWER_TIMEOUT_S = 15
+# Open connections one login may have. A page that reconnects (reload, network change) leaves its old one
+# open for a while; past this, the oldest are closed, so a login cannot keep opening connections
+_MAX_PEERS_PER_SESSION = 2
 
 _loop = None
 _loop_lock = threading.Lock()
-_peers: set = set()   # open connections, kept so they are not garbage collected
+# Open connection -> its viewer's session key; also keeps them from being garbage collected. Only used on
+# the event loop's thread
+_peers: dict = {}
 
 
 def _event_loop() -> asyncio.AbstractEventLoop:
@@ -42,20 +47,20 @@ def _event_loop() -> asyncio.AbstractEventLoop:
         return _loop
 
 
-def _session_ended(session) -> bool:
+def _login_ended(session_key) -> bool:
     """Run in a worker thread: Django's database calls are not allowed on the event loop."""
     try:
-        return not session.exists(session.session_key) or session.get_expiry_date() <= timezone.now()
+        return not session_allows(session_key, "dashboard.use_dashboard")
     finally:
         close_old_connections()
 
 
 class LiveTrack(VideoStreamTrack):
-    """The live view's picture, STREAM_FPS frames a second, for as long as the viewer's session lasts."""
+    """The live view's picture, STREAM_FPS frames a second, for as long as the viewer's login is valid."""
 
-    def __init__(self, session, on_end):
+    def __init__(self, session_key, on_end):
         super().__init__()
-        self._session = session
+        self._session_key = session_key
         self._on_end = on_end
         self._start = None
         self._count = 0
@@ -84,7 +89,7 @@ class LiveTrack(VideoStreamTrack):
         pts = await self._wait_for_next_frame()
         if time.time() >= self._next_check:
             self._next_check = time.time() + _SESSION_CHECK_S
-            if await asyncio.to_thread(_session_ended, self._session):
+            if await asyncio.to_thread(_login_ended, self._session_key):
                 await self._on_end()
                 raise MediaStreamError
         # Drawing the frame takes a while; it must not hold up the event loop
@@ -93,28 +98,43 @@ class LiveTrack(VideoStreamTrack):
         return frame
 
 
-async def _answer(offer_sdp: str, session) -> dict:
+async def _close(pc: RTCPeerConnection) -> None:
+    _peers.pop(pc, None)
+    await pc.close()
+
+
+async def _answer(offer_sdp: str, session_key: str) -> dict:
+    own = [pc for pc, key in _peers.items() if key == session_key]   # oldest first
+    for old in own[:max(0, len(own) - _MAX_PEERS_PER_SESSION + 1)]:
+        await _close(old)
+
     # No STUN server: the viewers are on the same network as the server, and asking a public STUN server
     # (aiortc's default) for an outside address adds seconds to every connection
     pc = RTCPeerConnection(RTCConfiguration(iceServers=[]))
-    _peers.add(pc)
-
-    async def close():
-        _peers.discard(pc)
-        await pc.close()
+    _peers[pc] = session_key
 
     @pc.on("connectionstatechange")
     async def on_state():
         if pc.connectionState in ("failed", "closed"):
-            await close()
+            await _close(pc)
 
-    await pc.setRemoteDescription(RTCSessionDescription(sdp=offer_sdp, type="offer"))
-    pc.addTrack(LiveTrack(session, close))
-    # Returns once the server's network addresses are gathered: they all go in the answer
-    await pc.setLocalDescription(await pc.createAnswer())
+    try:
+        await pc.setRemoteDescription(RTCSessionDescription(sdp=offer_sdp, type="offer"))
+        pc.addTrack(LiveTrack(session_key, lambda: _close(pc)))
+        # Returns once the server's network addresses are gathered: they all go in the answer
+        await pc.setLocalDescription(await pc.createAnswer())
+    except BaseException:   # a bad offer, or cancelled because the view stopped waiting
+        await _close(pc)
+        raise
     return {"sdp": pc.localDescription.sdp, "type": pc.localDescription.type}
 
 
-def answer(offer_sdp: str, session) -> dict:
-    """The answer ({"sdp", "type"}) to a browser's offer of a connection that receives the live video."""
-    return asyncio.run_coroutine_threadsafe(_answer(offer_sdp, session), _event_loop()).result(_ANSWER_TIMEOUT_S)
+def answer(offer_sdp: str, session_key: str) -> dict:
+    """The answer ({"sdp", "type"}) to a browser's offer of a connection that receives the live video.
+    Raises TimeoutError when it takes longer than _ANSWER_TIMEOUT_S (the half-made connection is closed)."""
+    future = asyncio.run_coroutine_threadsafe(_answer(offer_sdp, session_key), _event_loop())
+    try:
+        return future.result(_ANSWER_TIMEOUT_S)
+    except TimeoutError:
+        future.cancel()
+        raise

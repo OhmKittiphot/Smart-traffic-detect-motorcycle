@@ -6,7 +6,7 @@ import torch
 from detectors import HeadDetector, MotorcycleDetector, PlateDetector, RiderClassification
 from ocr import plate_sharpness
 from report import print_motorcycle_reports
-from utils import log_error, merge_related_boxes
+from utils import log, log_error, merge_related_boxes
 
 
 class YoloPipeline:
@@ -21,7 +21,7 @@ class YoloPipeline:
         self.ocr_in_q = ocr_in_q
         self.det_lock = det_lock
 
-        print("Loading YOLO models...")
+        log.info("Loading YOLO models...")
         self.plates = PlateDetector(config, device, use_half)
         self.motorcycles = MotorcycleDetector(config, device, use_half)
         self.rider_classification = RiderClassification(config, device, use_half)

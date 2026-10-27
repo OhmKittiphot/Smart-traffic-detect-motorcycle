@@ -164,7 +164,8 @@ window.Dashboard.onPage("#calib-dialog", () => {
 
   /* options: source (label shown in the title), points / width_m / length_m (the saved calibration, or
      null to start empty), frameUrl (JPEG of the current frame), save(body) (returns a promise; rejects
-     with the message to show), onSaved(). The dialog opens at once and the frame loads inside it. */
+     with the message to show), onSaved(), onClose() (saved or cancelled). The dialog opens at once and
+     the frame loads inside it. */
   function open(opts) {
     options = opts;
     status("");
@@ -182,7 +183,10 @@ window.Dashboard.onPage("#calib-dialog", () => {
   }
 
   // A frame still on its way when the dialog closes is not shown in the next one
-  dialog.addEventListener("close", () => { frameNo++; });
+  dialog.addEventListener("close", () => {
+    frameNo++;
+    options.onClose?.();
+  });
 
   window.CalibrationEditor = { open };
 });

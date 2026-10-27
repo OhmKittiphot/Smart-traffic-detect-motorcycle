@@ -5,6 +5,8 @@ from dotenv import load_dotenv
 
 import torch
 
+from utils import log
+
 
 load_dotenv()
 
@@ -104,10 +106,13 @@ class AppConfig:
 
     @classmethod
     def from_env(cls) -> "AppConfig":
-        # Only the video source comes from .env; everything else is set above.
+        # Only the video source and the speed calibration printed by the desktop window ([C]) come from .env;
+        # everything else is set above.
         return cls(
             rtsp_url=os.getenv("RTSP_URL", ""),
             video_file=os.getenv("VIDEO_FILE", ""),
+            speed_calib_points=os.getenv("SPEED_CALIB_POINTS", ""),
+            speed_calib_world=os.getenv("SPEED_CALIB_WORLD", ""),
         )
 
     @property
@@ -151,12 +156,12 @@ def load_yolo_model(model_path: str, device: str, use_half: bool):
     try:
         model.to(device)
     except Exception as e:
-        print(f"[Model] Could not move {model_path} to {device} ({e}); predict() will place it per call.")
+        log.warning("[Model] Could not move %s to %s (%s); predict() will place it per call.", model_path, device, e)
 
     if use_half:
         try:
             model.model.half()
         except Exception as e:
-            print(f"[Model] FP16 not applied to {model_path} ({e}); running in FP32.")
+            log.warning("[Model] FP16 not applied to %s (%s); running in FP32.", model_path, e)
 
     return model

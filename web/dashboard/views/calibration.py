@@ -19,12 +19,20 @@ from ..sources import grab_frame
 from .common import audit, conflict, jpeg_response, running_service
 
 _NOT_A_RECTANGLE = {"points": [gettext_lazy("The 4 points must outline a rectangle on the road, clicked in order")]}
-# Size of the last frame sent for redrawing a source's points, so the points saved for it can be checked
-_REDRAW_FRAME_SIZE = "calibration-frame-size:{}"
-# The last frame sent to click a source's points on (JPEG): a video file keeps it with its calibration,
-# so the points can follow a moving camera
-_CLICKED_FRAME = "calibration-frame:{}"
 _REDRAW_FRAME_KEEP_S = 60 * 60
+
+
+# Cached per user and source, so two people editing one source each save the frame they clicked on
+
+def _frame_size_key(request, source_key) -> str:
+    """Size of the last frame sent for redrawing a source's points, so the points saved for it can be checked."""
+    return f"calibration-frame-size:{request.user.pk}:{source_key}"
+
+
+def _clicked_frame_key(request, source_key) -> str:
+    """The last frame sent to click a source's points on (JPEG): a video file keeps it with its calibration,
+    so the points can follow a moving camera."""
+    return f"calibration-frame:{request.user.pk}:{source_key}"
 
 
 # ---------- current source (live view) ----------
@@ -43,7 +51,7 @@ class CalibrationFrameView(APIView):
             jpeg = service.frames.raw_jpeg()
         except RuntimeError as e:
             return conflict(e)
-        cache.set(_CLICKED_FRAME.format(service.source.key), jpeg, _REDRAW_FRAME_KEEP_S)
+        cache.set(_clicked_frame_key(request, service.source.key), jpeg, _REDRAW_FRAME_KEEP_S)
         return jpeg_response(jpeg)
 
 
@@ -60,7 +68,7 @@ class CalibrationSaveView(APIView):
         points, width_m, length_m = (serializer.validated_data[f] for f in ("points", "width_m", "length_m"))
         try:
             service.save_calibration(points, width_m, length_m, request.user,
-                                     cache.get(_CLICKED_FRAME.format(service.source.key)))
+                                     cache.get(_clicked_frame_key(request, service.source.key)))
         except ValueError:
             # The speed estimator rejects shapes that are not a convex 4-sided outline
             return Response(_NOT_A_RECTANGLE, status=status.HTTP_400_BAD_REQUEST)
@@ -125,8 +133,8 @@ class SourceCalibrationFrameView(APIView):
                     raise RuntimeError(_("Could not capture a frame"))
         except RuntimeError as e:
             return conflict(e)
-        cache.set(_REDRAW_FRAME_SIZE.format(key), size, _REDRAW_FRAME_KEEP_S)
-        cache.set(_CLICKED_FRAME.format(key), jpeg, _REDRAW_FRAME_KEEP_S)
+        cache.set(_frame_size_key(request, key), size, _REDRAW_FRAME_KEEP_S)
+        cache.set(_clicked_frame_key(request, key), jpeg, _REDRAW_FRAME_KEEP_S)
         return jpeg_response(jpeg)
 
 
@@ -138,7 +146,7 @@ class SourceCalibrationPointsView(APIView):
         source = SourceKeySerializer(data=request.data)
         source.is_valid(raise_exception=True)
         key = source.validated_data["source_key"]
-        frame_size = cache.get(_REDRAW_FRAME_SIZE.format(key))
+        frame_size = cache.get(_frame_size_key(request, key))
         if frame_size is None:
             return conflict(_("The frame expired; open the editor again"))
 
@@ -150,7 +158,7 @@ class SourceCalibrationPointsView(APIView):
             SpeedEstimator().set_calibration([tuple(p) for p in points], (width_m, length_m))
         except ValueError:
             return Response(_NOT_A_RECTANGLE, status=status.HTTP_400_BAD_REQUEST)
-        calibrations.save(key, points, width_m, length_m, request.user, cache.get(_CLICKED_FRAME.format(key)))
+        calibrations.save(key, points, width_m, length_m, request.user, cache.get(_clicked_frame_key(request, key)))
         _reload_calibration(key)
         audit(request, "speed_calibration", f"{key}: {width_m:g} x {length_m:g} m (points redrawn)")
         return Response({"source_key": key, "points": points, "width_m": width_m, "length_m": length_m})

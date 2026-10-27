@@ -7,12 +7,12 @@ from rest_framework.response import Response
 
 from ..engine import current_service
 from ..models import AuditLog
+from ..security import client_ip
 
 
 def audit(request, action, detail=""):
     """Record who did what, and from where, in the audit log (shown in /admin/)."""
-    AuditLog.objects.create(user=request.user, action=action, detail=detail[:255],
-                            ip_address=request.META.get("REMOTE_ADDR"))
+    AuditLog.objects.create(user=request.user, action=action, detail=detail[:255], ip_address=client_ip(request))
 
 
 def conflict(error):

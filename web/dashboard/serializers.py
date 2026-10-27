@@ -24,6 +24,12 @@ MAX_CALIBRATION_M = 500.0
 
 # ---------- requests ----------
 
+def _known_source(source):
+    """A source filter: "<source_mode>:<source_name>" ("file:clip.mp4", "live:" = IP camera) is one source,
+    "<source_mode>" alone ("live" = every live camera, "file" = every video file) a whole group."""
+    if source and source.partition(":")[0] not in SourceMode.values:
+        raise serializers.ValidationError(_("Unknown video source"))
+
 class RecordEventsSerializer(serializers.Serializer):
     """?after=<id> (or the Last-Event-ID header): records newer than this id; none means from now on."""
     after = serializers.IntegerField(min_value=0, required=False, allow_null=True, default=None)
@@ -32,12 +38,15 @@ class RecordEventsSerializer(serializers.Serializer):
 class StatsQuerySerializer(serializers.Serializer):
     """?start=<YYYY-MM-DD>&end=<YYYY-MM-DD>: the days the violation statistics cover, both included.
     Without them, the last DEFAULT_DAYS days, today included.
-    &month=<YYYY-MM>: the month the calendar shows, this month by default (given as its first day)."""
+    &month=<YYYY-MM>: the month the calendar shows, this month by default (given as its first day).
+    &source=<mode>:<name> or <mode>: only the records of that video source (see _known_source), all by default."""
     DEFAULT_DAYS = 30
     MAX_DAYS = 366
     start = serializers.DateField(required=False)
     end = serializers.DateField(required=False)
     month = serializers.DateField(input_formats=["%Y-%m"], required=False)
+    source = serializers.CharField(max_length=300, required=False, allow_blank=True, default="",
+                                   validators=[_known_source])
 
     def validate(self, data):
         today = timezone.localdate()
@@ -50,7 +59,7 @@ class StatsQuerySerializer(serializers.Serializer):
         month = data.get("month") or today.replace(day=1)
         if month > today:
             raise serializers.ValidationError(_("That month has not started yet"))
-        return {"start": start, "end": end, "month": month}
+        return {"start": start, "end": end, "month": month, "source": data["source"]}
 
 
 class PlateSearchSerializer(serializers.Serializer):
@@ -62,17 +71,12 @@ class PlateSearchSerializer(serializers.Serializer):
     # Thai name, as stored on the records; the page lists them by their English names
     province = serializers.ChoiceField(choices=THAI_PROVINCES, required=False, allow_blank=True, default="",
                                        error_messages={"invalid_choice": _("Unknown province")})
-    # Where the records came from, as "<source_mode>:<source_name>" ("file:clip.mp4", "live:" = IP camera),
-    # or a whole group as "<source_mode>" ("live" = every live camera, "file" = every video file)
-    source = serializers.CharField(max_length=300, required=False, allow_blank=True, default="")
+    # Where the records came from (see _known_source)
+    source = serializers.CharField(max_length=300, required=False, allow_blank=True, default="",
+                                   validators=[_known_source])
     violations_only = serializers.BooleanField(default=False)
     browse = serializers.BooleanField(default=False)
     before = serializers.IntegerField(min_value=1, required=False, default=None)
-
-    def validate_source(self, source):
-        if source and source.partition(":")[0] not in SourceMode.values:
-            raise serializers.ValidationError(_("Unknown video source"))
-        return source
 
     def validate_q(self, q):
         plates = split_queries(q)

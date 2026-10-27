@@ -9,7 +9,8 @@
 //   shows its label on the button and sends a "source-chosen" event with its data-mode / data-value, which the
 //   page acts on. The item marked aria-pressed="true" in the markup starts chosen, or else the first one of
 //   the group that starts open.
-// <div x-data="sourceGroup" data-expanded="true|false">: a kind of source whose items open under its button.
+// <div x-data="sourceGroup" data-expanded="true|false">: a kind of source whose items open under its button. It
+//   also starts open when one of its items starts chosen, so the list opens on the chosen source.
 document.addEventListener("alpine:init", () => {
   Alpine.data("sourceMenu", () => ({
     open: false,
@@ -58,7 +59,8 @@ document.addEventListener("alpine:init", () => {
     expanded: false,
 
     init() {
-      this.expanded = this.$el.dataset.expanded === "true";
+      this.expanded = this.$el.dataset.expanded === "true"
+        || Boolean(this.$el.querySelector('.source-children .source-item[aria-pressed="true"]'));
     },
 
     get collapsed() {

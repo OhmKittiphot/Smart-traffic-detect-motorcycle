@@ -1,18 +1,36 @@
+import logging
 import os
 import re
+import sys
+import threading
 import time
-import traceback
 from urllib.parse import urlsplit
 
 import cv2
 from typing import Dict, List, Tuple
 
 
+# Messages of the detection pipeline. Each one already starts with its part's tag ("[Video] ..."). The desktop
+# app (main.py) and the OCR process show them with setup_console_logging(); the web dashboard's
+# settings.LOGGING shows them in its console
+log = logging.getLogger("pipeline")
+
+
+def setup_console_logging() -> None:
+    """Print the pipeline's messages (INFO and up) to the console, as they are."""
+    if not log.handlers:
+        handler = logging.StreamHandler(sys.stdout)   # where print() wrote before
+        handler.setFormatter(logging.Formatter("%(message)s"))
+        log.addHandler(handler)
+        log.setLevel(logging.INFO)
+        log.propagate = False
+
+
 _last_error_log: Dict[str, float] = {}
 
 
 def log_error(tag: str, exc: BaseException, interval_s: float = 5.0) -> None:
-    """Print an error with its traceback, at most once per interval per (tag, error type)
+    """Log an error with its traceback, at most once per interval per (tag, error type)
     so a failure repeating inside a worker loop does not flood the console."""
     key = f"{tag}:{type(exc).__name__}"
     now = time.monotonic()
@@ -20,8 +38,7 @@ def log_error(tag: str, exc: BaseException, interval_s: float = 5.0) -> None:
     if last is not None and now - last < interval_s:
         return
     _last_error_log[key] = now
-    print(f"[{tag}] {type(exc).__name__}: {exc}")
-    traceback.print_exception(type(exc), exc, exc.__traceback__)
+    log.error("[%s] %s: %s", tag, type(exc).__name__, exc, exc_info=(type(exc), exc, exc.__traceback__))
 
 def format_thai_plate(plate_text: str, province_text: str) -> str:
     """
@@ -79,6 +96,7 @@ def format_thai_plate(plate_text: str, province_text: str) -> str:
 # Fail fast on a stalled RTSP connection instead of OpenCV's default ~30s hang
 _RTSP_OPEN_TIMEOUT_MS = 10000
 _RTSP_READ_TIMEOUT_MS = 10000
+_capture_options_lock = threading.Lock()
 
 
 def describe_capture_url(camera_url: str) -> str:
@@ -98,22 +116,27 @@ def open_capture(camera_url: str) -> cv2.VideoCapture:
     """Open a cv2 VideoCapture for an RTSP / http(s) stream URL or a local video file path."""
     is_rtsp = camera_url.lower().startswith(("rtsp://", "rtsps://"))
     is_network = is_rtsp or camera_url.lower().startswith(("http://", "https://"))
-    # Low-latency RTSP options; read by OpenCV on every open, and they would break probing of video files
-    if is_rtsp:
-        os.environ["OPENCV_FFMPEG_CAPTURE_OPTIONS"] = (
-            "rtsp_transport;tcp|fflags;nobuffer|flags;low_delay|analyzeduration;0|probesize;32"
-        )
-    else:
-        os.environ.pop("OPENCV_FFMPEG_CAPTURE_OPTIONS", None)
 
     cap = cv2.VideoCapture()
     if is_network:
         cap.set(cv2.CAP_PROP_OPEN_TIMEOUT_MSEC, _RTSP_OPEN_TIMEOUT_MS)
         cap.set(cv2.CAP_PROP_READ_TIMEOUT_MSEC, _RTSP_READ_TIMEOUT_MS)
 
-    if not cap.open(camera_url, cv2.CAP_FFMPEG):
+    # Low-latency RTSP options; read by OpenCV on every open, and they would break probing of video files.
+    # The variable is shared by the whole process, so two sources opened at once (the capture thread and a
+    # calibration frame for the web dashboard) must not set it for each other
+    with _capture_options_lock:
+        if is_rtsp:
+            os.environ["OPENCV_FFMPEG_CAPTURE_OPTIONS"] = (
+                "rtsp_transport;tcp|fflags;nobuffer|flags;low_delay|analyzeduration;0|probesize;32"
+            )
+        else:
+            os.environ.pop("OPENCV_FFMPEG_CAPTURE_OPTIONS", None)
+        opened = cap.open(camera_url, cv2.CAP_FFMPEG)
+
+    if not opened:
         # Never print the RTSP URL itself: it usually carries the camera password
-        print(f"[Capture] Failed to open source: {describe_capture_url(camera_url)}")
+        log.warning("[Capture] Failed to open source: %s", describe_capture_url(camera_url))
         return cap
 
     if is_rtsp:

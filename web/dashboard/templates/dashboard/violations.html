@@ -10,6 +10,8 @@
   <section class="violation-stats" aria-labelledby="stats-title">
     <div class="table-head">
       <h2 id="stats-title">{% translate "Violation statistics" %}</h2>
+      {# The statistics of one video source or of all of them; stats.js keeps the choice in the URL (?source=) #}
+      {% include "dashboard/_source_menu.html" with menu_id="stats-source-menu" chosen=request.GET.source|default:"" %}
       <span class="stats-meta muted" id="stats-meta"></span>
       <span class="form-msg" id="stats-msg" role="status" aria-live="polite"></span>
       {# Empty dates mean the last 30 days; the server fills them in #}

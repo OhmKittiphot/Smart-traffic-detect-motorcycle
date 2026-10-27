@@ -2,7 +2,6 @@ import multiprocessing as mp
 import os
 import queue
 import re
-import traceback
 
 import cv2
 import numpy as np
@@ -10,7 +9,7 @@ import torch
 
 from ocr_voting import UNKNOWN
 from province import extract_thai_province
-from utils import log_error
+from utils import log, log_error, setup_console_logging
 
 # A Thai motorcycle plate has three lines: the series (e.g. '6ขน'), the province and the number (e.g. '690').
 # Each line is cut from the plate crop by a fixed band of its height (the crop carries 10% padding around
@@ -104,9 +103,9 @@ def load_recognizer(model_dir=None, device="gpu"):
     from paddleocr import TextRecognition
 
     if model_dir and os.path.isdir(model_dir):
-        print(f"[OCR-Process] Plate recognizer: {model_dir}")
+        log.info("[OCR-Process] Plate recognizer: %s", model_dir)
         return TextRecognition(model_name=REC_MODEL, model_dir=model_dir, device=device)
-    print(f"[OCR-Process] Plate recognizer: stock {REC_MODEL} (no fine-tuned model at '{model_dir}')")
+    log.info("[OCR-Process] Plate recognizer: stock %s (no fine-tuned model at '%s')", REC_MODEL, model_dir)
     return TextRecognition(model_name=REC_MODEL, device=device)
 
 
@@ -121,16 +120,18 @@ def ocr_worker(in_q: mp.Queue, out_q: mp.Queue, model_dir: str = ""):
     os.environ.setdefault("FLAGS_allocator_strategy", "auto_growth")
     warnings.filterwarnings("ignore")
 
-    print("[OCR-Process] Loading PaddleOCR ...")
+    # A process of its own: the main process's logging set-up is not inherited
+    setup_console_logging()
+    log.info("[OCR-Process] Loading PaddleOCR ...")
     try:
         rec = load_recognizer(model_dir, "gpu" if torch.cuda.is_available() else "cpu")
     except Exception as e:
         # Tell the main process why OCR is unavailable instead of dying silently
-        traceback.print_exc()
+        log.exception("[OCR-Process] PaddleOCR failed to load")
         out_q.put({"error": f"PaddleOCR failed to load: {type(e).__name__}: {e}"})
         return
     out_q.put("ready")
-    print("[OCR-Process] PaddleOCR is ready!")
+    log.info("[OCR-Process] PaddleOCR is ready!")
 
     while True:
         try:

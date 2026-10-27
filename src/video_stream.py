@@ -7,7 +7,7 @@ import cv2
 from frame_exchange import FrameExchange
 from hls import STALE_AFTER_S, format_age, is_hls_url, playlist_age_s
 from playback import LivePacer, Playback, RealtimeClock
-from utils import log_error, open_capture
+from utils import log, log_error, open_capture
 
 
 # Backoff between RTSP reconnect attempts: doubles on each failure, resets on the first good frame
@@ -83,7 +83,7 @@ class VideoStream:
     # ----- opening the source -----
 
     def _fail(self, msg: str):
-        print(f"[Video] {msg}")
+        log.error("[Video] %s", msg)
         self.error = msg
         self._running = False
 
@@ -109,13 +109,13 @@ class VideoStream:
             age = playlist_age_s(self.video_camera)
             if age is None or age < STALE_AFTER_S:
                 if logged:
-                    print("[Capture] Live stream is updating again.")
+                    log.info("[Capture] Live stream is updating again.")
                 self.offline_reason = None
                 return
             self.offline_reason = f"Camera offline: no new video for {format_age(age)}"
             if not logged:
-                print(f"[Capture] Live stream not updating (last update {format_age(age)} ago); "
-                      f"treating camera as offline, checking every {_STALE_RECHECK_S:.0f}s.")
+                log.warning("[Capture] Live stream not updating (last update %s ago); treating camera as offline, "
+                            "checking every %.0fs.", format_age(age), _STALE_RECHECK_S)
                 logged = True
             self._sleep_while_running(_STALE_RECHECK_S)
 
@@ -148,7 +148,7 @@ class VideoStream:
 
     def _rewind_at_end(self, cap) -> None:
         """Like a video player: back to the first frame, paused, instead of looping."""
-        print("[Video] End of video. Back to the start, paused.")
+        log.info("[Video] End of video. Back to the start, paused.")
         cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
         self.playback.rewind_paused()
         self._notify(self.on_end, self.frames.new_generation())
@@ -206,7 +206,7 @@ class VideoStream:
             total_ms = cap.get(cv2.CAP_PROP_FRAME_COUNT) / source_fps * 1000.0
             self.playback.set_total(total_ms)
             duration_str = str(timedelta(milliseconds=int(max(0.0, total_ms)))).split('.')[0]
-            print(f"[Video] Playback FPS: {source_fps:.1f} (source)  |  Duration: {duration_str}")
+            log.info("[Video] Playback FPS: %.1f (source)  |  Duration: %s", source_fps, duration_str)
             return RealtimeClock(1.0 / source_fps), None
         if self._paced_live:
             return None, LivePacer(1.0 / self._read_fps(cap))
@@ -234,7 +234,7 @@ class VideoStream:
 
             try:
                 if not cap.isOpened():
-                    print(f"[Capture] Source closed. Reopening in {reconnect_delay:.0f}s...")
+                    log.warning("[Capture] Source closed. Reopening in %.0fs...", reconnect_delay)
                     cap = self._reopen(cap, reconnect_delay)
                     reconnect_delay = min(reconnect_delay * 2, _RECONNECT_MAX_S)
                     if clock:
@@ -248,7 +248,7 @@ class VideoStream:
 
                 if not cap.grab():
                     if not clock:
-                        print(f"[RTSP] Stream read failed. Reconnecting in {reconnect_delay:.0f}s...")
+                        log.warning("[RTSP] Stream read failed. Reconnecting in %.0fs...", reconnect_delay)
                         cap = self._reopen(cap, reconnect_delay)
                         reconnect_delay = min(reconnect_delay * 2, _RECONNECT_MAX_S)
                         continue
@@ -275,7 +275,7 @@ class VideoStream:
                     continue
 
                 if reconnect_delay > _RECONNECT_MIN_S:
-                    print("[Capture] Source recovered.")
+                    log.info("[Capture] Source recovered.")
                 reconnect_delay = _RECONNECT_MIN_S
                 frames_since_start += 1
 

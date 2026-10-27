@@ -1,0 +1,34 @@
+{% load i18n %}
+{% comment %}The video source filter of the search and violations pages: "All sources", then each group (live
+cameras, video files) with its sources under it. An Alpine.js component (menus.js) that sends "source-chosen"
+with the chosen value; menu_id names it, chosen is the value it starts on ("" = all sources). sources is
+pages._source_options(){% endcomment %}
+<div class="source-menu" id="{{ menu_id }}" x-data="sourceMenu" @click.outside="close" @keydown.escape="escape">
+  <button type="button" class="source-btn" x-ref="button" @click="toggleList" :aria-expanded="open" aria-haspopup="true" aria-expanded="false" aria-controls="{{ menu_id }}-list">
+    <span class="source-btn-label" x-text="label">{% translate "All sources" %}</span>
+    <svg viewBox="0 0 16 16" width="12" height="12" aria-hidden="true"><path d="m4 6 4 4 4-4" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+  </button>
+  <div class="source-list" id="{{ menu_id }}-list" :hidden="closed" hidden>
+    <button type="button" class="source-item" @click="choose" data-value="" data-label="{% translate "All sources" %}" aria-pressed="{% if chosen %}false{% else %}true{% endif %}">{% translate "All sources" %}</button>
+    {% for mode, items in sources.items %}
+    {% if mode == "live" %}{% translate "Live cameras" as group %}{% translate "All live cameras" as all %}{% translate "Show each of the live cameras" as show %}{% else %}{% translate "Video files" as group %}{% translate "All video files" as all %}{% translate "Show each of the video files" as show %}{% endif %}
+    <div class="source-group" x-data="sourceGroup" data-expanded="false">
+      <div class="source-group-head">
+        <button type="button" class="source-toggle" @click="toggleGroup" :aria-expanded="expanded" aria-expanded="false" aria-label="{{ show }}">
+          <svg viewBox="0 0 16 16" width="12" height="12" aria-hidden="true"><path d="m6 4 4 4-4 4" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </button>
+        <button type="button" class="source-item" @click="choose" data-value="{{ mode }}" data-label="{{ all }}" aria-pressed="{% if chosen == mode %}true{% else %}false{% endif %}">
+          {{ group }} <span class="source-count">{{ items|length }}</span>
+        </button>
+      </div>
+      <div class="source-children" :hidden="collapsed" hidden>
+        {% for value, label in items %}
+        <button type="button" class="source-item" @click="choose" data-value="{{ value }}" data-label="{{ label }}" aria-pressed="{% if chosen == value %}true{% else %}false{% endif %}">{{ label }}</button>
+        {% empty %}
+        <span class="source-none muted">{% translate "None" %}</span>
+        {% endfor %}
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+</div>

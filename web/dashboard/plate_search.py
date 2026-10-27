@@ -10,6 +10,7 @@ Several plates can be searched at once, separated by commas ('1กข987, 2847')
 its best match against any of them.
 """
 import re
+from functools import lru_cache
 
 # Characters OCR confuses with each other on blurred or small plates
 LOOKALIKE_GROUPS = [
@@ -82,8 +83,10 @@ def _distance(query: str, plate: str, partial: bool) -> float:
     return min(prev) if partial else prev[-1]
 
 
+@lru_cache(maxsize=200_000)
 def _part_similarity(a: str, b: str, partial: bool) -> float:
-    """0..1 for one part of a plate. partial: the shorter one may match anywhere inside the longer one."""
+    """0..1 for one part of a plate. partial: the shorter one may match anywhere inside the longer one.
+    Cached: many plates share their series or their number, so each pair is compared once."""
     score = 1.0 - _distance(a, b, partial=False) / max(len(a), len(b))
     if partial and len(a) != len(b):
         short, long = sorted((a, b), key=len)

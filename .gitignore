@@ -40,7 +40,8 @@ input/
 runs/
 
 # Web dashboard runtime data (database, generated secret key, evidence snapshots)
-web/db.sqlite3
+database/
+web/db.sqlite3*
 web/.secret_key
 web/media/
 web/staticfiles/

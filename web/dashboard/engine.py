@@ -19,6 +19,7 @@ from django.utils.translation import gettext as _
 from . import calibrations
 from .live_frames import LiveFrames
 from .recorder import ReportRecorder
+from .security import session_allows
 from .sources import VideoSource
 
 log = logging.getLogger("dashboard")
@@ -111,6 +112,11 @@ class DetectionService:
         self.config = replace(self.config, max_riders=max_riders, speed_limit_kmh=speed_limit_kmh)
         if self.app is not None:
             self.app.config = self.config
+
+    def failed(self) -> bool:
+        """It cannot recover by itself: loading failed, or the OCR process exited. The next staff login
+        replaces it (staff_logged_in)."""
+        return self.state == self.ERROR or (self.state == self.RUNNING and self.app.ocr.problem() is not None)
 
     def health(self) -> dict:
         """Quick check for the system status page; nothing is started or changed."""
@@ -299,10 +305,16 @@ _session_watch: Optional[threading.Thread] = None
 def staff_logged_in(session_key: Optional[str]) -> None:
     """Staff logged in: start detection if it is off, and keep it on until they log out. The only way it
     starts; requests of the pages never start it, so one still running while its user logs out cannot
-    start it again."""
+    start it again. A service that failed is stopped and started again."""
+    global _service
     with _service_lock:
         if session_key:
             _staff.add(session_key)
+        if _service is not None and _service.failed():
+            log.warning("Detection had failed: starting it again.")
+            # Stopped before the new one loads its models, so the GPU memory is free again
+            _stop_and_free(_service)
+            _service = None
         _start_service()
 
 
@@ -361,13 +373,10 @@ def _take_unneeded_service() -> Optional[DetectionService]:
 
 
 def _live_sessions(keys) -> set:
-    """The keys among `keys` whose session still exists and has not expired."""
-    from django.contrib.sessions.models import Session
-    from django.utils import timezone
-
+    """The keys among `keys` whose login is still valid and may use the live view (not expired, account
+    still active, password unchanged, permission kept)."""
     try:
-        return set(Session.objects.filter(session_key__in=keys, expire_date__gt=timezone.now())
-                   .values_list("session_key", flat=True))
+        return {key for key in keys if session_allows(key, "dashboard.use_dashboard")}
     finally:
         close_old_connections()
 
@@ -389,17 +398,11 @@ def _watch_sessions() -> None:
 
 def resume_logged_in_staff() -> None:
     """On server start: staff whose session is still valid are logged in, so detection starts for them."""
-    from django.contrib.auth import get_user_model
     from django.contrib.sessions.models import Session
     from django.utils import timezone
 
-    User = get_user_model()
-    keys = []
-    for session in Session.objects.filter(expire_date__gt=timezone.now()):
-        user_id = session.get_decoded().get("_auth_user_id")
-        user = User.objects.filter(pk=user_id, is_active=True).first() if user_id else None
-        if user and user.has_perm("dashboard.use_dashboard"):
-            keys.append(session.session_key)
+    sessions = Session.objects.filter(expire_date__gt=timezone.now()).values_list("session_key", flat=True)
+    keys = [key for key in sessions if session_allows(key, "dashboard.use_dashboard")]
     if keys:
         log.info("%d staff still logged in: starting detection.", len(keys))
         for key in keys:

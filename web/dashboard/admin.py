@@ -55,8 +55,13 @@ admin.site.unregister(User)
 
 @admin.register(User)
 class RoleUserAdmin(UserAdmin):
-    """Admins manage accounts and roles (groups), but may not make anyone a superuser:
-    a superuser has every permission, so it would get around the roles."""
+    """Admins manage accounts and roles (groups), but may not make anyone a superuser, nor see or change
+    a superuser's account (e.g. set its password): a superuser has every permission, so it would get around
+    the roles."""
+
+    def get_queryset(self, request):
+        users = super().get_queryset(request)
+        return users if request.user.is_superuser else users.filter(is_superuser=False)
 
     def get_readonly_fields(self, request, obj=None):
         fields = super().get_readonly_fields(request, obj)

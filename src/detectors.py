@@ -7,7 +7,7 @@ import torch
 from app_config import load_yolo_model
 from rider_classifier import RiderClassifier
 from rider_voting import RiderVoting
-from utils import log_error, suppress_overlapping_boxes
+from utils import log, log_error, suppress_overlapping_boxes
 
 
 def _boxes(result):
@@ -53,12 +53,12 @@ class MotorcycleDetector(_YoloModel):
                 self.model = load_yolo_model(path, device, use_half)
                 # Works for both the custom detector ({0: motorcycle}) and COCO models ({3: motorcycle})
                 self.classes = [i for i, n in self.model.names.items() if n in ("motorcycle", "motorbike")] or None
-                print(f"[Motorcycle] Detector loaded: {path}")
+                log.info("[Motorcycle] Detector loaded: %s", path)
             except Exception as e:
                 self.model = None
-                print(f"[Motorcycle] Model '{path}' not loaded ({e}).")
+                log.warning("[Motorcycle] Model '%s' not loaded (%s).", path, e)
         if self.model is None:
-            print("[Motorcycle] No detector found. Motorcycle detection disabled.")
+            log.warning("[Motorcycle] No detector found. Motorcycle detection disabled.")
 
     def warmup(self, frame):
         self._warmup(frame, self.config.detection_imgsz)
@@ -141,7 +141,7 @@ class HeadDetector(_YoloModel):
         try:
             self.model = load_yolo_model(config.helmet_model_path, device, use_half)
         except Exception as e:
-            print(f"[Helmet] Model not loaded ({e}). Helmet detection disabled.")
+            log.warning("[Helmet] Model not loaded (%s). Helmet detection disabled.", e)
             return
         norm = lambda s: str(s).lower().replace("_", " ").replace("-", " ").strip()
         helmet_names = {norm(n) for n in config.helmet_class_names}
@@ -151,9 +151,9 @@ class HeadDetector(_YoloModel):
                 self.helmet_ids.add(int(cid))
             elif norm(name) in head_names:
                 self.head_ids.add(int(cid))
-        print(f"[Helmet] Model classes: {dict(self.model.names)}")
+        log.info("[Helmet] Model classes: %s", dict(self.model.names))
         if not self.head_ids:
-            print("[Helmet] No bare-head/no-helmet class found; NO HELMET will never be reported.")
+            log.warning("[Helmet] No bare-head/no-helmet class found; NO HELMET will never be reported.")
 
     def warmup(self, frame):
         self._warmup(frame[:400, :300], self.config.helmet_imgsz)
@@ -215,9 +215,9 @@ class RiderClassification:
         if os.path.isfile(config.rider_model_path):
             try:
                 self.classifier = RiderClassifier(config.rider_model_path, device, use_half)
-                print(f"[Rider] Classifier loaded: {config.rider_model_path} (replaces the helmet model)")
+                log.info("[Rider] Classifier loaded: %s (replaces the helmet model)", config.rider_model_path)
             except Exception as e:
-                print(f"[Rider] Classifier not loaded ({e}); using the helmet model.")
+                log.warning("[Rider] Classifier not loaded (%s); using the helmet model.", e)
         self.voting = RiderVoting(
             window=config.rider_vote_window,
             min_frames=config.rider_vote_min_frames,

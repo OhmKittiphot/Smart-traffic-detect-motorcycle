@@ -198,7 +198,7 @@ window.Dashboard = (() => {
   }
 
   function statusCell(r) {
-    if (!r.violation) return el("span", { class: "tag tag-ok" }, gettext(gettext("Normal")));
+    if (!r.violation) return el("span", { class: "tag tag-ok" }, gettext("Normal"));
     return el("span", {}, ...r.violations.map((v) => el("span", { class: "tag tag-bad" }, v)));
   }
 

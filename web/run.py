@@ -56,6 +56,9 @@ def main():
 
     host = os.getenv("DASHBOARD_HOST", "127.0.0.1")
     port = int(os.getenv("DASHBOARD_PORT", "8000"))
+    # Each open video stream and event stream (views/events.py) holds one thread while its tab is shown:
+    # up to 4 for a live view, at most 1 for the other pages. The rest answer API requests
+    threads = int(os.getenv("DASHBOARD_THREADS", "48"))
     if host not in ("127.0.0.1", "localhost") and not os.getenv("DJANGO_ALLOWED_HOSTS"):
         print(f"[Warning] Listening on {host} but DJANGO_ALLOWED_HOSTS is not set; other hosts will get 400.")
     if settings.DEBUG:
@@ -63,8 +66,7 @@ def main():
 
     print(f"\nCCTV dashboard: http://{'127.0.0.1' if host == '0.0.0.0' else host}:{port}\n")
     try:
-        # Each open video stream and event stream (views/events.py) holds one thread, so keep plenty for API requests
-        serve(application, host=host, port=port, threads=48, ident="cctv",
+        serve(application, host=host, port=port, threads=threads, ident="cctv",
               channel_timeout=60, connection_limit=200)
     finally:
         stop_service()
