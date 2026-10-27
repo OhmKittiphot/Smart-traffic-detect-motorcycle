@@ -106,12 +106,15 @@ class SpeedCalibration(models.Model):
 
     points: 4 image points in frame pixels, order far-left, far-right, near-right, near-left.
     width_m: real distance between points 1-2, length_m: between points 2-3.
+    reference_frame: video files only, the frame (JPEG) the points were clicked on, so they can follow a
+    moving camera (src/camera_motion.py).
     A row with points = null means the calibration was removed on purpose."""
 
     source_key = models.CharField(max_length=300, unique=True)
     points = models.JSONField(null=True, blank=True)
     width_m = models.FloatField(null=True, blank=True)
     length_m = models.FloatField(null=True, blank=True)
+    reference_frame = models.BinaryField(null=True, blank=True, editable=False)
     updated_at = models.DateTimeField(auto_now=True)
     updated_by = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL)
 

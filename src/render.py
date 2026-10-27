@@ -92,6 +92,18 @@ def draw_video_overlay(frame, pos_ms: float, total_ms: float, proc_fps: float, p
     return frame
 
 
+def draw_calibration(frame, points):
+    """Outline the speed calibration rectangle (4 points), where it is on this frame."""
+    pts = np.round(np.array(points)).astype(np.int32)
+    cv2.polylines(frame, [pts], isClosed=True, color=(21, 204, 250), thickness=2, lineType=cv2.LINE_AA)
+    for i, (x, y) in enumerate(pts):
+        cv2.circle(frame, (int(x), int(y)), 7, (77, 72, 229), -1, cv2.LINE_AA)
+        cv2.circle(frame, (int(x), int(y)), 7, (255, 255, 255), 2, cv2.LINE_AA)
+        cv2.putText(frame, str(i + 1), (int(x) + 9, int(y) - 9), cv2.FONT_HERSHEY_SIMPLEX, 0.7,
+                    (255, 255, 255), 2, cv2.LINE_AA)
+    return frame
+
+
 def draw_detections(frame, dets, mc_dets, mc_ids, speeds, helmets, riders=None, max_riders=2):
     """Draw motorcycle bounding boxes, speed, rider count, helmet status, and license plate detections."""
     riders = riders or {}

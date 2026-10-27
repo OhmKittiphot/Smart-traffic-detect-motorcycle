@@ -192,29 +192,38 @@ class DetectionService:
         with self.app.det_lock:
             if calib is None:
                 estimator.clear_calibration()
-                return
-            try:
-                estimator.set_calibration(*calib)
-            except ValueError as e:
-                log.warning("Saved speed calibration for %s is invalid (%s).", self.source.key, e)
-                estimator.clear_calibration()
+            else:
+                try:
+                    estimator.set_calibration(*calib)
+                except ValueError as e:
+                    log.warning("Saved speed calibration for %s is invalid (%s).", self.source.key, e)
+                    estimator.clear_calibration()
+        # In a video file the camera may move: the points follow it from the frame they were clicked on
+        reference = calibrations.reference_frame(self.source.key) if estimator.calibrated else None
+        self.app.follow_camera(reference)
 
     def calibration(self) -> dict:
         """Current source's calibration for the editor (points in frame pixels)."""
         running = self.state == self.RUNNING
         saved = calibrations.to_dict(calibrations.saved(self.source.key))
+        if saved and running and self.app.camera_motion is not None:
+            # Where the points are now, on the frame the editor shows, since the camera has moved
+            with self.app.det_lock:
+                saved["points"] = self.app.speed_estimator.image_points() or saved["points"]
         return {"calibrated": bool(running and self.app.speed_estimator.calibrated),
                 "source": self.source.describe(),
                 **(saved or {"points": None, "width_m": None, "length_m": None})}
 
-    def save_calibration(self, points, width_m: float, length_m: float, user) -> None:
-        """Raises ValueError when the points do not form a usable rectangle on the road."""
+    def save_calibration(self, points, width_m: float, length_m: float, user, reference_jpeg=None) -> None:
+        """reference_jpeg: the frame the points were clicked on (followed when the camera of a video file
+        moves). Raises ValueError when the points do not form a usable rectangle on the road."""
         if self.state != self.RUNNING:
             raise RuntimeError(_("Detection is not ready yet"))
         with self.app.det_lock:
             # Validates the shape (convex, in order, not tiny) before anything is stored
             self.app.speed_estimator.set_calibration([tuple(p) for p in points], (width_m, length_m))
-        calibrations.save(self.source.key, points, width_m, length_m, user)
+        calibrations.save(self.source.key, points, width_m, length_m, user, reference_jpeg)
+        self.app.follow_camera(calibrations.reference_frame(self.source.key))
 
     def remove_calibration(self, user) -> None:
         if self.state != self.RUNNING:
@@ -222,6 +231,7 @@ class DetectionService:
         calibrations.remove(self.source.key, user)
         with self.app.det_lock:
             self.app.speed_estimator.clear_calibration()
+        self.app.follow_camera(None)
 
     def reload_calibration(self, source_key: str) -> None:
         """Apply a calibration changed on the system status page, if it is the current source's."""

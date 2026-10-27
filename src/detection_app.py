@@ -1,12 +1,14 @@
 import threading
 
+import numpy as np
 import torch
 
+from camera_motion import CameraMotion
 from ocr_handler import OCRResultHandler
 from ocr_manager import OCRManager
 from ocr_process import OcrProcess
 from processing_stats import ProcessingStats
-from render import draw_detections, draw_video_overlay
+from render import draw_calibration, draw_detections, draw_video_overlay
 from report import print_motorcycle_reports
 from speed import SpeedEstimator, parse_calibration
 from tracker import MotorcycleTracker
@@ -43,6 +45,8 @@ class DetectionApp:
         )
         self.speed_estimator = SpeedEstimator()
         self._init_speed_calibration()
+        # Moves the calibration points with the camera in a video file (None: the camera does not move)
+        self.camera_motion = None
 
         # Guards the tracker, OCR manager, speed estimator and latest_detections, shared by the threads
         self.det_lock = threading.Lock()
@@ -110,6 +114,8 @@ class DetectionApp:
         self.tracker.reset()
         self.ocr_manager.reset()
         self.speed_estimator.reset()
+        if self.camera_motion is not None:
+            self.camera_motion.restart()
         self.yolo_pipeline.reset()
         self.latest_detections = []
         self.stats.forget_last()
@@ -125,6 +131,27 @@ class DetectionApp:
         # Motorcycles in view before the jump were only partly seen: drop them instead of reporting
         with self.det_lock:
             self._reset_media_session(report=False)
+
+    # ----- moving camera -----
+
+    def follow_camera(self, reference_frame) -> None:
+        """Move the calibration points with the camera, from the frame they were clicked on;
+        None: keep them where they were clicked (a fixed camera)."""
+        motion = CameraMotion(reference_frame) if reference_frame is not None else None
+        with self.det_lock:
+            self.camera_motion = motion
+            # Back on the frame the points were clicked on, until the first frame is matched
+            self.speed_estimator.set_camera_motion(np.eye(3))
+
+    def _follow_camera(self, frame) -> None:
+        motion = self.camera_motion
+        if motion is None:
+            return
+        H = motion.update(frame)
+        with self.det_lock:
+            # Not when follow_camera() was called meanwhile (a new calibration was saved)
+            if motion is self.camera_motion:
+                self.speed_estimator.set_camera_motion(H)
 
     # ----- workers -----
 
@@ -147,6 +174,7 @@ class DetectionApp:
                     self._proc_gen = frame_gen
 
             try:
+                self._follow_camera(frame)
                 dets = self.yolo_pipeline.process_frame(frame, frame_t, frame_gen, current_gen)
                 with self.det_lock:
                     self.latest_detections = dets
@@ -221,9 +249,12 @@ class DetectionApp:
             speeds = {tid: self.speed_estimator.get_speed(tid) for tid in mc_ids.values()}
             helmets = {tid: self.tracker.riders.helmet_status(tid) for tid in mc_ids.values()}
             riders = {tid: self.tracker.riders.rider_count(tid) for tid in mc_ids.values()}
+            calib_points = self.speed_estimator.image_points() if self.camera_motion is not None else None
 
         # A drawing failure (bad bbox, font issue...) should cost one overlay, not the app
         try:
+            if calib_points:
+                draw_calibration(frame, calib_points)
             frame = draw_detections(frame, dets, mc_dets, mc_ids, speeds, helmets,
                                     riders, self.config.max_riders)
             if stream.is_video_file:

@@ -16,11 +16,14 @@ from ..live_frames import encode_jpeg
 from ..models import SpeedCalibration
 from ..serializers import CalibrationSerializer, SourceDistancesSerializer, SourceKeySerializer
 from ..sources import grab_frame
-from .common import audit, conflict, jpeg_response
+from .common import audit, conflict, jpeg_response, running_service
 
 _NOT_A_RECTANGLE = {"points": [gettext_lazy("The 4 points must outline a rectangle on the road, clicked in order")]}
 # Size of the last frame sent for redrawing a source's points, so the points saved for it can be checked
 _REDRAW_FRAME_SIZE = "calibration-frame-size:{}"
+# The last frame sent to click a source's points on (JPEG): a video file keeps it with its calibration,
+# so the points can follow a moving camera
+_CLICKED_FRAME = "calibration-frame:{}"
 _REDRAW_FRAME_KEEP_S = 60 * 60
 
 
@@ -35,10 +38,13 @@ class CalibrationView(APIView):
 class CalibrationFrameView(APIView):
     def get(self, request):
         """The current frame without overlays, as JPEG, for clicking the calibration points on."""
+        service = running_service()
         try:
-            return jpeg_response(running_service().frames.raw_jpeg())
+            jpeg = service.frames.raw_jpeg()
         except RuntimeError as e:
             return conflict(e)
+        cache.set(_CLICKED_FRAME.format(service.source.key), jpeg, _REDRAW_FRAME_KEEP_S)
+        return jpeg_response(jpeg)
 
 
 class CalibrationSaveView(APIView):
@@ -53,7 +59,8 @@ class CalibrationSaveView(APIView):
         serializer.is_valid(raise_exception=True)
         points, width_m, length_m = (serializer.validated_data[f] for f in ("points", "width_m", "length_m"))
         try:
-            service.save_calibration(points, width_m, length_m, request.user)
+            service.save_calibration(points, width_m, length_m, request.user,
+                                     cache.get(_CLICKED_FRAME.format(service.source.key)))
         except ValueError:
             # The speed estimator rejects shapes that are not a convex 4-sided outline
             return Response(_NOT_A_RECTANGLE, status=status.HTTP_400_BAD_REQUEST)
@@ -119,6 +126,7 @@ class SourceCalibrationFrameView(APIView):
         except RuntimeError as e:
             return conflict(e)
         cache.set(_REDRAW_FRAME_SIZE.format(key), size, _REDRAW_FRAME_KEEP_S)
+        cache.set(_CLICKED_FRAME.format(key), jpeg, _REDRAW_FRAME_KEEP_S)
         return jpeg_response(jpeg)
 
 
@@ -142,7 +150,7 @@ class SourceCalibrationPointsView(APIView):
             SpeedEstimator().set_calibration([tuple(p) for p in points], (width_m, length_m))
         except ValueError:
             return Response(_NOT_A_RECTANGLE, status=status.HTTP_400_BAD_REQUEST)
-        calibrations.save(key, points, width_m, length_m, request.user)
+        calibrations.save(key, points, width_m, length_m, request.user, cache.get(_CLICKED_FRAME.format(key)))
         _reload_calibration(key)
         audit(request, "speed_calibration", f"{key}: {width_m:g} x {length_m:g} m (points redrawn)")
         return Response({"source_key": key, "points": points, "width_m": width_m, "length_m": length_m})
