@@ -3,7 +3,7 @@
 // Violation statistics at the top of the violations page, with a calendar of one month, from /api/stats/
 // (refreshed every 5 seconds)
 // and /api/stats/repeat/ (every minute, since grouping look-alike plates takes longer), for the chosen dates
-(() => {
+window.Dashboard.onPage("#per-day", (page) => {
   const REFRESH_MS = 5000;
   const REPEAT_REFRESH_MS = 60000;
   const WEEKDAYS = [gettext("Mon"), gettext("Tue"), gettext("Wed"), gettext("Thu"), gettext("Fri"), gettext("Sat"),
@@ -237,18 +237,9 @@
     $("search-form").scrollIntoView({ behavior: "smooth", block: "start" });
   });
 
-  // No requests while the tab is hidden; refreshed as soon as it is shown again
-  function every(ms, load) {
-    const poll = async () => {
-      if (!document.hidden) await load();
-      setTimeout(poll, ms);
-    };
-    poll();
-  }
-  document.addEventListener("visibilitychange", () => { if (!document.hidden) refresh(); });
-
   // Records deleted on this page (search.js): show the new numbers now rather than at the next poll
-  document.addEventListener("records-changed", reload);
-  every(REFRESH_MS, refresh);
-  every(REPEAT_REFRESH_MS, refreshRepeat);
-})();
+  document.addEventListener("records-changed", reload, { signal: page.signal });
+  // No requests while the tab is hidden; refreshed as soon as it is shown again
+  page.every(refresh, REFRESH_MS);
+  page.every(refreshRepeat, REPEAT_REFRESH_MS);
+});

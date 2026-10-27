@@ -5,13 +5,11 @@
 // the value of the checked one.
 // Forms marked data-autosave save on every change. Saved preferences are announced with a
 // "settings:preferences" event, so the live view and the notifications (notify.js) apply them at once.
-(() => {
+window.Dashboard.onPage("#settings-panel", () => {
   const panel = document.getElementById("settings-panel");
-  if (!panel) return;
   const REOPEN_KEY = "cctv-settings-reopen";
   const LANGUAGE_RELOAD_MS = 300;   // a little longer than the toggle's slide (app.css .lang-toggle)
-  // common.js is loaded after the top bar, so window.Dashboard is looked up when a form is sent
-  const api = (...args) => window.Dashboard.api(...args);
+  const { api } = window.Dashboard;
 
   function showMsg(form, text, kind) {
     const msg = form.querySelector(".form-msg");
@@ -87,4 +85,4 @@
       }
     });
   }
-})();
+});

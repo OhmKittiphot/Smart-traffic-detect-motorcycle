@@ -2,8 +2,8 @@
 
 // Speed calibration editor (#calib-dialog, _calibration_dialog.html), used by the live view and the
 // system status page. Points are kept in frame pixels (the image's natural size), the same units the
-// server uses. Exposed as window.CalibrationEditor.open(options).
-window.CalibrationEditor = (() => {
+// server uses. Exposed as window.CalibrationEditor.open(options) on the pages with the dialog.
+window.Dashboard.onPage("#calib-dialog", () => {
   const SVG_NS = "http://www.w3.org/2000/svg";
   const POINT_NAMES = [gettext("far-left"), gettext("far-right"), gettext("near-right"), gettext("near-left")];
   const MIN_M = 0.1;   // allowed width / length in metres (the server checks the same range)
@@ -184,5 +184,5 @@ window.CalibrationEditor = (() => {
   // A frame still on its way when the dialog closes is not shown in the next one
   dialog.addEventListener("close", () => { frameNo++; });
 
-  return { open };
-})();
+  window.CalibrationEditor = { open };
+});

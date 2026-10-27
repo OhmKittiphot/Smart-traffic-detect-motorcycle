@@ -37,6 +37,14 @@
 
 /* Fade between themes (theme.js): a whole-page cross-fade where View Transitions are supported */
 ::view-transition-old(root), ::view-transition-new(root) { animation-duration: .4s; animation-timing-function: ease; }
+/* Moving to another page cross-fades the same way instead of flashing white: a link boosted by htmx
+   (transition:true, _topbar.html) and a full page load alike (Back, Forward, a link that is not boosted) */
+@media (prefers-reduced-motion: no-preference) {
+  @view-transition { navigation: auto; }
+}
+@media (prefers-reduced-motion: reduce) {
+  ::view-transition-old(root), ::view-transition-new(root) { animation: none; }
+}
 
 /* Fallback for browsers without View Transitions: theme.js adds this class only while switching */
 :root.theme-fading, :root.theme-fading *, :root.theme-fading *::before, :root.theme-fading *::after {

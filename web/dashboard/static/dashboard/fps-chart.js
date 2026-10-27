@@ -3,8 +3,9 @@
 // Live line chart of the processing speed under the video (#fps-chart), drawn with uPlot (vendor/). dashboard.js
 // calls push() with each status event (once a second); null marks a moment with detection off, which breaks
 // the line. While a video file is paused the chart's clock stops: nothing is added, nothing scrolls, and the
-// paused time is left out of the timeline, so the line goes on where it stopped. Exposed as window.FpsChart.
-window.FpsChart = (() => {
+// paused time is left out of the timeline, so the line goes on where it stopped. Exposed as window.FpsChart
+// while the live view is shown.
+window.Dashboard.onPage("#fps-chart", (page) => {
   const WINDOW_S = 120;   // seconds of history shown
   const HEIGHT = 96;
 
@@ -102,8 +103,15 @@ window.FpsChart = (() => {
   }
 
   makeChart();
-  new ResizeObserver(() => { if (plot.clientWidth) chart.setSize({ width: plot.clientWidth, height: HEIGHT }); }).observe(plot);
-  new MutationObserver(makeChart).observe(document.documentElement, { attributeFilter: ["data-theme"] });
+  const resized = new ResizeObserver(() => { if (plot.clientWidth) chart.setSize({ width: plot.clientWidth, height: HEIGHT }); });
+  resized.observe(plot);
+  const themed = new MutationObserver(makeChart);
+  themed.observe(document.documentElement, { attributeFilter: ["data-theme"] });
+  page.onLeave(() => {
+    resized.disconnect();
+    themed.disconnect();
+    chart.destroy();
+  });
 
-  return { push };
-})();
+  window.FpsChart = { push };
+});

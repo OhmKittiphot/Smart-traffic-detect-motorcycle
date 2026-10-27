@@ -7,14 +7,15 @@
 //   repeats nor misses one.
 // - live camera status (admins, on by default): /api/system/cameras/ is asked every CAMERA_POLL_MS and each
 //   camera's state is compared with the one last seen, also kept for the browser tab.
-(() => {
+// Only on pages with #toasts: accounts that can see records or the system status.
+window.Dashboard.onPage("#toasts", (page) => {
   const box = document.getElementById("toasts");
-  if (!box) return;   // this account cannot see records or the system status
   const SHOW_MS = 10000;   // a notification closes itself after this
   const MAX_SHOWN = 3;     // at most this many violations; the rest are counted in one "+N more" under them
   const KEY = "cctv-notify-after";
   let on = box.dataset.on === "true";
   let stopWatching = null;
+  page.onLeave(() => stopWatching?.());
   let more = null;         // the "+N more" notification while it is open
   let moreCount = 0;
   let moreTimer = null;
@@ -44,6 +45,7 @@
     const close = () => toast.remove();
     addCloseButton(toast, close);
     box.prepend(toast);
+    htmx.process(toast);   // its link is boosted like the top bar's (hx-boost on #toasts)
     const shown = box.querySelectorAll(".toast:not(.toast-more):not(.toast-camera)");
     for (let i = MAX_SHOWN; i < shown.length; i++) {
       shown[i].remove();
@@ -58,6 +60,7 @@
       more = moreToast();
       addCloseButton(more, closeMore);
       box.append(more);
+      htmx.process(more);
     }
     moreCount += count;
     more.querySelector("b").textContent = interpolate(
@@ -151,7 +154,7 @@
   }
 
   async function pollCameras() {
-    if (!camerasOn || document.hidden) return;
+    if (!camerasOn) return;
     try {
       const data = await window.Dashboard.api(CAMERA_API);
       const last = readStates();
@@ -181,18 +184,9 @@
       saveStates(null);
       pollCameras();
     }
-  });
+  }, { signal: page.signal });
 
-  // common.js (window.Dashboard) is loaded after the top bar; it is there once the page has loaded
-  document.addEventListener("DOMContentLoaded", () => {
-    watchViolations();
-    if (CAMERA_API) {
-      pollCameras();
-      setInterval(pollCameras, CAMERA_POLL_MS);
-    }
-  });
-  // Camera checks skip a hidden tab; catch up as soon as it is shown again
-  document.addEventListener("visibilitychange", () => {
-    if (!document.hidden && CAMERA_API) pollCameras();
-  });
-})();
+  watchViolations();
+  // Camera checks skip a hidden tab and catch up as soon as it is shown again
+  if (CAMERA_API) page.every(pollCameras, CAMERA_POLL_MS);
+});

@@ -1,7 +1,7 @@
 "use strict";
 
 // Admin system status page: polls /api/system/ (cameras are re-checked by the server every 30 s)
-(() => {
+window.Dashboard.onPage("#system-page", (page) => {
   const POLL_MS = 5000;
   const { api, el } = window.Dashboard;
   const $ = (id) => document.getElementById(id);
@@ -203,10 +203,10 @@
   // Opened, the card covers the table below it: a click elsewhere or Esc closes it
   document.addEventListener("click", (ev) => {
     if (modelCard.classList.contains("is-open") && !modelCard.contains(ev.target)) setModelsOpen(false);
-  });
+  }, { signal: page.signal });
   document.addEventListener("keydown", (ev) => {
     if (ev.key === "Escape" && modelCard.classList.contains("is-open")) setModelsOpen(false);
-  });
+  }, { signal: page.signal });
 
   // ---------- polling ----------
 
@@ -230,11 +230,5 @@
   }
 
   // No requests while the tab is hidden; refreshed as soon as it is shown again
-  async function poll() {
-    if (!document.hidden) await refresh();
-    setTimeout(poll, POLL_MS);
-  }
-  document.addEventListener("visibilitychange", () => { if (!document.hidden) refresh(); });
-
-  poll();
-})();
+  page.every(refresh, POLL_MS);
+});

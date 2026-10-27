@@ -1,6 +1,7 @@
 {% extends "dashboard/base.html" %}
 {% load i18n static dashboard_tags %}
 {% block title %}{% translate "System status" %} · CCTV Control{% endblock %}
+{% block head %}{% include "dashboard/_scripts.html" %}{% endblock %}
 {% block body %}
 {% include "dashboard/_topbar.html" %}
 
@@ -115,8 +116,4 @@
 
 {% if perms.dashboard.manage_calibration %}{% include "dashboard/_calibration_dialog.html" %}{% endif %}
 
-<meta name="csrf-token" content="{{ csrf_token }}">
-<script src="{% static 'dashboard/common.js' %}" defer></script>
-{% if perms.dashboard.manage_calibration %}<script src="{% static 'dashboard/calibration.js' %}" defer></script>{% endif %}
-<script src="{% static 'dashboard/system.js' %}" defer></script>
 {% endblock %}

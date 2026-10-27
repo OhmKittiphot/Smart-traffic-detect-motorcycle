@@ -1,6 +1,7 @@
 {# Top bar of every dashboard page #}
 {% load i18n static dashboard_tags %}
-<header class="topbar">
+{# Its links swap the page's body instead of loading a new document (htmx), fading across (app.css) #}
+<header class="topbar" hx-boost="true" hx-swap="innerHTML transition:true">
   {% if perms.dashboard.use_dashboard %}
   <a class="brand text-decoration-none" href="{% url 'dashboard' %}" title="{% translate "Go to the live view" %}"><span class="rec-dot" aria-hidden="true"></span><span>CCTV Control</span></a>
   {% else %}
@@ -24,7 +25,7 @@
     {% endif %}
     {% if perms.auth.view_user %}
       {# Admin only, and it leaves the dashboard for Django admin: set apart in the accent colour #}
-      <a class="plate-link admin-link" href="{% url 'admin:index' %}">
+      <a class="plate-link admin-link" href="{% url 'admin:index' %}" hx-boost="false">
         <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><circle cx="6" cy="5" r="2.6" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M1.5 14c0-2.6 2-4.4 4.5-4.4s4.5 1.8 4.5 4.4" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/><path d="M11.5 3.2a2.4 2.4 0 0 1 0 4.4M12.8 9.9c1.1.6 1.7 2 1.7 4.1" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
         {% translate "Manage users & roles" %}
       </a>
@@ -36,5 +37,3 @@
   </div>
 </header>
 {% settings_panel %}
-<script src="{% static 'dashboard/settings.js' %}" defer></script>
-<script src="{% static 'dashboard/notify.js' %}" defer></script>

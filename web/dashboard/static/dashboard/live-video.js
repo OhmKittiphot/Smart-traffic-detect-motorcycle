@@ -3,8 +3,8 @@
 // The live view's video. It is received over WebRTC (dashboard/webrtc.py) into <video id="stream-video">, which
 // needs less bandwidth and has less delay than the MJPEG stream of <img id="stream">. The MJPEG stream shows
 // until the WebRTC video plays, and stays as the fallback when WebRTC cannot connect. Exposed as
-// window.LiveVideo for dashboard.js.
-window.LiveVideo = (() => {
+// window.LiveVideo for dashboard.js while the live view is shown; leaving it closes the connection.
+window.Dashboard.onPage("#stream-video", (page) => {
   const CONNECT_TIMEOUT_MS = 8000;   // no picture by then: fall back to MJPEG
   const GATHER_TIMEOUT_MS = 2000;    // the offer goes out with the addresses found by then
   const img = document.getElementById("stream");
@@ -81,5 +81,6 @@ window.LiveVideo = (() => {
   }
 
   reload();
-  return { reload, stop };
-})();
+  page.onLeave(stop);
+  window.LiveVideo = { reload, stop };
+});

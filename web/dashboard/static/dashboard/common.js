@@ -1,6 +1,7 @@
 "use strict";
 
-// Helpers shared by the dashboard pages (dashboard.js, search.js), exposed as window.Dashboard.
+// Helpers shared by the dashboard pages (dashboard.js, search.js), exposed as window.Dashboard, and the start
+// and end of each page (onPage).
 // Texts go through gettext() / ngettext() / interpolate() from /jsi18n/ (Django's JavaScript catalog), which
 // gives them in the language the account chose in Settings.
 window.Dashboard = (() => {
@@ -84,14 +85,70 @@ window.Dashboard = (() => {
   // Speeds written into the page by the server (e.g. the speed limit) are in km/h
   document.addEventListener("DOMContentLoaded", units.refresh);
 
+  // ---------- pages ----------
+  // Links between the dashboard pages are htmx boosted (_topbar.html): they swap the <body> instead of loading
+  // a new document, so the scripts are loaded once (_scripts.html) and each page script hands its setup to
+  // onPage(selector, setup). The setup runs whenever the page shown has an element matching selector (on
+  // load, and after each swap), and gets a `page` that ties what it starts to that page, stopped when it is
+  // left:
+  // - page.signal: for listeners on document / window, addEventListener(..., { signal: page.signal })
+  // - page.every(fn, ms): fn now and every ms while the tab is shown, and as soon as it is shown again
+  // - page.onLeave(fn): anything else to stop, e.g. an event stream (watchEvents returns its stop function)
+
+  const setups = [];
+  let shown = null;   // AbortController of the page shown, aborted when it is left
+
+  function onPage(selector, setup) {
+    setups.push({ selector, setup });
+  }
+
+  function leavePage() {
+    shown?.abort();
+    shown = null;
+  }
+
+  function startPage() {
+    leavePage();
+    shown = new AbortController();
+    const { signal } = shown;
+    const onLeave = (fn) => signal.addEventListener("abort", fn);
+    const page = {
+      signal,
+      onLeave,
+      every(fn, ms) {
+        const run = () => { if (!document.hidden) fn(); };
+        const timer = setInterval(run, ms);
+        document.addEventListener("visibilitychange", run, { signal });
+        onLeave(() => clearInterval(timer));
+        run();
+      },
+    };
+    for (const { selector, setup } of setups) {
+      if (!document.querySelector(selector)) continue;
+      // One that fails leaves the others (e.g. the notifications) working
+      try { setup(page); } catch (e) { console.error(e); }
+    }
+  }
+
+  document.addEventListener("DOMContentLoaded", startPage);
+  // A boosted link brings another page: the one shown stops before its body is replaced
+  document.addEventListener("htmx:beforeSwap", (ev) => { if (ev.detail.boosted) leavePage(); });
+  document.addEventListener("htmx:afterSettle", (ev) => {
+    if (!ev.detail.boosted) return;
+    // For Back (below): this history entry was reached from a page of this site
+    history.replaceState({ ...history.state, fromSite: true }, "");
+    startPage();
+  });
+
   // ---------- Back (_back_link.html) ----------
 
   // Coming from another page of this site: go back in the browser's history, so pages opened one after another
-  // go back the same way, e.g. stats › search › live. Its href (the live view) is for any other way in.
+  // go back the same way, e.g. stats › search › live. Its href (the live view) is for any other way in. A page
+  // swapped in by a boosted link keeps the referrer of the first page, so it is marked in its history entry.
   document.addEventListener("click", (ev) => {
     if (!ev.target.closest("#back-link")) return;
     const from = document.referrer ? new URL(document.referrer) : null;
-    if (from && from.origin === location.origin && from.pathname !== "/login/") {
+    if (history.state?.fromSite || (from && from.origin === location.origin && from.pathname !== "/login/")) {
       ev.preventDefault();
       history.back();
     }
@@ -204,5 +261,6 @@ window.Dashboard = (() => {
     });
   }
 
-  return { api, el, units, thumbCell, plateCell, helmetCell, statusCell, watchEvents, watchRecords, openSnapshotsFrom };
+  return { api, el, units, onPage, thumbCell, plateCell, helmetCell, statusCell, watchEvents, watchRecords,
+           openSnapshotsFrom };
 })();

@@ -1,6 +1,7 @@
 "use strict";
 
-(() => {
+// The live view: video, status, playback and source controls, and the table of motorcycles passing
+window.Dashboard.onPage("#stream", (page) => {
   // This account's live view preferences, rendered into the page by the view and changed from the
   // Settings pop-up (see "preferences" below)
   const prefs = JSON.parse(document.getElementById("prefs").textContent);
@@ -193,7 +194,8 @@
     try {
       addRows((await api("/api/vehicles/")).rows, false);
     } catch (e) { /* the stream still brings the newest ones */ }
-    watchRecords({ after: lastId }, (data) => addRows(data.rows, true));
+    if (page.signal.aborted) return;   // left while the rows were on their way
+    page.onLeave(watchRecords({ after: lastId }, (data) => addRows(data.rows, true)));
   }
 
   function selectFilter(filter) {
@@ -245,7 +247,7 @@
   document.addEventListener("visibilitychange", () => {
     if (document.hidden) LiveVideo.stop();
     else reloadStream();
-  });
+  }, { signal: page.signal });
 
   // ---------- source control ----------
 
@@ -357,15 +359,17 @@
     if (ev.key === " ") { ev.preventDefault(); togglePause(); }
     else if (ev.key === "ArrowLeft") { ev.preventDefault(); skip(-prefs.seek_step_s * 1000); }
     else if (ev.key === "ArrowRight") { ev.preventDefault(); skip(prefs.seek_step_s * 1000); }
-  });
+  }, { signal: page.signal });
 
-  // Leaving the live view pauses a playing video file, so it does not run on while no one watches.
-  // keepalive lets the request finish after the page is gone
-  window.addEventListener("pagehide", () => {
+  // Leaving the live view (to another page, or closing the tab) pauses a playing video file, so it does not
+  // run on while no one watches. keepalive lets the request finish after the page is gone
+  function pauseOnLeave() {
     if (seekbar.hidden || !playback.playing) return;
     api("/api/pause/", { method: "POST", body: JSON.stringify({ paused: true }), keepalive: true })
       .catch(() => {});
-  });
+  }
+  window.addEventListener("pagehide", pauseOnLeave, { signal: page.signal });
+  page.onLeave(pauseOnLeave);
 
   // The MJPEG connection drops if the server restarts; reconnect after a short wait
   streamImg.addEventListener("error", () => setTimeout(reloadStream, 2000));
@@ -455,11 +459,11 @@
       $(id).title = `${label} (${key})`;
       $(id).setAttribute("aria-label", label);
     }
-  });
+  }, { signal: page.signal });
 
   // ---------- start ----------
   syncFormState();
-  watchEvents(() => "/api/events/status/", { status: onStatus, error: () => { serverLost = true; } });
+  page.onLeave(watchEvents(() => "/api/events/status/", { status: onStatus, error: () => { serverLost = true; } }));
   loadVehicles();
-  setInterval(drawPosition, 250);
-})();
+  page.every(drawPosition, 250);
+});

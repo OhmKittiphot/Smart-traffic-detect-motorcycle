@@ -3,7 +3,7 @@
 // The records list of the plate search and violations pages. htmx sends the search form and puts the rows the
 // server renders into the table (_plate_search.html, _vehicle_rows.html); this script searches the source
 // chosen in the source menu, opens a row's details, and selects rows to delete them.
-(() => {
+window.Dashboard.onPage("#search-form", (page) => {
   const { api } = window.Dashboard;
 
   const $ = (id) => document.getElementById(id);
@@ -25,7 +25,7 @@
   document.addEventListener("htmx:responseError", (ev) => {
     const status = ev.detail.xhr.status;
     if (status !== 401 && status !== 403) showMsg(`HTTP ${status}`, "error");
-  });
+  }, { signal: page.signal });
 
   // ---------- source menu ----------
   // The menu itself is an Alpine.js component (menus.js): "All sources", then each group (live cameras, video
@@ -95,7 +95,7 @@
       }
       for (const box of rowBoxes()) tick(box, allSelected || selected.has(Number(box.dataset.select)));
       updateBulk();
-    });
+    }, { signal: page.signal });
 
     rowsEl.addEventListener("change", (ev) => {
       const box = ev.target.closest("input[data-select]");
@@ -112,7 +112,7 @@
     $("select-cancel").addEventListener("click", () => setSelecting(false));
     document.addEventListener("keydown", (ev) => {
       if (ev.key === "Escape" && selecting && !document.querySelector("dialog[open]")) setSelecting(false);
-    });
+    }, { signal: page.signal });
 
     $("delete-btn").addEventListener("click", () => setSelecting(true));
     $("delete-confirm").addEventListener("click", () => {
@@ -170,4 +170,4 @@
     if (ev.detail.target === dialog && ev.detail.successful && !dialog.open) dialog.showModal();
   });
   dialog.addEventListener("click", (ev) => { if (ev.target.closest("[data-close]")) dialog.close(); });
-})();
+});
