@@ -1,7 +1,6 @@
 """The live view: its video stream, the source it shows and playback, and the table of vehicles passing."""
 import time
 
-from django.conf import settings
 from django.http import StreamingHttpResponse
 from django.views.decorators.http import require_GET
 from rest_framework.response import Response
@@ -9,6 +8,7 @@ from rest_framework.views import APIView
 
 from .. import storage
 from ..engine import current_service
+from ..live_frames import LIVE_STREAM_FPS
 from ..models import CameraSettings, VehicleRecord
 from ..security import session_allows
 from ..serializers import PauseSerializer, SeekSerializer, SourceSerializer, VehicleRecordSerializer
@@ -98,7 +98,7 @@ class SeekView(APIView):
 def stream(request):
     """MJPEG stream of the annotated video (or the No Signal card)."""
     session_key = request.session.session_key
-    interval = 1.0 / settings.STREAM_FPS
+    user_id = request.user.pk
 
     def frames():
         last = None
@@ -108,6 +108,7 @@ def stream(request):
         # arrives, so a paused video's single frame would otherwise stay black
         part_head = b"--frame\r\nContent-Type: image/jpeg\r\n\r\n"
         yield part_head
+        next_t = time.monotonic()
         while True:
             # A stream outlives its page; stop it once its login is no longer valid
             if time.time() >= next_check:
@@ -123,7 +124,12 @@ def stream(request):
             if jpeg and (jpeg is not last or time.time() - last_sent_t >= 1.0):
                 last, last_sent_t = jpeg, time.time()
                 yield jpeg + b"\r\n" + part_head
-            time.sleep(interval)
+            # A steady clock, like the desktop viewer: the time spent above counts toward the interval.
+            # The rate is read every frame, so a new choice in the fps menu applies to open streams.
+            # A stream that fell behind (a slow client) starts counting again instead of bursting.
+            fps = service.frames.stream_fps(user_id) if service else LIVE_STREAM_FPS
+            next_t = max(next_t + 1.0 / fps, time.monotonic())
+            time.sleep(max(0.0, next_t - time.monotonic()))
 
     response = StreamingHttpResponse(frames(), content_type="multipart/x-mixed-replace; boundary=frame")
     response["Cache-Control"] = "no-store"

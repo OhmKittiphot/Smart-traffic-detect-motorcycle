@@ -39,6 +39,9 @@ _REPEAT_ROWS = 8
 
 def _from_source(records, source):
     """records saved from `source` (validated, see serializers._known_source); "" keeps them all."""
+    if source.startswith("location"):
+        _location, one_location, name = source.partition(":")
+        return records.filter(location=name) if one_location else records.exclude(location="")
     if source:
         mode, one_source, name = source.partition(":")
         records = records.filter(source_mode=mode)
@@ -191,7 +194,8 @@ def _calendar(month, source="") -> dict:
     """The calendar of `month` (its first day): motorcycles and violations of each of its days up to today."""
     today = timezone.localdate()
     last = min(month.replace(day=calendar.monthrange(month.year, month.month)[1]), today)
-    return {"month": month.strftime("%Y-%m"), "this_month": today.strftime("%Y-%m"), "days": _per_day(month, last, source)}
+    return {"month": month.strftime("%Y-%m"), "this_month": today.strftime("%Y-%m"),
+            "days": _per_day(month, last, source)}
 
 
 def _stats_query(request) -> dict:
@@ -208,18 +212,25 @@ class StatsView(APIView):
         query = _stats_query(request)
         first, last, source = query["start"], query["end"], query["source"]
         today = timezone.localdate()
-        violations = _in_days(first, last, source).filter(is_violation=True)
+        # Every total in one pass over the records (the page asks again every few seconds)
+        violation = Q(is_violation=True)
+        counts = _in_days(first, last, source).aggregate(
+            total=Count("id"),
+            violation=Count("id", filter=violation),
+            pending_review=Count("id", filter=violation & Q(review=Review.PENDING)),
+            confirmed=Count("id", filter=violation & Q(review=Review.CONFIRMED)),
+            **{v.value: Count("id", filter=violation & Q(violations__contains=v.value)) for v in Violation},
+        )
         return Response({
             "start": first.isoformat(),
             "end": last.isoformat(),
             "days": (last - first).days + 1,
             "last_week": _per_day(today - timedelta(days=6), today, source),
-            "violation": violations.count(),
-            "total": _in_days(first, last, source).count(),
-            "pending_review": violations.filter(review=Review.PENDING).count(),
-            "confirmed": violations.filter(review=Review.CONFIRMED).count(),
-            "by_type": [{"label": v.label, "count": violations.filter(violations__contains=v.value).count()}
-                        for v in Violation],
+            "violation": counts["violation"],
+            "total": counts["total"],
+            "pending_review": counts["pending_review"],
+            "confirmed": counts["confirmed"],
+            "by_type": [{"label": v.label, "count": counts[v.value]} for v in Violation],
             "per_day": _per_day(first, last, source),
             "calendar": _calendar(query["month"], source),
         })

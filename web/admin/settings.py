@@ -16,10 +16,9 @@ PROJECT_DIR = BASE_DIR.parent                          # repository root (models
 
 load_dotenv(PROJECT_DIR / ".env")
 
-# The detection pipeline lives in src/ and imports its modules by bare name
-SRC_DIR = PROJECT_DIR / "src"
-if str(SRC_DIR) not in sys.path:
-    sys.path.insert(0, str(SRC_DIR))
+# The detection pipeline is the package src/ at the repository root (imported as src.<module>)
+if str(PROJECT_DIR) not in sys.path:
+    sys.path.insert(0, str(PROJECT_DIR))
 
 
 def _env_bool(name: str, default: bool = False) -> bool:
@@ -213,7 +212,6 @@ VIDEO_EXTENSIONS = (".mp4", ".mov", ".avi", ".mkv", ".m4v", ".ts")
 NO_SIGNAL_AFTER_S = 5.0
 # The loading indicator shows while detection is this far (seconds) behind the frame on screen
 LOADING_LAG_S = 1.0
-STREAM_FPS = 12
 STREAM_MAX_WIDTH = 1280
 
 # --- Storage (dashboard/storage.py): evidence photos and records are kept within these limits ---

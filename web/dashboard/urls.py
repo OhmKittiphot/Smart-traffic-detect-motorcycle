@@ -2,7 +2,7 @@ from django.contrib.auth.views import LogoutView
 from django.urls import path
 from django.views.i18n import JavaScriptCatalog
 
-from .views import calibration, events, live, pages, records, settings, system, webrtc
+from .views import calibration, events, live, pages, records, settings, source_settings, system, webrtc
 
 urlpatterns = [
     # Pages
@@ -39,6 +39,9 @@ urlpatterns = [
     path("vehicles/<int:pk>/", records.vehicle_detail, name="vehicle_detail"),
     path("vehicles/review/<int:pk>/", records.review_vehicle, name="vehicle_review"),
 
+    # The video settings menu of the live view: the source it shows
+    path("api/source-settings/", source_settings.SourceSettingsView.as_view(), name="api_source_settings"),
+    path("api/source-settings/zone/", source_settings.DetectionZoneView.as_view(), name="api_detection_zone"),
     # Speed calibration: current source (live view) and any source (system page)
     path("api/calibration/", calibration.CalibrationView.as_view(), name="api_calibration"),
     path("api/calibration/frame/", calibration.CalibrationFrameView.as_view(), name="api_calibration_frame"),

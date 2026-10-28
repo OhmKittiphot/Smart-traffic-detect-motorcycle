@@ -1,25 +1,28 @@
 import threading
+import time
 
 import numpy as np
 import torch
 
-from camera_motion import CameraMotion
-from ocr_handler import OCRResultHandler
-from ocr_manager import OCRManager
-from ocr_process import OcrProcess
-from processing_stats import ProcessingStats
-from render import draw_calibration, draw_detections, draw_video_overlay
-from report import print_motorcycle_reports
-from speed import SpeedEstimator, parse_calibration
-from tracker import MotorcycleTracker
-from utils import log, log_error
-from video_stream import VideoStream
-from yolo_pipeline import YoloPipeline
+from .camera_motion import CameraMotion
+from .ocr_handler import OCRResultHandler
+from .ocr_manager import OCRManager
+from .ocr_process import OcrProcess
+from .processing_stats import ProcessingStats
+from .render import draw_calibration, draw_detections, draw_video_overlay, draw_zone
+from .report import print_motorcycle_reports
+from .speed import SpeedEstimator, parse_calibration
+from .tracker import MotorcycleTracker
+from .utils import log, log_error
+from .video_stream import VideoStream
+from .yolo_pipeline import YoloPipeline
+from .zone import DetectionZone
 
 
 class DetectionApp:
     """Runs detection on one video source in the background: capture (VideoStream), YOLO and tracking
-    (YoloPipeline, in the processing thread) and plate OCR (OcrProcess). Models and the OCR process stay
+    (YoloPipeline, in the processing thread), the camera's motion for a calibration that follows it
+    (_camera_fn, in a thread of its own) and plate OCR (OcrProcess). Models and the OCR process stay
     loaded when the source is switched. Shown in a desktop window by DesktopViewer, or in the web dashboard."""
 
     def __init__(self, config, video_camera: str, device, use_half, start_paused: bool = False,
@@ -47,6 +50,8 @@ class DetectionApp:
         self._init_speed_calibration()
         # Moves the calibration points with the camera in a video file (None: the camera does not move)
         self.camera_motion = None
+        # The area motorcycles are detected in (the whole frame until one is set)
+        self.detection_zone = DetectionZone()
 
         # Guards the tracker, OCR manager, speed estimator and latest_detections, shared by the threads
         self.det_lock = threading.Lock()
@@ -64,7 +69,8 @@ class DetectionApp:
             speed_estimator=self.speed_estimator,
             ocr_manager=self.ocr_manager,
             ocr_in_q=self.ocr.in_q,
-            det_lock=self.det_lock
+            det_lock=self.det_lock,
+            zone=self.detection_zone,
         )
         self.ocr_handler = OCRResultHandler(
             ocr_out_q=self.ocr.out_q,
@@ -114,8 +120,6 @@ class DetectionApp:
         self.tracker.reset()
         self.ocr_manager.reset()
         self.speed_estimator.reset()
-        if self.camera_motion is not None:
-            self.camera_motion.restart()
         self.yolo_pipeline.reset()
         self.latest_detections = []
         self.stats.forget_last()
@@ -145,15 +149,27 @@ class DetectionApp:
             # Back on the frame the points were clicked on, until the first frame is matched
             self.speed_estimator.set_camera_motion(np.eye(3))
 
-    def _follow_camera(self, frame) -> None:
-        motion = self.camera_motion
-        if motion is None:
-            return
-        H = motion.update(frame)
-        with self.det_lock:
-            # Not when follow_camera() was called meanwhile (a new calibration was saved)
-            if motion is self.camera_motion:
-                self.speed_estimator.set_camera_motion(H)
+    def _camera_fn(self):
+        """Matches the newest frame to the frame the calibration points were clicked on. Runs beside the
+        processing thread, which uses the latest match instead of waiting about 20 ms for one every frame."""
+        last_frame, last_gen = None, None
+        while not self._stop_event.is_set():
+            motion = self.camera_motion
+            frames = self.video_stream.frames   # the stream may be replaced by switch_source() meanwhile
+            frame = frames.latest()
+            if motion is None or frame is None or frame is last_frame:
+                time.sleep(0.2 if motion is None else 0.005)   # a fixed camera, or no new frame yet
+                continue
+            generation = frames.generation
+            if generation != last_gen:
+                # After a seek (or a new source) the last frame matched no longer comes right before this one
+                motion.restart()
+            last_frame, last_gen = frame, generation
+            H = motion.update(frame)
+            with self.det_lock:
+                # Not when follow_camera() was called meanwhile (a new calibration was saved)
+                if motion is self.camera_motion:
+                    self.speed_estimator.set_camera_motion(H)
 
     # ----- workers -----
 
@@ -178,7 +194,6 @@ class DetectionApp:
             self._report(finished)
 
             try:
-                self._follow_camera(frame)
                 dets = self.yolo_pipeline.process_frame(frame, frame_t, frame_gen, current_gen)
                 with self.det_lock:
                     self.latest_detections = dets
@@ -200,7 +215,8 @@ class DetectionApp:
         self.yolo_pipeline.warmup()
         self.video_stream.start()
         self._worker_threads = [threading.Thread(target=self._yolo_fn, daemon=True, name="YOLO"),
-                                threading.Thread(target=self.ocr_handler.run_loop, daemon=True, name="OCR-Result")]
+                                threading.Thread(target=self.ocr_handler.run_loop, daemon=True, name="OCR-Result"),
+                                threading.Thread(target=self._camera_fn, daemon=True, name="Camera-Motion")]
         for thread in self._worker_threads:
             thread.start()
         self._workers_started = True
@@ -256,9 +272,12 @@ class DetectionApp:
             helmets = {tid: self.tracker.riders.helmet_status(tid) for tid in mc_ids.values()}
             riders = {tid: self.tracker.riders.rider_count(tid) for tid in mc_ids.values()}
             calib_points = self.speed_estimator.image_points() if self.camera_motion is not None else None
+        zone_points = self.detection_zone.points()
 
         # A drawing failure (bad bbox, font issue...) should cost one overlay, not the app
         try:
+            if zone_points:
+                draw_zone(frame, zone_points)
             if calib_points:
                 draw_calibration(frame, calib_points)
             frame = draw_detections(frame, dets, mc_dets, mc_ids, speeds, helmets,

@@ -6,6 +6,8 @@ import torch
 import torch.nn as nn
 import torchvision
 
+from .cuda_graphs import GraphedForward, split_batch
+
 # Rider positions on a motorcycle (HELMET dataset convention):
 #   D = driver, P0 = passenger in front of the driver (child), P1..P3 = passengers behind
 POSITIONS = ["D", "P0", "P1", "P2", "P3"]
@@ -43,6 +45,8 @@ def letterbox(img_bgr: np.ndarray, size: int = INPUT_SIZE) -> np.ndarray:
 
 
 def to_tensor(img_bgr: np.ndarray) -> torch.Tensor:
+    """One letterboxed crop as the model's input (training); RiderClassifier does the same for a whole batch
+    on the GPU."""
     rgb = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2RGB).astype(np.float32) / 255.0
     return torch.from_numpy(((rgb - _MEAN) / _STD).transpose(2, 0, 1).copy())
 
@@ -71,23 +75,38 @@ class RiderClassifier:
 
     def __init__(self, weights_path: str, device: str = "cpu", use_half: bool = False):
         self.device = torch.device(device)
-        self.use_half = use_half and self.device.type == "cuda"
+        self.dtype = torch.float16 if use_half and self.device.type == "cuda" else torch.float32
         self.model = build_model(pretrained=False)
         ckpt = torch.load(weights_path, map_location="cpu", weights_only=True)
         self.model.load_state_dict(ckpt["model"] if "model" in ckpt else ckpt)
-        self.model.eval().to(self.device)
-        if self.use_half:
-            self.model.half()
+        self.model.eval().to(self.device, self.dtype)
+        self.mean = torch.tensor(_MEAN, device=self.device, dtype=self.dtype).view(1, 3, 1, 1)
+        self.std = torch.tensor(_STD, device=self.device, dtype=self.dtype).view(1, 3, 1, 1)
+        self.on_gpu = self.device.type == "cuda"
+        self.forward = GraphedForward(self.model) if self.on_gpu else self.model
+
+    def _to_batch(self, crops_bgr: List[np.ndarray]) -> torch.Tensor:
+        """The crops letterboxed (on the CPU) and normalized as RGB (on the device), like to_tensor()."""
+        pixels = torch.from_numpy(np.stack([letterbox(c) for c in crops_bgr])).to(self.device)
+        rgb = pixels.flip(-1).permute(0, 3, 1, 2).to(self.dtype) / 255.0   # (N, H, W, BGR) -> (N, RGB, H, W)
+        return (rgb - self.mean) / self.std
+
+    def _logits(self, batch: torch.Tensor) -> torch.Tensor:
+        """The model's output for a batch; on a GPU in padded parts, for its CUDA graphs (split_batch)."""
+        if not self.on_gpu:
+            return self.forward(batch)
+        parts = []
+        for part, size in split_batch(batch):
+            padding = part[:1].expand(size - len(part), -1, -1, -1)
+            parts.append(self.forward(torch.cat([part, padding]))[:len(part)])
+        return torch.cat(parts)
 
     @torch.inference_mode()
     def predict_probs(self, crops_bgr: List[np.ndarray]) -> np.ndarray:
         """Return (N, 5, 3) per-position state probabilities."""
         if not crops_bgr:
             return np.zeros((0, len(POSITIONS), NUM_STATES), dtype=np.float32)
-        batch = torch.stack([to_tensor(letterbox(c)) for c in crops_bgr]).to(self.device)
-        if self.use_half:
-            batch = batch.half()
-        return decode_logits(self.model(batch)).cpu().numpy()
+        return decode_logits(self._logits(self._to_batch(crops_bgr))).cpu().numpy()
 
     def predict(self, crops_bgr: List[np.ndarray]) -> List[Dict]:
         return [summarize(p.argmax(-1).tolist()) for p in self.predict_probs(crops_bgr)]

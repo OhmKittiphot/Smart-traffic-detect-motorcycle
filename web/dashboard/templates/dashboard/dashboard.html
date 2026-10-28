@@ -14,8 +14,7 @@
       </div>
       <div class="video-meta">
         <span title="{% translate "Frames processed per second" %}">{% translate "Processing" %} <b id="fps">0</b> fps</span>
-        <button type="button" class="btn btn-sm btn-warn" id="calib-btn" disabled>{% translate "Calibrate speed" %}</button>
-        <button type="button" class="btn btn-sm btn-danger" id="calib-reset" hidden>{% translate "Reset" %}</button>
+        <button type="button" class="btn btn-sm btn-primary" id="source-settings-btn" disabled><svg class="bi" xmlns="http://www.w3.org/2000/svg" width="15" height="15" fill="currentColor" viewBox="0 0 16 16" aria-hidden="true"><path fill-rule="evenodd" d="M0 5a2 2 0 0 1 2-2h7.5a2 2 0 0 1 1.983 1.738l3.11-1.382A1 1 0 0 1 16 4.269v7.462a1 1 0 0 1-1.406.913l-3.111-1.382A2 2 0 0 1 9.5 13H2a2 2 0 0 1-2-2zm11.5 5.175 3.5 1.556V4.269l-3.5 1.556zM2 4a1 1 0 0 0-1 1v6a1 1 0 0 0 1 1h7.5a1 1 0 0 0 1-1V5a1 1 0 0 0-1-1z"/></svg><span>{% translate "Video settings" %}</span></button>
       </div>
     </div>
     <div class="video-frame">
@@ -54,12 +53,12 @@
         opens to list its sources under it. The source chosen is switched to with Switch source.
       {% endcomment %}
       {# Alpine.js components (menus.js) #}
-      <div class="source-menu" id="source-picker" x-data="sourceMenu" @click.outside="close" @keydown.escape="escape">
-        <button type="button" class="source-btn" x-ref="button" @click="toggleList" :aria-expanded="open" aria-haspopup="true" aria-expanded="false" aria-controls="source-pick-list" aria-label="{% translate "Video source" %}">
+      <div class="source-menu" id="source-picker" x-data="sourceMenu">
+        <button type="button" class="source-btn" popovertarget="source-pick-list" aria-label="{% translate "Video source" %}">
           <span class="source-btn-label" x-text="label">—</span>
           <svg viewBox="0 0 16 16" width="12" height="12" aria-hidden="true"><path d="m4 6 4 4 4-4" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
         </button>
-        <div class="source-list" id="source-pick-list" :hidden="closed" hidden>
+        <div class="source-list" id="source-pick-list" popover>
           <div class="source-group" x-data="sourceGroup" data-expanded="{% if saved.mode == "live" %}true{% else %}false{% endif %}">
             <button type="button" class="source-group-btn" @click="toggleGroup" :aria-expanded="expanded" aria-expanded="{% if saved.mode == "live" %}true{% else %}false{% endif %}">
               <svg viewBox="0 0 16 16" width="12" height="12" aria-hidden="true"><path d="m6 4 4 4-4 4" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg> {% translate "Live camera" %} <span class="source-count">{{ live_sources|length|add:1 }}</span>
@@ -108,7 +107,7 @@
     <div class="stat"><span class="stat-label">{% translate "Vehicles today" %}</span><span class="stat-value" id="stat-total">0</span></div>
     <div class="stat stat-ok"><span class="stat-label">{% translate "Normal" %}</span><span class="stat-value" id="stat-normal">0</span></div>
     <div class="stat stat-bad"><span class="stat-label">{% translate "Violations" %}</span><span class="stat-value" id="stat-violation">0</span></div>
-    <p class="rules muted">{% blocktranslate trimmed with n=rules.max_riders %}Violation = no helmet · more than {{ n }} riders{% endblocktranslate %}{% if rules.speed_limit_kmh %} · {% translate "over" %} <span data-kmh="{{ rules.speed_limit_kmh }}">{{ rules.speed_limit_kmh }} km/h</span>{% endif %}</p>
+    <p class="rules muted">{% blocktranslate trimmed with n=rules.max_riders %}Violation = no helmet · more than {{ n }} riders{% endblocktranslate %}<span id="rules-speed"{% if not rules.speed_limit_kmh %} hidden{% endif %}> · {% translate "over" %} <span data-kmh="{{ rules.speed_limit_kmh }}">{{ rules.speed_limit_kmh }} km/h</span></span></p>
     <div class="fps-chart" id="fps-chart"{% if not prefs.show_fps_chart %} hidden{% endif %}>
       <div class="fps-head">
         <span class="stat-label">{% translate "Processing speed · last 2 minutes" %}</span>
@@ -176,6 +175,83 @@
 </dialog>
 
 {% include "dashboard/_calibration_dialog.html" %}
+
+{% comment %}The video settings menu (source-settings.js): what is set for the source shown. Every source has
+  speed measurement, a detection area and a speed limit; a video file also the frame rate it is shown at, when
+  and the location it was filmed at, and whether playing it again saves its motorcycles again. data-file-only rows are
+  hidden for a live camera.{% endcomment %}
+<dialog id="source-dialog" class="confirm-dialog source-dialog" aria-labelledby="source-title">
+  <h3 id="source-title" class="source-title"><svg class="bi" xmlns="http://www.w3.org/2000/svg" width="15" height="15" fill="currentColor" viewBox="0 0 16 16" aria-hidden="true"><path fill-rule="evenodd" d="M0 5a2 2 0 0 1 2-2h7.5a2 2 0 0 1 1.983 1.738l3.11-1.382A1 1 0 0 1 16 4.269v7.462a1 1 0 0 1-1.406.913l-3.111-1.382A2 2 0 0 1 9.5 13H2a2 2 0 0 1-2-2zm11.5 5.175 3.5 1.556V4.269l-3.5 1.556zM2 4a1 1 0 0 0-1 1v6a1 1 0 0 0 1 1h7.5a1 1 0 0 0 1-1V5a1 1 0 0 0-1-1z"/></svg><span>{% translate "Video settings" %}</span></h3>
+  <p class="muted" id="source-name"></p>
+  <form id="source-form-settings" class="source-settings">
+    <div class="setting-row">
+      <span class="setting-label">{% translate "Speed measurement" %}</span>
+      <span class="setting-value" id="calib-state"></span>
+      <span class="setting-actions">
+        <button type="button" class="btn btn-sm" id="calib-btn"></button>
+        <button type="button" class="btn btn-sm btn-danger" id="calib-reset">{% translate "Reset" %}</button>
+      </span>
+    </div>
+    <div class="setting-row">
+      <span class="setting-label">{% translate "Detection area" %}</span>
+      <span class="setting-value" id="zone-state"></span>
+      <span class="setting-actions">
+        <button type="button" class="btn btn-sm" id="zone-btn"></button>
+        <button type="button" class="btn btn-sm" id="zone-clear">{% translate "Whole frame" %}</button>
+      </span>
+    </div>
+    <div class="setting-row" data-file-only>
+      <label class="setting-label" for="fps-select">{% translate "Frames per second" %}</label>
+      {# The frame rate this account's view is sent at, up to the file's own; applies at once #}
+      <select id="fps-select" class="fps-select" data-choices="{{ stream_fps_choices|join:" " }}" title="{% translate "higher = smoother, more network" %}"></select>
+    </div>
+    <div class="setting-row">
+      <label class="setting-label" for="speed-limit">{% translate "Speed limit" %}</label>
+      <span class="input-unit"><input type="number" id="speed-limit" min="0" step="1" inputmode="numeric"><span id="speed-limit-unit">km/h</span></span>
+      <small class="setting-hint muted" id="speed-limit-hint"></small>
+    </div>
+    <div class="setting-row" data-file-only>
+      <label class="setting-label" for="rec-time">{% translate "Recording date and time" %}</label>
+      <input type="datetime-local" id="rec-time" step="1">
+      <span class="setting-actions"><button type="button" class="btn btn-sm" id="rec-reset">{% translate "Use the time in the file" %}</button></span>
+      <small class="setting-hint muted" id="rec-hint"></small>
+    </div>
+    <div class="setting-row" data-file-only>
+      {# Picked on the map only; named after the spot picked #}
+      <span class="setting-label">{% translate "Location" %}</span>
+      <span class="setting-value location-name" id="location-name"></span>
+      <button type="button" class="btn btn-sm" id="location-map-btn"><svg class="bi" xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="currentColor" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 16s6-5.686 6-10A6 6 0 0 0 2 6c0 4.314 6 10 6 10m0-7a3 3 0 1 1 0-6 3 3 0 0 1 0 6"/></svg><span>{% translate "Pick on the map" %}</span></button>
+      <button type="button" class="btn btn-sm" id="location-clear">{% translate "Remove" %}</button>
+      <small class="setting-hint muted">{% translate "Saved with each motorcycle; the statistics and search can show one location." %}</small>
+    </div>
+    <div class="setting-row" data-file-only>
+      <span class="setting-label">{% translate "Played again" %}</span>
+      <label class="setting-check"><input type="checkbox" id="skip-repeats"> {% translate "Do not save motorcycles already saved from this file" %}</label>
+      <small class="setting-hint muted">{% translate "Turn off to detect the file again from scratch, e.g. after changing the detection area." %}</small>
+    </div>
+  </form>
+  <p class="form-msg" id="source-msg" role="status" aria-live="polite"></p>
+  <div class="confirm-actions">
+    <button type="button" class="btn" id="source-close">{% translate "Close" %}</button>
+    <button type="submit" class="btn btn-primary" form="source-form-settings">{% translate "Save" %}</button>
+  </div>
+</dialog>
+
+{# Picking the location on a map (location-map.js) #}
+<dialog id="map-dialog" class="confirm-dialog map-dialog" aria-labelledby="map-title">
+  <h3 id="map-title">{% translate "Location on the map" %}</h3>
+  <form id="map-search" class="map-search" role="search">
+    <input type="search" id="map-query" placeholder="{% translate "Search for a place, e.g. KMITL" %}" aria-label="{% translate "Search for a place" %}">
+    <button type="submit" class="btn btn-sm">{% translate "Search" %}</button>
+  </form>
+  <div id="map" class="map"></div>
+  <p class="muted map-picked" id="map-picked"></p>
+  <p class="form-msg" id="map-msg" role="status" aria-live="polite"></p>
+  <div class="confirm-actions">
+    <button type="button" class="btn" id="map-cancel">{% translate "Cancel" %}</button>
+    <button type="button" class="btn btn-primary" id="map-use" disabled>{% translate "Use this location" %}</button>
+  </div>
+</dialog>
 
 <dialog id="calib-reset-dialog" class="confirm-dialog" aria-labelledby="calib-reset-title">
   <h3 id="calib-reset-title">{% translate "Reset speed calibration?" %}</h3>

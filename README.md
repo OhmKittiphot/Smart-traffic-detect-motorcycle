@@ -31,8 +31,10 @@ venv\Scripts\python -m pip install -r requirements.txt
 | `SPEED_CALIB_POINTS`, `SPEED_CALIB_WORLD` | ค่าวัดความเร็วที่กด [C] แล้วโปรแกรมพิมพ์ออกมา (ไม่ใส่ก็ได้ จะยังไม่วัดความเร็ว) |
 
 ```bash
-venv\Scripts\python src\main.py
+venv\Scripts\python -m src.main
 ```
+
+รันจากโฟลเดอร์รากของโปรเจกต์ (`src/` เป็น Python package จึงต้องรันด้วย `-m`)
 
 เลือก [1] ไฟล์วิดีโอ หรือ [2] กล้อง RTSP แล้วใช้ปุ่มในหน้าต่างวิดีโอ:
 
@@ -50,7 +52,7 @@ venv\Scripts\python src\main.py
 
 | โฟลเดอร์ | เนื้อหา |
 |---|---|
-| `src/` | ระบบตรวจจับ (ใช้ร่วมกันทั้งโปรแกรมบนเครื่องและเว็บ) และโปรแกรมบนเครื่อง (`main.py`) |
+| `src/` | Python package ของระบบตรวจจับ (ใช้ร่วมกันทั้งโปรแกรมบนเครื่องและเว็บ ซึ่ง import เป็น `src.<module>`) และโปรแกรมบนเครื่อง (`main.py`) |
 | `web/` | เว็บ Django (`dashboard/`), ตัวเปิดเซิร์ฟเวอร์ (`run.py`) และฐานข้อมูล (`database/db.sqlite3`, ไม่อยู่ใน git) |
 | `models/` | โมเดลที่ train แล้ว |
 | `input/` | ไฟล์วิดีโอ (ไม่อยู่ใน git) |

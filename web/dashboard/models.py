@@ -1,5 +1,6 @@
 from django.conf import settings
 from django.db import models
+from django.utils import timezone
 from django.utils.translation import gettext_lazy as _
 
 
@@ -76,6 +77,9 @@ class Language(models.TextChoices):
 
 # Choices of UserPreferences.seek_step_s
 SEEK_STEPS_S = (5, 10, 15, 30)
+# Choices of UserPreferences.stream_fps, offered up to each video file's own rate; the highest stands for
+# "the file's own rate" (dashboard.js)
+STREAM_FPS_CHOICES = (10, 15, 25, 30, 60)
 
 
 class UserPreferences(models.Model):
@@ -85,6 +89,8 @@ class UserPreferences(models.Model):
     table_filter = models.CharField(max_length=10, choices=TableFilter.choices, default=TableFilter.ALL)
     seek_step_s = models.PositiveSmallIntegerField(default=10)   # << / >> buttons and the arrow keys
     show_fps_chart = models.BooleanField(default=True)
+    # Frame rate this account's live view sends a video file at, at most the file's own (live_frames)
+    stream_fps = models.PositiveSmallIntegerField(default=25)
     # A pop-up on any dashboard page when a new violation is recorded (notify.js)
     violation_notify = models.BooleanField(default=False)
     # Admins: a pop-up when a live camera goes offline or comes back (notify.js)
@@ -122,6 +128,34 @@ class SpeedCalibration(models.Model):
         return self.source_key
 
 
+class SourceSettings(models.Model):
+    """What staff set for one video source in the live view's video settings menu (source_settings.py).
+    A source without a row uses the defaults below."""
+
+    source_key = models.CharField(max_length=300, unique=True)   # VideoSource.key, like SpeedCalibration
+    # Speeds over this are violations on this source; None = the system's speed limit (SystemSettings)
+    speed_limit_kmh = models.PositiveSmallIntegerField(null=True, blank=True)
+    # Corners of the area motorcycles are detected in, [[x, y], ...] in frame pixels; None = the whole frame
+    detection_zone = models.JSONField(null=True, blank=True)
+
+    # Video files only
+    # When the file started recording: its motorcycles are saved at this time plus their time in the clip.
+    # None = the time the camera wrote into the file
+    recorded_at = models.DateTimeField(null=True, blank=True)
+    location = models.CharField(max_length=100, blank=True)   # where it was filmed, saved with each record
+    # That location on the map (picked in the menu); None = not picked
+    latitude = models.FloatField(null=True, blank=True)
+    longitude = models.FloatField(null=True, blank=True)
+    # Played again: motorcycles already saved from the same part of the file are not saved a second time
+    skip_repeats = models.BooleanField(default=True)
+
+    updated_at = models.DateTimeField(auto_now=True)
+    updated_by = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL)
+
+    def __str__(self):
+        return self.source_key
+
+
 class Violation(models.TextChoices):
     NO_HELMET = "NO_HELMET", _("No helmet")
     OVERLOAD = "OVERLOAD", _("Too many riders")
@@ -139,9 +173,17 @@ class VehicleRecord(models.Model):
     """A motorcycle that passed the camera (one row per finished track)."""
 
     detected_at = models.DateTimeField(db_index=True)
+    # When the row was written; differs from detected_at for video files recorded earlier, and is what the
+    # storage clean-up counts retention from (so a clip filmed months ago is not deleted as soon as it is saved)
+    saved_at = models.DateTimeField(default=timezone.now, db_index=True)
     source_mode = models.CharField(max_length=8, choices=SourceMode.choices)
     source_name = models.CharField(max_length=255, blank=True)
+    location = models.CharField(max_length=100, blank=True)   # where a video file was filmed (SourceSettings)
     track_id = models.PositiveIntegerField()
+    # Video files: when the motorcycle came into and left view, in seconds into the clip, to know it again
+    # when the file is played again (recorder.py)
+    clip_start_s = models.FloatField(null=True, blank=True)
+    clip_end_s = models.FloatField(null=True, blank=True)
 
     plate_text = models.CharField(max_length=32, blank=True)
     province_text = models.CharField(max_length=64, blank=True)
@@ -168,6 +210,7 @@ class VehicleRecord(models.Model):
 
     class Meta:
         ordering = ["-id"]
+        indexes = [models.Index(fields=["source_name", "clip_end_s"])]
 
     def __str__(self):
         return f"#{self.track_id} {self.plate_text or '-'} @ {self.detected_at:%Y-%m-%d %H:%M:%S}"

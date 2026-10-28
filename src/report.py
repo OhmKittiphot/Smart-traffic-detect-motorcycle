@@ -1,6 +1,6 @@
 from typing import Any, Callable, Dict, List, Optional
 
-from utils import log
+from .utils import log
 
 
 # Called with (meta, speed_calibrated) for every reported motorcycle, e.g. to store it in the web dashboard

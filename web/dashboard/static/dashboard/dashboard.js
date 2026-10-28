@@ -6,7 +6,9 @@ window.Dashboard.onPage("#stream", (page) => {
   // Settings pop-up (see "preferences" below)
   const prefs = JSON.parse(document.getElementById("prefs").textContent);
   const MAX_ROWS = 300;
-  const { api, el, units, thumbCell, plateCell, helmetCell, statusCell, watchEvents, watchRecords, openSnapshotsFrom } = window.Dashboard;
+  const {
+    api, el, units, thumbCell, plateCell, helmetCell, statusCell, watchEvents, watchRecords, openSnapshotsFrom,
+  } = window.Dashboard;
 
   const $ = (id) => document.getElementById(id);
   const streamImg = $("stream");
@@ -66,7 +68,9 @@ window.Dashboard.onPage("#stream", (page) => {
     badge.textContent = label;
     $("source-text").textContent = s.source;
     $("fps").textContent = s.fps.toFixed(1);
-    renderCalibration(s);
+    renderRules(s);
+    // The video settings menu (source-settings.js) follows the status too
+    document.dispatchEvent(new CustomEvent("live:status", { detail: s }));
 
     applyBtn.disabled = busy || s.state !== "running";
 
@@ -76,7 +80,6 @@ window.Dashboard.onPage("#stream", (page) => {
     const isFile = s.mode === "file" && s.state === "running" && s.total_ms > 0;
     seekbar.hidden = !isFile;
     pauseOverlay.hidden = !(isFile && s.paused && !s.loading);
-    videoFrame.classList.toggle("is-file", isFile);
     if (isFile) {
       playback.pos = s.pos_ms;
       playback.total = s.total_ms;
@@ -130,6 +133,15 @@ window.Dashboard.onPage("#stream", (page) => {
     }
     renderStatus(s);
     window.FpsChart.push(s.state === "running" ? s.fps : null, s.state === "running" && s.paused);
+  }
+
+  // The speed limit of the source shown (its own, or the system's); 0 = speed is not a violation
+  function renderRules(s) {
+    if (s.speed_limit_kmh == null) return;
+    $("rules-speed").hidden = !s.speed_limit_kmh;
+    const limit = $("rules-speed").querySelector("[data-kmh]");
+    limit.dataset.kmh = s.speed_limit_kmh;
+    limit.textContent = units.speedText(s.speed_limit_kmh);
   }
 
   // ---------- vehicle table ----------
@@ -191,6 +203,24 @@ window.Dashboard.onPage("#stream", (page) => {
     emptyMsg.textContent = rowsEl.children.length ? gettext("No motorcycles match this filter") : gettext("No motorcycles yet");
   }
 
+  // New rows wait while the pointer is over the table: a row arriving between pressing and releasing the
+  // mouse moved the photo away from under it, and the browser then fires no click (about 1 press in 10 while
+  // a video played). They are added as soon as the pointer leaves. A touch leaves right after each tap.
+  let pointerOverTable = false;
+  let heldRows = [];   // newest first, like the API
+
+  function addNewRows(rows) {
+    if (pointerOverTable) heldRows = rows.concat(heldRows);
+    else addRows(rows, true);
+  }
+
+  table.parentElement.addEventListener("pointerenter", () => { pointerOverTable = true; });
+  table.parentElement.addEventListener("pointerleave", () => {
+    pointerOverTable = false;
+    addRows(heldRows, true);
+    heldRows = [];
+  });
+
   // The latest few rows, then each new one as the server saves it (pushed, see watchRecords in common.js);
   // older rows only when Load more is pressed
   async function loadVehicles() {
@@ -200,7 +230,7 @@ window.Dashboard.onPage("#stream", (page) => {
       loadMoreBtn.hidden = !data.more;
     } catch (e) { /* the stream still brings the newest ones */ }
     if (page.signal.aborted) return;   // left while the rows were on their way
-    page.onLeave(watchRecords({ after: lastId }, (data) => addRows(data.rows, true)));
+    page.onLeave(watchRecords({ after: lastId }, (data) => addNewRows(data.rows)));
   }
 
   loadMoreBtn.addEventListener("click", async () => {
@@ -248,6 +278,7 @@ window.Dashboard.onPage("#stream", (page) => {
     try {
       await api("/api/vehicles/clear/", { method: "POST", body: "{}" });
       rowsEl.replaceChildren();
+      heldRows = [];
       loadMoreBtn.hidden = true;
       updateEmpty();
     } catch (e) {
@@ -406,57 +437,6 @@ window.Dashboard.onPage("#stream", (page) => {
 
   // The MJPEG connection drops if the server restarts; reconnect after a short wait
   streamImg.addEventListener("error", () => setTimeout(reloadStream, 2000));
-
-  // ---------- speed calibration ----------
-  // Yellow button: not calibrated yet; green: calibrated (click to redraw). Reset removes the calibration.
-
-  const calibBtn = $("calib-btn");
-  const calibReset = $("calib-reset");
-  const resetDialog = $("calib-reset-dialog");
-
-  function renderCalibration(s) {
-    calibBtn.disabled = s.state !== "running" || !s.signal;
-    calibBtn.classList.toggle("btn-ok", s.speed_calibrated);
-    calibBtn.classList.toggle("btn-warn", !s.speed_calibrated);
-    calibBtn.textContent = s.speed_calibrated ? gettext("Speed calibrated") : gettext("Calibrate speed");
-    calibBtn.title = calibBtn.disabled ? gettext("Needs a video signal")
-      : s.speed_calibrated ? gettext("Click to redraw the calibration") : gettext("Speed is not measured until calibrated");
-    calibReset.hidden = !s.speed_calibrated || s.state !== "running";
-  }
-
-  calibBtn.addEventListener("click", async () => {
-    // A playing video file is paused while its points are clicked, then plays on when the dialog closes
-    const resume = !seekbar.hidden && playback.playing;
-    try {
-      if (resume) await setPaused(true);
-      const c = await api("/api/calibration/");
-      window.CalibrationEditor.open({
-        ...c,
-        frameUrl: "/api/calibration/frame/",
-        save: (body) => api("/api/calibration/save/", { method: "POST", body: JSON.stringify(body) }),
-        onSaved: () => showMsg(gettext("Speed calibration saved"), "ok"),
-        onClose: () => { if (resume) setPaused(false); },
-      });
-    } catch (e) {
-      if (resume) setPaused(false);
-      showMsg(e.message, "error");
-    }
-  });
-
-  calibReset.addEventListener("click", () => {
-    $("calib-reset-source").textContent = $("source-text").textContent;
-    resetDialog.returnValue = "";
-    resetDialog.showModal();
-  });
-  resetDialog.addEventListener("close", async () => {
-    if (resetDialog.returnValue !== "confirm") return;
-    try {
-      await api("/api/calibration/remove/", { method: "POST", body: "{}" });
-      showMsg(gettext("Speed calibration reset"), "ok");
-    } catch (e) {
-      showMsg(e.message, "error");
-    }
-  });
 
   // ---------- preferences ----------
   // Saved in the Settings pop-up (settings.js): applied at once, as the page would show them after a reload

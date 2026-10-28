@@ -1,7 +1,7 @@
 import queue
 import time
 
-from utils import format_thai_plate, log, log_error
+from .utils import format_thai_plate, log, log_error
 
 
 class OCRResultHandler:

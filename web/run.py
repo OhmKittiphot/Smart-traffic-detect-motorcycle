@@ -16,7 +16,7 @@ WEB_DIR = Path(__file__).resolve().parent
 PROJECT_DIR = WEB_DIR.parent
 
 
-def main():
+def _set_up_process() -> None:
     # Model paths in AppConfig are relative to the project root
     os.chdir(PROJECT_DIR)
     sys.path.insert(0, str(WEB_DIR))
@@ -28,6 +28,9 @@ def main():
         except (AttributeError, ValueError):
             pass
 
+
+def _set_up_django() -> None:
+    """Load Django, bring the database and static files up to date, and stop if nobody can log in yet."""
     import django
     from django.core.management import call_command
 
@@ -42,7 +45,20 @@ def main():
               "    venv\\Scripts\\python web\\manage.py createsuperuser\n")
         sys.exit(1)
 
+
+def _warn_about_settings(host: str) -> None:
     from django.conf import settings
+
+    if host not in ("127.0.0.1", "localhost") and not os.getenv("DJANGO_ALLOWED_HOSTS"):
+        print(f"[Warning] Listening on {host} but DJANGO_ALLOWED_HOSTS is not set; other hosts will get 400.")
+    if settings.DEBUG:
+        print("[Warning] DJANGO_DEBUG is on. Never use it on a shared network.")
+
+
+def main():
+    _set_up_process()
+    _set_up_django()
+
     from waitress import serve
 
     from admin.wsgi import application
@@ -59,10 +75,7 @@ def main():
     # Each open video stream and event stream (views/events.py) holds one thread while its tab is shown:
     # up to 4 for a live view, at most 1 for the other pages. The rest answer API requests
     threads = int(os.getenv("DASHBOARD_THREADS", "48"))
-    if host not in ("127.0.0.1", "localhost") and not os.getenv("DJANGO_ALLOWED_HOSTS"):
-        print(f"[Warning] Listening on {host} but DJANGO_ALLOWED_HOSTS is not set; other hosts will get 400.")
-    if settings.DEBUG:
-        print("[Warning] DJANGO_DEBUG is on. Never use it on a shared network.")
+    _warn_about_settings(host)
 
     print(f"\nCCTV dashboard: http://{'127.0.0.1' if host == '0.0.0.0' else host}:{port}\n")
     try:

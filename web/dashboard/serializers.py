@@ -12,9 +12,10 @@ from django.utils.text import format_lazy
 from django.utils.translation import gettext_lazy as _
 from rest_framework import serializers
 
-from province import THAI_PROVINCES
+from src.province import THAI_PROVINCES
 
-from .models import SEEK_STEPS_S, Review, SourceMode, SystemSettings, TableFilter, Units, UserPreferences
+from .models import (SEEK_STEPS_S, STREAM_FPS_CHOICES, Review, SourceMode, SystemSettings, TableFilter, Units,
+                     UserPreferences)
 from .plate_search import MAX_QUERIES, MIN_QUERY_LENGTH, normalize_query, split_queries
 from .sources import list_video_files
 
@@ -26,8 +27,9 @@ MAX_CALIBRATION_M = 500.0
 
 def _known_source(source):
     """A source filter: "<source_mode>:<source_name>" ("file:clip.mp4", "live:" = IP camera) is one source,
-    "<source_mode>" alone ("live" = every live camera, "file" = every video file) a whole group."""
-    if source and source.partition(":")[0] not in SourceMode.values:
+    "<source_mode>" alone ("live" = every live camera, "file" = every video file) a whole group.
+    "location:<name>" is the video files filmed at one location, "location" alone those with one set."""
+    if source and source.partition(":")[0] not in (*SourceMode.values, "location"):
         raise serializers.ValidationError(_("Unknown video source"))
 
 class RecordEventsSerializer(serializers.Serializer):
@@ -155,6 +157,15 @@ def _size_field(name):
     })
 
 
+def _points_in_frame(points, frame_size):
+    """Points clicked on a frame of frame_size = (width, height), rounded to a tenth of a pixel."""
+    frame_w, frame_h = frame_size
+    for x, y in points:
+        if not (0 <= x <= frame_w and 0 <= y <= frame_h):
+            raise serializers.ValidationError(_("Points must be inside the frame"))
+    return [[round(x, 1), round(y, 1)] for x, y in points]
+
+
 class CalibrationSerializer(serializers.Serializer):
     """4 corners of a rectangle on the road (frame pixels) and its real width and length.
 
@@ -169,11 +180,22 @@ class CalibrationSerializer(serializers.Serializer):
     length_m = _size_field(_("Length"))
 
     def validate_points(self, points):
-        frame_w, frame_h = self.context["frame_size"]
-        for x, y in points:
-            if not (0 <= x <= frame_w and 0 <= y <= frame_h):
-                raise serializers.ValidationError(_("Points must be inside the frame"))
-        return [[round(x, 1), round(y, 1)] for x, y in points]
+        return _points_in_frame(points, self.context["frame_size"])
+
+
+class DetectionZoneSerializer(serializers.Serializer):
+    """Corners of the area motorcycles are detected in (frame pixels, in order around it); null = the whole
+    frame. The view passes the current frame size as context["frame_size"] = (width, height)."""
+    MAX_POINTS = 12
+    points = serializers.ListField(
+        child=serializers.ListField(child=serializers.FloatField(), min_length=2, max_length=2),
+        min_length=3, max_length=MAX_POINTS, allow_null=True,
+        error_messages={"min_length": _("Click at least 3 points around the area"),
+                        "max_length": format_lazy(_("Click at most {n} points"), n=MAX_POINTS)},
+    )
+
+    def validate_points(self, points):
+        return _points_in_frame(points, self.context["frame_size"]) if points else None
 
 
 class SourceKeySerializer(serializers.Serializer):
@@ -192,6 +214,39 @@ class SourceDistancesSerializer(SourceKeySerializer):
     """New real width and length of a source's saved calibration rectangle (its points stay)."""
     width_m = _size_field(_("Width"))
     length_m = _size_field(_("Length"))
+
+
+class SourceSettingsSerializer(serializers.Serializer):
+    """Settings of the source the live view shows (any of them may be left out). A video file also has the
+    rest: a recording time without a zone is local time, null goes back to the time the camera wrote into
+    the file."""
+    speed_limit_kmh = serializers.IntegerField(min_value=0, max_value=300, allow_null=True, required=False,
+                                               error_messages={
+                                                   "invalid": _("The speed limit must be a whole number"),
+                                                   "min_value": _("The speed limit must be from 0 to 300 km/h"),
+                                                   "max_value": _("The speed limit must be from 0 to 300 km/h")})
+    recorded_at = serializers.DateTimeField(allow_null=True, required=False)
+    location = serializers.CharField(max_length=100, allow_blank=True, required=False, trim_whitespace=True)
+    # Where the location is on the map: both, or both null (not picked)
+    latitude = serializers.FloatField(min_value=-90, max_value=90, allow_null=True, required=False)
+    longitude = serializers.FloatField(min_value=-180, max_value=180, allow_null=True, required=False)
+    skip_repeats = serializers.BooleanField(required=False)
+
+    FILE_ONLY = ("recorded_at", "location", "latitude", "longitude", "skip_repeats")
+
+    def validate_recorded_at(self, recorded_at):
+        if recorded_at is not None and recorded_at > timezone.now():
+            raise serializers.ValidationError(_("The recording time cannot be in the future"))
+        return recorded_at
+
+    def validate(self, data):
+        if not self.context["is_file"] and any(field in data for field in self.FILE_ONLY):
+            raise serializers.ValidationError(_("Only a video file has a recording time, location and repeats"))
+        sent = [field in data for field in ("latitude", "longitude")]
+        picked = [data.get(field) is not None for field in ("latitude", "longitude")]
+        if sent[0] != sent[1] or picked[0] != picked[1]:   # one without the other
+            raise serializers.ValidationError(_("Pick the location on the map again"))
+        return data
 
 
 def _whole_field(name, low, high, unit):
@@ -228,12 +283,14 @@ class PreferencesSerializer(serializers.ModelSerializer):
     table_filter = serializers.ChoiceField(choices=TableFilter.choices)
     seek_step_s = serializers.ChoiceField(choices=SEEK_STEPS_S,
                                           error_messages={"invalid_choice": _("Choose one of the skip lengths")})
+    stream_fps = serializers.ChoiceField(choices=STREAM_FPS_CHOICES,
+                                         error_messages={"invalid_choice": _("Choose one of the frame rates")})
     units = serializers.ChoiceField(choices=Units.choices)
 
     class Meta:
         model = UserPreferences
-        fields = ["table_filter", "seek_step_s", "show_fps_chart", "violation_notify", "camera_notify", "units",
-                  "language"]
+        fields = ["table_filter", "seek_step_s", "show_fps_chart", "stream_fps", "violation_notify", "camera_notify",
+                  "units", "language"]
 
 
 class PasswordChangeSerializer(serializers.Serializer):

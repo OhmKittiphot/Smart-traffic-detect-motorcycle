@@ -5,7 +5,8 @@ from dotenv import load_dotenv
 
 import torch
 
-from utils import log
+from .cuda_graphs import graph_yolo
+from .utils import log
 
 
 load_dotenv()
@@ -28,9 +29,22 @@ class AppConfig:
     # Fine-tuned plate text recognizer; PaddleOCR's stock Thai recognizer
     # is used when this folder does not exist
     plate_ocr_model_path: str = "models/plate_ocr_th"
+    # Helmet / no helmet of each head the helmet model finds, decided on the head crop (head_classifier.py).
+    # When the file exists it decides helmet status; the helmet model's own classes are used without it
+    head_classifier_path: str = "models/head_cls.pt"
     # Frames of classifier output averaged per motorcycle before its result is used
     rider_vote_window: int = 15
     rider_vote_min_frames: int = 3
+    # Fraction of the motorcycle box height added above its rider classifier crop. The COCO motorcycle box
+    # ends near the handlebars and cuts riders off at the neck; on input/IMG_9122.MOV the classifier then
+    # guessed NO HELMET for riders wearing one. 0.5 brings the heads of seated riders into the crop
+    rider_crop_pad_up: float = 0.5
+    # A seat counts as taken once its averaged probability of not being empty reaches this. With argmax a
+    # passenger half hidden behind the driver rarely beat "empty"; seats that are empty score about 0.15
+    rider_seat_threshold: float = 0.35
+    # Motorcycle crops shorter than this (pixels) are not classified: their riders are too small to tell
+    # apart. Larger crops weigh more in the vote (weight = crop height)
+    rider_min_crop_h: int = 64
 
     # Detection parameters
     detection_imgsz: int = 640
@@ -163,5 +177,8 @@ def load_yolo_model(model_path: str, device: str, use_half: bool):
             model.model.half()
         except Exception as e:
             log.warning("[Model] FP16 not applied to %s (%s); running in FP32.", model_path, e)
+
+    if device.startswith("cuda"):
+        graph_yolo(model)   # several times faster on this project's GPU (see cuda_graphs.py)
 
     return model

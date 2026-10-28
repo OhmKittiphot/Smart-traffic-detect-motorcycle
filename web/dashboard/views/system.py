@@ -9,17 +9,24 @@ from rest_framework.views import APIView
 from .. import calibrations, storage, system_health
 from ..engine import current_service, engine_health
 from ..models import Review, SpeedCalibration, VehicleRecord
+from ..source_settings import recording_start
 
 
 def _local_time(timestamp: float) -> datetime:
     return datetime.fromtimestamp(timestamp, tz=timezone.get_current_timezone())
 
 
+def _recording_time(name: str) -> dict:
+    """When a video file started recording, and whether staff "set" it or it was read from the "file"."""
+    recorded_at, recorded_from = recording_start(name)
+    return {"recorded_at": recorded_at, "recorded_from": recorded_from}
+
+
 class CameraStatusView(APIView):
     def get(self, request):
         """Admin: only whether each live camera answers, for the camera notifications (notify.js).
         Uses the same check as the system status page, so it is cheap to ask often."""
-        from app_config import AppConfig
+        from src.app_config import AppConfig
 
         cameras, checked_at = system_health.cameras(AppConfig.from_env().rtsp_url)
         return Response({
@@ -32,7 +39,7 @@ class CameraStatusView(APIView):
 class SystemStatusView(APIView):
     def get(self, request):
         """Admin: detection engine, cameras, video files and stored records (polled every few seconds)."""
-        from app_config import AppConfig
+        from src.app_config import AppConfig
 
         config = AppConfig.from_env()
         service = current_service()
@@ -49,7 +56,8 @@ class SystemStatusView(APIView):
 
         cameras, checked_at = system_health.cameras(config.rtsp_url)
         cameras = [{**c, **source_info(f"live:{c['key'] or 'ip'}")} for c in cameras]
-        files = [{**f, **source_info(f"file:{f['name']}"), "modified": _local_time(f["modified"])}
+        files = [{**f, **source_info(f"file:{f['name']}"), **_recording_time(f["name"]),
+                  "modified": _local_time(f["modified"])}
                  for f in system_health.video_files()]
 
         today = timezone.localtime().replace(hour=0, minute=0, second=0, microsecond=0)

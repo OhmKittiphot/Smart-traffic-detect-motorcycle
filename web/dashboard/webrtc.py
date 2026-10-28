@@ -13,11 +13,10 @@ import time
 from aiortc import RTCConfiguration, RTCPeerConnection, RTCSessionDescription, VideoStreamTrack
 from aiortc.mediastreams import MediaStreamError
 from av import VideoFrame
-from django.conf import settings
 from django.db import close_old_connections
 
 from .engine import current_service
-from .live_frames import placeholder_frame
+from .live_frames import LIVE_STREAM_FPS, placeholder_frame
 from .security import session_allows
 
 _CLOCK_RATE = 90000   # RTP clock of video
@@ -55,26 +54,37 @@ def _login_ended(session_key) -> bool:
         close_old_connections()
 
 
-class LiveTrack(VideoStreamTrack):
-    """The live view's picture, STREAM_FPS frames a second, for as long as the viewer's login is valid."""
+def _stream_fps(user_id) -> float:
+    service = current_service()
+    return service.frames.stream_fps(user_id) if service else LIVE_STREAM_FPS
 
-    def __init__(self, session_key, on_end):
+
+class LiveTrack(VideoStreamTrack):
+    """The live view's picture, at the viewer's frame rate (LiveFrames.stream_fps), for as long as the viewer's login is valid."""
+
+    def __init__(self, session_key, user_id, on_end):
         super().__init__()
         self._session_key = session_key
+        self._user_id = user_id
         self._on_end = on_end
         self._start = None
-        self._count = 0
+        self._next = None   # when the frame now being sent was due (time.time())
         self._next_check = 0.0
         self._card = None   # shown while detection is off
 
     async def _wait_for_next_frame(self) -> int:
-        """Sleep until the next frame is due; returns its timestamp on the RTP clock."""
+        """Sleep until the next frame is due; returns its timestamp on the RTP clock. The rate is read every
+        frame, so a new choice in the fps menu applies to open connections."""
+        now = time.time()
         if self._start is None:
-            self._start = time.time()
+            self._start = self._next = now
         else:
-            self._count += 1
-            await asyncio.sleep(max(0.0, self._start + self._count / settings.STREAM_FPS - time.time()))
-        return int(self._count * _CLOCK_RATE / settings.STREAM_FPS)
+            # May read the database: not on the event loop
+            fps = await asyncio.to_thread(_stream_fps, self._user_id)
+            # Steady clock; a track that fell behind starts counting again instead of bursting
+            self._next = max(self._next + 1.0 / fps, now)
+            await asyncio.sleep(self._next - now)
+        return int((self._next - self._start) * _CLOCK_RATE)
 
     def _picture(self):
         service = current_service()
@@ -103,7 +113,7 @@ async def _close(pc: RTCPeerConnection) -> None:
     await pc.close()
 
 
-async def _answer(offer_sdp: str, session_key: str) -> dict:
+async def _answer(offer_sdp: str, session_key: str, user_id: int) -> dict:
     own = [pc for pc, key in _peers.items() if key == session_key]   # oldest first
     for old in own[:max(0, len(own) - _MAX_PEERS_PER_SESSION + 1)]:
         await _close(old)
@@ -120,7 +130,7 @@ async def _answer(offer_sdp: str, session_key: str) -> dict:
 
     try:
         await pc.setRemoteDescription(RTCSessionDescription(sdp=offer_sdp, type="offer"))
-        pc.addTrack(LiveTrack(session_key, lambda: _close(pc)))
+        pc.addTrack(LiveTrack(session_key, user_id, lambda: _close(pc)))
         # Returns once the server's network addresses are gathered: they all go in the answer
         await pc.setLocalDescription(await pc.createAnswer())
     except BaseException:   # a bad offer, or cancelled because the view stopped waiting
@@ -129,10 +139,10 @@ async def _answer(offer_sdp: str, session_key: str) -> dict:
     return {"sdp": pc.localDescription.sdp, "type": pc.localDescription.type}
 
 
-def answer(offer_sdp: str, session_key: str) -> dict:
+def answer(offer_sdp: str, session_key: str, user_id: int) -> dict:
     """The answer ({"sdp", "type"}) to a browser's offer of a connection that receives the live video.
     Raises TimeoutError when it takes longer than _ANSWER_TIMEOUT_S (the half-made connection is closed)."""
-    future = asyncio.run_coroutine_threadsafe(_answer(offer_sdp, session_key), _event_loop())
+    future = asyncio.run_coroutine_threadsafe(_answer(offer_sdp, session_key, user_id), _event_loop())
     try:
         return future.result(_ANSWER_TIMEOUT_S)
     except TimeoutError:

@@ -1,8 +1,8 @@
 import math
 from typing import Dict, List, Tuple, Any, Optional
 
-from ocr import is_valid_number, is_valid_series
-from ocr_voting import vote_line, vote_temporal_strings
+from .ocr import is_valid_number, is_valid_series
+from .ocr_voting import vote_line, vote_temporal_strings
 
 
 class OCRManager:
@@ -144,7 +144,9 @@ class OCRManager:
 
         if track_id is not None:
             # Clean expired track caches
-            for tid in [tid for tid, entry in self.track_cache.items() if tid != track_id and now - entry.get("last_seen", 0.0) > self.cache_ttl_s]:
+            expired = [tid for tid, entry in self.track_cache.items()
+                       if tid != track_id and now - entry.get("last_seen", 0.0) > self.cache_ttl_s]
+            for tid in expired:
                 del self.track_cache[tid]
 
             history = self.track_vote_history.get(track_id, [])

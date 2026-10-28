@@ -33,13 +33,14 @@ def client_ip(request):
     return request.META.get("REMOTE_ADDR")
 
 
-# Restrictive CSP: no inline scripts/styles, nothing loaded from other origins
+# Restrictive CSP: no inline scripts/styles, nothing loaded from other origins except OpenStreetMap for the
+# map a video file's place is picked on: its map pictures, and finding places by name (Nominatim)
 _CSP = "; ".join([
     "default-src 'self'",
-    "img-src 'self' data: blob:",
+    "img-src 'self' data: blob: https://tile.openstreetmap.org",
     "style-src 'self'",
     "script-src 'self'",
-    "connect-src 'self'",
+    "connect-src 'self' https://nominatim.openstreetmap.org",
     "object-src 'none'",
     "base-uri 'none'",
     "form-action 'self'",

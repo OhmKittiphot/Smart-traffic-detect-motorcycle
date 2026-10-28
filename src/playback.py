@@ -5,7 +5,7 @@ from typing import Optional
 
 import cv2
 
-from utils import log
+from .utils import log
 
 # Live-like file playback: skip up to this many frames with grab(); further behind, seek instead
 _MAX_GRAB_SKIP = 15

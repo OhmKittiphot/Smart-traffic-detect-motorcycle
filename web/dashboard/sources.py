@@ -45,7 +45,7 @@ def list_live_sources() -> dict:
 
 def rtsp_url() -> str:
     """The IP camera's URL from .env ('' when not configured)."""
-    from app_config import AppConfig
+    from src.app_config import AppConfig
 
     return AppConfig.from_env().rtsp_url
 
@@ -127,7 +127,7 @@ def source_keys() -> set:
 def grab_frame(source_key: str) -> np.ndarray:
     """One raw frame of a source, opened on its own, so a calibration can be drawn while detection is off.
     It is the same full-size frame detection reads. Raises RuntimeError when the source sends nothing."""
-    from utils import open_capture
+    from src.utils import open_capture
 
     url = VideoSource.from_key(source_key).capture_url(rtsp_url())
     if not url:

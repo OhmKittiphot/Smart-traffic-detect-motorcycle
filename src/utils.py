@@ -40,57 +40,18 @@ def log_error(tag: str, exc: BaseException, interval_s: float = 5.0) -> None:
     _last_error_log[key] = now
     log.error("[%s] %s: %s", tag, type(exc).__name__, exc, exc_info=(type(exc), exc, exc.__traceback__))
 
+
 def format_thai_plate(plate_text: str, province_text: str) -> str:
-    """
-    Format Thai motorcycle license plate correctly.
-    
-    Structure:
-    - Line 1: 2-3 Thai letters/digits
-      * If 2 chars: only Thai letters (no digits)
-      * If 3 chars: 1st can be digit/letter, 2nd-3rd must be Thai letters
-    - Line 2: Province name
-    - Line 3: 1-4 digits
-    """
+    """A Thai motorcycle plate as its lines in order: series, province, number ('1กข987', 'ชลบุรี' ->
+    '1กข ชลบุรี 987'). The series is 2 Thai letters, or a digit or letter and then 2 letters; text that does
+    not start with one is returned as it is, with the province after it."""
     plate_text = plate_text.replace(" ", "").strip()
-    
-    # Split into plate characters and digits
-    # Match: an optional digit/letter and 2 Thai letters, followed by (digits). A greedy {2,3} would take
-    # the number's first digit into a 2-letter series ("\u0E01\u0E021234" -> "\u0E01\u0E021" + "234")
+    # A greedy {2,3} would take the number's first digit into a 2-letter series ("กข1234" -> "กข1" + "234")
     match = re.match(r"([\d\u0E00-\u0E7F]?[\u0E00-\u0E7F]{2})([0-9]*)", plate_text)
-    
     if not match:
         return f"{plate_text} {province_text}" if province_text else plate_text
-    
-    plate_chars = match.group(1)
-    digits = match.group(2)
-    
-    is_valid = False
-    
-    if len(plate_chars) == 2:
-        # Must be 2 Thai letters only (no digits)
-        if re.match(r"[\u0E00-\u0E7F]{2}", plate_chars):
-            is_valid = True
-    elif len(plate_chars) >= 3:
-        # First char: digit or Thai letter
-        # Remaining chars: must be Thai letters
-        first_char = plate_chars[0]
-        rest_chars = plate_chars[1:]
-        
-        is_first_valid = bool(re.match(r"[\d\u0E00-\u0E7F]", first_char))
-        is_rest_thai = bool(re.match(r"[\u0E00-\u0E7F]+$", rest_chars))
-        
-        if is_first_valid and is_rest_thai:
-            is_valid = True
-    
-    if is_valid:
-        formatted = plate_chars
-        if province_text:
-            formatted += f" {province_text}"
-        if digits:
-            formatted += f" {digits}"
-        return formatted
-    else:
-        return f"{plate_text} {province_text}" if province_text else plate_text
+    series, digits = match.groups()
+    return " ".join(part for part in (series, province_text, digits) if part)
 
 
 # Fail fast on a stalled RTSP connection instead of OpenCV's default ~30s hang

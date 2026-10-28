@@ -37,7 +37,7 @@ window.Dashboard.onPage("#toasts", (page) => {
 
   function addCloseButton(toast, close) {
     toast.append(Object.assign(document.createElement("button"), {
-      type: "button", className: "toast-close", textContent: "✕", ariaLabel: gettext(gettext("Dismiss")), onclick: close }));
+      type: "button", className: "toast-close", textContent: "✕", ariaLabel: gettext("Dismiss"), onclick: close }));
   }
 
   // Newest on top. Pushing a 4th violation out counts it in "+N more" instead (camera notifications are not counted)
@@ -83,7 +83,7 @@ window.Dashboard.onPage("#toasts", (page) => {
       el("a", { class: "toast-link", href: "/violations/" },
         el("span", { class: "toast-text" },
           el("b", {}, `${gettext("Violation")} · ${r.violations.join(", ")}`),
-          el("span", {}, `${r.plate || gettext(gettext("Unreadable plate"))}${r.province ? " · " + r.province : ""}`),
+          el("span", {}, `${r.plate || gettext("Unreadable plate")}${r.province ? " · " + r.province : ""}`),
           el("small", {}, `${r.time} · ${r.source}`))));
   }
 
@@ -92,7 +92,7 @@ window.Dashboard.onPage("#toasts", (page) => {
     return el("div", { class: "toast toast-more" },
       el("a", { class: "toast-link", href: "/violations/" },
         el("span", { class: "toast-text" }, el("b", {}),
-          el("small", {}, gettext(gettext("See them on the violations page"))))));
+          el("small", {}, gettext("See them on the violations page")))));
   }
 
   function onViolations(data, lastId) {
@@ -133,9 +133,9 @@ window.Dashboard.onPage("#toasts", (page) => {
     return el("div", { class: "toast toast-camera" + (online ? " is-ok" : "") },
       el("a", { class: "toast-link", href: "/system/" },
         el("span", { class: "toast-text" },
-          el("b", {}, online ? gettext(gettext("Camera back online")) : gettext(gettext("Camera offline"))),
+          el("b", {}, online ? gettext("Camera back online") : gettext("Camera offline")),
           el("span", {}, c.label),
-          el("small", {}, online ? time : `${time} · ${c.detail || gettext(gettext("Not answering"))}`))));
+          el("small", {}, online ? time : `${time} · ${c.detail || gettext("Not answering")}`))));
   }
 
   // Many cameras at once (e.g. the network dropped): one notification counting them

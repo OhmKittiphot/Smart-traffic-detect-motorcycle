@@ -143,14 +143,14 @@ def clean_up() -> dict:
     with_photos = ~Q(snapshot="") | ~Q(plate_snapshot="")
 
     # 1. Records past the retention period
-    old = VehicleRecord.objects.filter(detected_at__lt=now - timedelta(days=limits.record_retention_days))
+    old = VehicleRecord.objects.filter(saved_at__lt=now - timedelta(days=limits.record_retention_days))
     records_deleted = delete_records(old.exclude(keep).values_list("id", flat=True))
 
     # 2. Photos of normal motorcycles and rejected events past the photo retention period
     photo_cutoff = now - timedelta(days=limits.photo_retention_days)
     not_needed = Q(is_violation=False) | Q(review=Review.REJECTED)
     photos_dropped, freed = _drop_photos(
-        VehicleRecord.objects.filter(not_needed, with_photos, detected_at__lt=photo_cutoff))
+        VehicleRecord.objects.filter(not_needed, with_photos, saved_at__lt=photo_cutoff))
 
     # 3. Files left behind without a record
     orphans_freed = _remove_orphan_photos()
@@ -162,7 +162,7 @@ def clean_up() -> dict:
     limit = limits.media_max_mb * 1024 * 1024
     over = photos_bytes() - int(limit * 0.9)
     if photos_bytes() > limit:
-        candidates = VehicleRecord.objects.filter(with_photos).exclude(keep).order_by("detected_at")
+        candidates = VehicleRecord.objects.filter(with_photos).exclude(keep).order_by("saved_at")
         for group in (candidates.filter(not_needed), candidates.exclude(not_needed)):
             for record in group.iterator():
                 if over <= 0:

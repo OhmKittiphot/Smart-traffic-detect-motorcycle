@@ -10,6 +10,7 @@
   not working. Back / Forward load the page from the server instead (common.js){% endcomment %}
 <meta name="htmx-config" content='{"includeIndicatorStyles": false, "allowEval": false, "historyCacheSize": 0}'>
 <link rel="stylesheet" href="{% static 'dashboard/vendor/uPlot.min.css' %}">
+<link rel="stylesheet" href="{% static 'dashboard/vendor/leaflet/leaflet.css' %}">
 <script src="{% static 'dashboard/vendor/htmx.min.js' %}" defer></script>
 <script src="{% static 'dashboard/common.js' %}" defer></script>
 <script src="{% static 'dashboard/menus.js' %}" defer></script>
@@ -21,6 +22,9 @@
 <script src="{% static 'dashboard/fps-chart.js' %}" defer></script>
 <script src="{% static 'dashboard/live-video.js' %}" defer></script>
 <script src="{% static 'dashboard/dashboard.js' %}" defer></script>
+<script src="{% static 'dashboard/vendor/leaflet/leaflet.js' %}" defer></script>
+<script src="{% static 'dashboard/location-map.js' %}" defer></script>
+<script src="{% static 'dashboard/source-settings.js' %}" defer></script>
 <script src="{% static 'dashboard/search.js' %}" defer></script>
 <script src="{% static 'dashboard/stats.js' %}" defer></script>
 <script src="{% static 'dashboard/system.js' %}" defer></script>

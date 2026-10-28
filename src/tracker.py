@@ -1,7 +1,7 @@
 from typing import Any, Dict, List, Optional, Tuple
 
-from rider_counter import RiderCounter
-from utils import bbox_center, bbox_distance, point_in_bbox
+from .rider_counter import RiderCounter
+from .utils import bbox_center, bbox_distance, point_in_bbox
 
 
 class MotorcycleTracker:
@@ -100,51 +100,49 @@ class MotorcycleTracker:
         mc_dets = self._dedupe_detections(mc_dets)
         self.latest_mc_detections = mc_dets
 
-        finished = []
-        for track_id in list(self.motorcycle_tracks.keys()):
-            meta = self.motorcycle_tracks[track_id]
-            if now - meta.get("last_seen", now) > self.max_age_s:
-                finished.append(self._finish_track(track_id))
+        finished = [self._finish_track(track_id) for track_id, meta in list(self.motorcycle_tracks.items())
+                    if now - meta.get("last_seen", now) > self.max_age_s]
+        assigned = self._assign(mc_dets, now)
+        for track_id, (bbox, conf) in assigned.items():
+            self._update_track(track_id, bbox, conf, now)
+        self.bbox_to_track_id = {bbox: track_id for track_id, (bbox, _) in assigned.items()}
+        return finished
 
-        # Greedy matching: all feasible (det, track) pairs, cheapest first, each used once
+    def _assign(self, mc_dets, now: float) -> Dict[int, Tuple[Tuple[int, int, int, int], float]]:
+        """{track_id: (bbox, conf)}: each detection given to the track it matches best, greedily (all
+        feasible pairs, cheapest first, each detection and track used once); the rest start new tracks."""
         pairs = []
         for det_idx, (bbox, _) in enumerate(mc_dets):
             for track_id, meta in self.motorcycle_tracks.items():
                 cost = self._match_cost(meta, bbox, now)
                 if cost is not None:
                     pairs.append((cost, det_idx, track_id))
-        pairs.sort()
-
-        assigned: Dict[int, Tuple[Tuple[int, int, int, int], float]] = {}  # track_id -> (bbox, conf)
-        used_dets = set()
-        for _, det_idx, track_id in pairs:
-            if det_idx in used_dets or track_id in assigned:
-                continue
-            assigned[track_id] = mc_dets[det_idx]
-            used_dets.add(det_idx)
-
+        assigned, used_dets = {}, set()
+        for _, det_idx, track_id in sorted(pairs):
+            if det_idx not in used_dets and track_id not in assigned:
+                assigned[track_id] = mc_dets[det_idx]
+                used_dets.add(det_idx)
         for det_idx, det in enumerate(mc_dets):
             if det_idx not in used_dets:
                 assigned[self.next_mc_id] = det
                 self.next_mc_id += 1
+        return assigned
 
-        for track_id, (bbox, conf) in assigned.items():
-            # Update in place: summary fields (hits, speeds, plate) live for the whole track
-            meta = self.motorcycle_tracks.setdefault(track_id, {"first_seen": now, "hits": 0, "speeds": []})
-            prev, prev_t = meta.get("bbox"), meta.get("last_seen")
-            if prev is not None and now > prev_t:
-                (ox, oy), (nx, ny) = bbox_center(prev), bbox_center(bbox)
-                dt = now - prev_t
-                v_new = ((nx - ox) / dt, (ny - oy) / dt)
-                vx, vy = meta.get("vel", v_new)
-                meta["vel"] = (0.5 * vx + 0.5 * v_new[0], 0.5 * vy + 0.5 * v_new[1])
-            meta["bbox"] = bbox
-            meta["last_seen"] = now
-            meta["confidence"] = conf
-            meta["hits"] += 1
-
-        self.bbox_to_track_id = {bbox: track_id for track_id, (bbox, _) in assigned.items()}
-        return finished
+    def _update_track(self, track_id: int, bbox, conf: float, now: float) -> None:
+        """Move a track to its new box, smoothing its velocity (pixels per second)."""
+        # Update in place: summary fields (hits, speeds, plate) live for the whole track
+        meta = self.motorcycle_tracks.setdefault(track_id, {"first_seen": now, "hits": 0, "speeds": []})
+        prev, prev_t = meta.get("bbox"), meta.get("last_seen")
+        if prev is not None and now > prev_t:
+            (ox, oy), (nx, ny) = bbox_center(prev), bbox_center(bbox)
+            dt = now - prev_t
+            v_new = ((nx - ox) / dt, (ny - oy) / dt)
+            vx, vy = meta.get("vel", v_new)
+            meta["vel"] = (0.5 * vx + 0.5 * v_new[0], 0.5 * vy + 0.5 * v_new[1])
+        meta["bbox"] = bbox
+        meta["last_seen"] = now
+        meta["confidence"] = conf
+        meta["hits"] += 1
 
     def record_snapshot(self, track_id: int, frame, bbox: Tuple[int, int, int, int]) -> None:
         """Keep a crop of the motorcycle and its riders from the frame where it looks biggest

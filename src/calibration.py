@@ -1,5 +1,5 @@
 import cv2
-from render import draw_text_on_cv_img
+from .render import draw_text_on_cv_img
 
 
 class CalibrationController:
@@ -93,7 +93,8 @@ class CalibrationController:
         pts = self.pts or []
         for i, p in enumerate(pts):
             cv2.circle(frame, p, 6, (0, 0, 255), -1)
-            cv2.putText(frame, str(i + 1), (p[0] + 8, p[1] - 8), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 0, 255), 2, cv2.LINE_AA)
+            cv2.putText(frame, str(i + 1), (p[0] + 8, p[1] - 8), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 0, 255), 2,
+                        cv2.LINE_AA)
             if i > 0:
                 cv2.line(frame, pts[i - 1], p, (0, 255, 255), 2, cv2.LINE_AA)
         if len(pts) == 4:

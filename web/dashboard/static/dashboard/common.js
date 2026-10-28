@@ -63,6 +63,10 @@ window.Dashboard = (() => {
     speedText: (kmh) => units.imperial() ? `${Math.round(kmh / KMH_PER_MPH)} mph` : `${Math.round(kmh)} km/h`,
     // A speed that is redrawn when the units are changed (see refresh)
     speed: (kmh) => kmh == null ? null : el("span", { "data-kmh": kmh }, units.speedText(kmh)),
+    speedUnit: () => units.imperial() ? "mph" : "km/h",
+    // A whole km/h speed (a speed limit) as shown in an input, and back
+    speedToShown: (kmh) => units.imperial() ? Math.round(kmh / KMH_PER_MPH) : kmh,
+    speedToKmh: (shown) => units.imperial() ? Math.round(shown * KMH_PER_MPH) : shown,
     lengthUnit: () => units.imperial() ? "ft" : "m",
     // A length in metres as shown in an input, and back
     toShown: (m) => units.imperial() ? Math.round(m / M_PER_FT * 100) / 100 : m,
@@ -173,28 +177,29 @@ window.Dashboard = (() => {
 
   function thumbCell(r) {
     return r.snapshot
-      ? el("button", { type: "button", class: "thumb-btn", "data-snap": r.id, "aria-label": gettext(gettext("View evidence photo")) },
+      ? el("button", { type: "button", class: "thumb-btn", "data-snap": r.id,
+                       "aria-label": gettext("View evidence photo") },
           el("img", { class: "thumb", src: `/snapshot/${r.id}/`, alt: "", loading: "lazy" }))
       : el("span", { class: "muted" }, "—");
   }
 
   // Plate text, with the plate photo beside it when one was saved (opens larger like the evidence photo)
   function plateCell(r) {
-    const text = r.plate || el("span", { class: "muted" }, gettext(gettext("Unreadable")));
+    const text = r.plate || el("span", { class: "muted" }, gettext("Unreadable"));
     if (!r.plate_snapshot) return text;
     const src = `/snapshot/${r.id}/plate/`;
     return el("span", { class: "plate-with-photo" },
       el("button", { type: "button", class: "thumb-btn", "data-snap": r.id, "data-snap-src": src,
-        "aria-label": gettext(gettext("View plate photo")) }, el("img", { class: "plate-thumb", src, alt: "", loading: "lazy" })),
+        "aria-label": gettext("View plate photo") }, el("img", { class: "plate-thumb", src, alt: "", loading: "lazy" })),
       text);
   }
 
   function helmetCell(r) {
-    if (r.helmet == null) return el("span", { class: "muted" }, gettext(gettext("Unknown")));
+    if (r.helmet == null) return el("span", { class: "muted" }, gettext("Unknown"));
     const parts = [];
     if (r.helmet) parts.push(el("span", { class: "tag tag-ok" }, interpolate(gettext("Helmet %s"), [r.helmet])));
     if (r.no_helmet) parts.push(el("span", { class: "tag tag-bad" }, interpolate(gettext("No helmet %s"), [r.no_helmet])));
-    return parts.length ? el("span", {}, ...parts) : el("span", { class: "muted" }, gettext(gettext("Unknown")));
+    return parts.length ? el("span", {}, ...parts) : el("span", { class: "muted" }, gettext("Unknown"));
   }
 
   function statusCell(r) {

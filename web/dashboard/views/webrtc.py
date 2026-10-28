@@ -15,7 +15,7 @@ class WebRTCOfferView(APIView):
         offer = WebRTCOfferSerializer(data=request.data)
         offer.is_valid(raise_exception=True)
         try:
-            return Response(webrtc.answer(offer.validated_data["sdp"], request.session.session_key))
+            return Response(webrtc.answer(offer.validated_data["sdp"], request.session.session_key, request.user.pk))
         except TimeoutError:
             # The page keeps showing the MJPEG stream (live-video.js)
             return Response({"detail": _("The video connection took too long")},

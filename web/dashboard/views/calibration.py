@@ -141,7 +141,7 @@ class SourceCalibrationFrameView(APIView):
 class SourceCalibrationPointsView(APIView):
     def post(self, request):
         """Admin: save the 4 points (and real size) redrawn on the frame from SourceCalibrationFrameView."""
-        from speed import SpeedEstimator
+        from src.speed import SpeedEstimator
 
         source = SourceKeySerializer(data=request.data)
         source.is_valid(raise_exception=True)

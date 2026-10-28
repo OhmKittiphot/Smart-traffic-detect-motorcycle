@@ -3,7 +3,8 @@
 One DetectionService per process: models and the OCR process load once, and switching between the live
 camera and a video file only replaces the video stream. Its parts live in their own modules: which sources
 exist (sources.py), the pictures the live view shows (live_frames.py), saving each motorcycle reported
-(recorder.py) and the speed calibration of each source (calibrations.py).
+(recorder.py), and the speed calibration (calibrations.py) and other settings (source_settings.py) of each
+source.
 """
 import gc
 import logging
@@ -16,7 +17,7 @@ from django.conf import settings
 from django.db import close_old_connections
 from django.utils.translation import gettext as _
 
-from . import calibrations
+from . import calibrations, source_settings
 from .live_frames import LiveFrames
 from .recorder import ReportRecorder
 from .security import session_allows
@@ -41,8 +42,9 @@ class DetectionService:
         self.source = VideoSource()
         self.app = None      # src DetectionApp, once the models are loaded
         self.config = None   # AppConfig with the violation rules from the settings page
+        self.settings = None   # SourceSettings of the source shown
         self.frames = LiveFrames(self)
-        self._recorder = ReportRecorder(lambda: self.config, lambda: self.source)
+        self._recorder = ReportRecorder(lambda: self.config, lambda: self.source, lambda: self.settings)
         self._lock = threading.Lock()
         self._started = False
 
@@ -60,9 +62,9 @@ class DetectionService:
         from .models import CameraSettings, SystemSettings
 
         try:
-            from app_config import AppConfig, configure_torch_runtime
-            from detection_app import DetectionApp
-            from report import add_report_listener
+            from src.app_config import AppConfig, configure_torch_runtime
+            from src.detection_app import DetectionApp
+            from src.report import add_report_listener
 
             rules = SystemSettings.load()
             self.config = replace(AppConfig.from_env(), max_riders=rules.max_riders,
@@ -86,6 +88,7 @@ class DetectionService:
                                     on_file_end=self._play_next_file)
             add_report_listener(self._recorder)
             self._apply_calibration()
+            self._apply_settings()
             self.app.start_workers()
             self.state = self.RUNNING
             log.info("Detection running on %s (%s).", device, self.source.describe())
@@ -97,7 +100,7 @@ class DetectionService:
 
     def stop(self):
         """Stop the workers (motorcycles still in view are reported first) and stop listening for reports."""
-        from report import remove_report_listener
+        from src.report import remove_report_listener
 
         if self.app is not None:
             self.app.stop()
@@ -154,12 +157,15 @@ class DetectionService:
             self.app.switch_source(url or _UNCONFIGURED_CAMERA, paused)
             self.source = source
             self._apply_calibration()
+            self._apply_settings()
+            self._recorder.new_pass()
         log.info("Source switched to %s.", source.describe())
 
     def _play_next_file(self) -> None:
         """A video file played to its end: a playlist goes on with its next file, playing, and after its last
         file opens its first one, paused. Switched in a thread of its own, since the switch stops the capture
         thread this is called from."""
+        self._recorder.new_pass()   # it starts over (or goes on with the next file)
         ended = self.source
         following = ended.next_in_playlist()
         if following is None:
@@ -185,6 +191,7 @@ class DetectionService:
 
     def seek(self, pos_ms: float) -> None:
         self._file_playback(_("Only a video file can be seeked")).seek(pos_ms)
+        self._recorder.new_pass()
 
     def camera_configured(self) -> bool:
         return self.source.is_configured(self.config.rtsp_url if self.config else "")
@@ -244,6 +251,23 @@ class DetectionService:
         if self.state == self.RUNNING and source_key == self.source.key:
             self._apply_calibration()
 
+    # ----- the other settings of each source (see source_settings.py) -----
+
+    def _apply_settings(self) -> None:
+        """Load the current source's settings and give detection its detection zone."""
+        self.settings = source_settings.load(self.source.key)
+        self.app.detection_zone.set_points(self.settings.detection_zone)
+
+    def reload_settings(self, source_key: str) -> None:
+        """Apply settings changed in the video settings menu, if they are the current source's."""
+        if self.state == self.RUNNING and source_key == self.source.key:
+            self._apply_settings()
+
+    def speed_limit_kmh(self) -> float:
+        """Speeds over this are violations on the current source: its own limit, else the system's."""
+        own = self.settings.speed_limit_kmh if self.settings else None
+        return float(own) if own is not None else self.config.speed_limit_kmh
+
     # ----- status -----
 
     def has_signal(self) -> bool:
@@ -275,13 +299,19 @@ class DetectionService:
             "error": self.error,
             "mode": self.source.mode,
             "source": self.source.describe(),
+            # The file playing now (also in a playlist): the live view shows and sets when it was recorded
+            "video_file": self.source.video_file if self.source.is_file else "",
             "signal": self.has_signal(),
             "paused": bool(playback and playback.is_paused()),
             "fps": round(self.app.stats.fps(), 1) if running else 0.0,
             "speed_calibrated": bool(running and self.app.speed_estimator.calibrated),
+            # The current source's (the live view's rules line shows it)
+            "speed_limit_kmh": self.speed_limit_kmh() if running else None,
             "camera_configured": self.camera_configured(),
             "pos_ms": round(pos_ms),
             "total_ms": round(total_ms),
+            # A video file's own frame rate: the most the live view's fps menu offers
+            "source_fps": round(stream.source_fps) if playback else 0,
             "loading": loading,
         }
 
@@ -337,9 +367,9 @@ def current_service() -> Optional[DetectionService]:
 
 def stopped_status() -> dict:
     """DetectionService.status() for while detection is off."""
-    return {"state": DetectionService.STOPPED, "error": "", "mode": "", "source": "", "signal": False,
-            "paused": False, "fps": 0.0, "speed_calibrated": False, "camera_configured": False, "pos_ms": 0,
-            "total_ms": 0, "loading": ""}
+    return {"state": DetectionService.STOPPED, "error": "", "mode": "", "source": "", "video_file": "",
+            "signal": False, "paused": False, "fps": 0.0, "speed_calibrated": False, "speed_limit_kmh": None,
+            "camera_configured": False, "pos_ms": 0, "total_ms": 0, "loading": ""}
 
 
 def engine_health() -> dict:

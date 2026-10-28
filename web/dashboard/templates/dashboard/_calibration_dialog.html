@@ -1,15 +1,21 @@
 {% load i18n %}
-{# Speed calibration editor (calibration.js): click the 4 points on a frame and enter the real size #}
+{# Speed calibration editor (calibration.js): click the 4 points on a frame and enter the real size.
+   data-mode="zone" (set by calibration.js): the detection area instead, any 3 to 12 points and no size #}
 <dialog id="calib-dialog" class="calib-dialog" aria-labelledby="calib-title">
   <div class="calib-head">
     <h3 id="calib-title">{% translate "Speed calibration" %}</h3>
     <span class="muted" id="calib-source"></span>
   </div>
-  <p class="calib-help muted">
+  <p class="calib-help calib-speed-only muted">
     {% blocktranslate trimmed %}Click 4 points on the road that form a rectangle, in order:
     <b>1</b> far-left, <b>2</b> far-right, <b>3</b> near-right, <b>4</b> near-left.
     Drag a point to move it. Then enter the real size of that rectangle on the ground
     (measure on site, or use known markings such as the lane width).{% endblocktranslate %}
+  </p>
+  <p class="calib-help calib-zone-only muted">
+    {% blocktranslate trimmed %}Click points around the part of the road to detect motorcycles in (3 to 12, in
+    order around it). A motorcycle counts when the bottom middle of its box, where it touches the road, is
+    inside. Drag a point to move it.{% endblocktranslate %}
   </p>
   <div class="calib-stage-wrap">
     <div class="calib-stage" id="calib-stage">
@@ -23,11 +29,11 @@
     </div>
   </div>
   <div class="calib-form">
-    <label class="calib-field">
+    <label class="calib-field calib-speed-only">
       <span>{% translate "Width" %} <small class="muted">{% translate "point 1 → 2" %}</small></span>
       <span class="input-unit"><input type="number" id="calib-w" min="0.1" max="500" step="0.01" inputmode="decimal" required><span class="calib-unit">m</span></span>
     </label>
-    <label class="calib-field">
+    <label class="calib-field calib-speed-only">
       <span>{% translate "Length" %} <small class="muted">{% translate "point 2 → 3" %}</small></span>
       <span class="input-unit"><input type="number" id="calib-l" min="0.1" max="500" step="0.01" inputmode="decimal" required><span class="calib-unit">m</span></span>
     </label>

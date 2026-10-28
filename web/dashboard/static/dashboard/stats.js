@@ -96,7 +96,8 @@ window.Dashboard.onPage("#per-day", (page) => {
     $("cal-next").disabled = isThisMonth;
     const peak = cal.days.find((d) => max && d.violation === max);
     $("cal-peak").textContent = peak
-      ? interpolate(gettext("Busiest: %s"), [`${peak.date} (${interpolate(ngettext("%s violation", "%s violations", max), [max])})`])
+      ? interpolate(gettext("Busiest: %s"),
+                    [`${peak.date} (${interpolate(ngettext("%s violation", "%s violations", max), [max])})`])
       : gettext("No violations");
   }
 
@@ -130,7 +131,9 @@ window.Dashboard.onPage("#per-day", (page) => {
     $("st-today").textContent = today;
     const note = $("st-today-note");
     note.dataset.trend = diff > 0 ? "up" : diff < 0 ? "down" : "same";
-    note.textContent = diff ? `${diff > 0 ? "▲" : "▼"} ${interpolate(gettext("%s vs yesterday"), [Math.abs(diff)])}` : gettext("Same as yesterday");
+    note.textContent = diff
+      ? `${diff > 0 ? "▲" : "▼"} ${interpolate(gettext("%s vs yesterday"), [Math.abs(diff)])}`
+      : gettext("Same as yesterday");
   }
 
   // Violations of each of the last 7 days, as small bars
@@ -152,7 +155,9 @@ window.Dashboard.onPage("#per-day", (page) => {
     $("st-range-label").textContent = rangeText(s);
     $("st-violation").textContent = s.violation;
     $("st-rate-bar").style.width = `${rate}%`;
-    $("st-rate").textContent = s.total ? interpolate(gettext("%(rate)s% of %(total)s motorcycles"), { rate, total: s.total }, true) : gettext("No motorcycles recorded");
+    $("st-rate").textContent = s.total
+      ? interpolate(gettext("%(rate)s% of %(total)s motorcycles"), { rate, total: s.total }, true)
+      : gettext("No motorcycles recorded");
 
     const reviewed = s.violation - s.pending_review;
     $("st-pending").textContent = s.pending_review;
@@ -166,7 +171,8 @@ window.Dashboard.onPage("#per-day", (page) => {
     renderCalendar(s.calendar);
     if (!startInput.value) startInput.value = s.start;
     if (!endInput.value) endInput.value = s.end;
-    $("stats-meta").textContent = `${rangeText(s)} · ${interpolate(gettext("updated %s"), [new Date().toLocaleTimeString(document.documentElement.lang)])}`;
+    const updated = new Date().toLocaleTimeString(document.documentElement.lang);
+    $("stats-meta").textContent = `${rangeText(s)} · ${interpolate(gettext("updated %s"), [updated])}`;
   }
 
   // ---------- date range ----------

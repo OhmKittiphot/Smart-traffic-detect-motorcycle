@@ -2,8 +2,8 @@ import multiprocessing as mp
 import queue
 import time
 
-from ocr import ocr_worker
-from utils import log
+from .ocr import ocr_worker
+from .utils import log
 
 # First launch can be slow while PaddleOCR downloads/loads its models
 OCR_STARTUP_TIMEOUT_S = 120.0

@@ -23,6 +23,7 @@
     <dt>{% translate "Speed" %}</dt><dd>{% include "dashboard/_speed.html" %}</dd>
     <dt>{% translate "Status" %}</dt><dd>{% include "dashboard/_status_tags.html" %}</dd>
     <dt>{% translate "Source" %}</dt><dd>{{ record.source_name|default:record.get_source_mode_display }}</dd>
+    {% if record.location %}<dt>{% translate "Location" %}</dt><dd>{{ record.location }}</dd>{% endif %}
     <dt>{% translate "Track ID" %}</dt><dd>{{ record.track_id }}</dd>
     <dt>{% translate "Review" %}</dt>
     <dd>{% if record.review == "pending" %}{{ record.get_review_display }}{% else %}{% translate "a deleted user" as deleted_user %}

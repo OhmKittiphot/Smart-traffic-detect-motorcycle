@@ -19,8 +19,6 @@ LOOKALIKE_GROUPS = [
     # Read differently on the same motorcycle in different runs over input/IMG_9122.MOV
     "รชซ", "ษฐศ", "ฐม", "ฐอ", "สฆ", "ซว", "ขย", "ษย", "ฑถ", "28", "46",
 ]
-_LOOKALIKES = {frozenset((a, b)) for group in LOOKALIKE_GROUPS for a in group for b in group if a != b}
-
 UNKNOWN = "?"
 # Edit costs: an unrelated character (or one missing / extra) costs 1
 LOOKALIKE_COST = 0.35
@@ -34,6 +32,21 @@ MIN_QUERY_LENGTH = 2
 MAX_QUERIES = 10
 
 _THAI_DIGITS = str.maketrans("๐๑๒๓๔๕๖๗๘๙", "0123456789")
+
+
+def _pair_costs() -> dict:
+    """{(a, b): cost} of every pair of plate characters costing less than 1 (see normalize()); a table, so
+    the edit distance below looks a pair up instead of calling a function for each one."""
+    chars = "0123456789" + "".join(map(chr, range(ord("ก"), ord("ฮ") + 1)))
+    costs = {(c, c): 0.0 for c in chars + UNKNOWN}
+    for c in chars:
+        costs[c, UNKNOWN] = costs[UNKNOWN, c] = UNKNOWN_COST
+    for group in LOOKALIKE_GROUPS:
+        costs.update({(a, b): LOOKALIKE_COST for a in group for b in group if a != b})
+    return costs
+
+
+_PAIR_COSTS = _pair_costs()
 
 
 def normalize(text: str) -> str:
@@ -51,9 +64,11 @@ def split_queries(text: str) -> list:
     return list(dict.fromkeys(part.strip() for part in str(text).split(",") if part.strip()))
 
 
+@lru_cache(maxsize=200_000)
 def split_plate(text: str) -> tuple:
     """(series, number), normalized: '6ขน 690' -> ('6ขน', '690'), '6มก65' -> ('6มก', '65'),
-    '7793' -> ('', '7793'). Stored plates are 'series number'; typed ones may lack the space."""
+    '7793' -> ('', '7793'). Stored plates are 'series number'; typed ones may lack the space.
+    Cached: the same stored plates are split again on every search."""
     parts = str(text).split()
     if len(parts) == 2:
         return normalize(parts[0]), normalize(parts[1])
@@ -61,24 +76,17 @@ def split_plate(text: str) -> tuple:
     return series or "", number
 
 
-def _char_cost(a: str, b: str) -> float:
-    if a == b:
-        return 0.0
-    if a == UNKNOWN or b == UNKNOWN:
-        return UNKNOWN_COST
-    return LOOKALIKE_COST if frozenset((a, b)) in _LOOKALIKES else 1.0
-
-
 def _distance(query: str, plate: str, partial: bool) -> float:
     """Weighted edit distance. partial: the query may start and end anywhere in the plate.
     The cost of a character pair is symmetric, so the two may be passed either way round."""
+    cost = _PAIR_COSTS.get
     prev = [0.0] * (len(plate) + 1) if partial else [float(j) for j in range(len(plate) + 1)]
     for i, q in enumerate(query, 1):
         row = [float(i)]
         for j, p in enumerate(plate, 1):
-            row.append(min(prev[j] + 1.0,                      # query character missing from the plate
-                           row[j - 1] + 1.0,                   # extra character in the plate
-                           prev[j - 1] + _char_cost(q, p)))    # same, look-alike or different character
+            row.append(min(prev[j] + 1.0,                     # query character missing from the plate
+                           row[j - 1] + 1.0,                  # extra character in the plate
+                           prev[j - 1] + cost((q, p), 1.0)))  # same, look-alike or different character
         prev = row
     return min(prev) if partial else prev[-1]
 
@@ -97,15 +105,18 @@ def _part_similarity(a: str, b: str, partial: bool) -> float:
 def similarity(query: tuple, plate: tuple) -> float:
     """0..1, how likely `plate` is the plate the user typed; both are (series, number) from split_plate().
     The series may be typed in part ('ขน' for '6ขน'); the number must match as a whole ('65' is not '650')."""
+    (q_series, q_number), (series, number) = query, plate
     total = weight = 0.0
-    for q, p, partial in ((query[0], plate[0], True), (query[1], plate[1], False)):
-        if q and p:
-            total += _part_similarity(q, p, partial) * len(q)
-            weight += len(q)
+    if q_series and series:
+        total += _part_similarity(q_series, series, True) * len(q_series)
+        weight += len(q_series)
+    if q_number and number:
+        total += _part_similarity(q_number, number, False) * len(q_number)
+        weight += len(q_number)
     if not weight:
         return 0.0
     score = total / weight
-    if any(bool(q) != bool(p) for q, p in zip(query, plate)):
+    if bool(q_series) != bool(series) or bool(q_number) != bool(number):
         score *= PARTIAL_WEIGHT
     return score
 

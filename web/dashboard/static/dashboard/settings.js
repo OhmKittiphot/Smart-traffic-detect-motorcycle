@@ -31,7 +31,7 @@ window.Dashboard.onPage("#settings-panel", () => {
   async function send(form) {
     const buttons = form.querySelectorAll("button");
     buttons.forEach((b) => { b.disabled = true; });
-    showMsg(form, gettext(gettext("Saving…")), "busy");
+    showMsg(form, gettext("Saving…"), "busy");
     try {
       const saved = await api(form.dataset.api, { method: "POST", body: JSON.stringify(formData(form)) });
       if ("reset" in form.dataset) form.reset();   // never leave passwords in the fields
@@ -72,7 +72,7 @@ window.Dashboard.onPage("#settings-panel", () => {
     const form = cleanupBtn.closest("form");
     cleanupBtn.addEventListener("click", async () => {
       cleanupBtn.disabled = true;
-      showMsg(form, gettext(gettext("Cleaning up…")), "busy");
+      showMsg(form, gettext("Cleaning up…"), "busy");
       try {
         const r = await api(cleanupBtn.dataset.api, { method: "POST", body: "{}" });
         const mb = (r.bytes_freed / 1024 / 1024).toFixed(1);

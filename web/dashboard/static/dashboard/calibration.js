@@ -1,13 +1,15 @@
 "use strict";
 
 // Speed calibration editor (#calib-dialog, _calibration_dialog.html), used by the live view and the
-// system status page. Points are kept in frame pixels (the image's natural size), the same units the
-// server uses. Exposed as window.CalibrationEditor.open(options) on the pages with the dialog.
+// system status page. The live view also draws a source's detection area with it (options.zone): 3 to 12
+// points around the area, without a real size. Points are kept in frame pixels (the image's natural size),
+// the same units the server uses. Exposed as window.CalibrationEditor.open(options) on the pages with the dialog.
 window.Dashboard.onPage("#calib-dialog", () => {
   const SVG_NS = "http://www.w3.org/2000/svg";
   const POINT_NAMES = [gettext("far-left"), gettext("far-right"), gettext("near-right"), gettext("near-left")];
   const MIN_M = 0.1;   // allowed width / length in metres (the server checks the same range)
   const MAX_M = 500;
+  const ZONE_POINTS = [3, 12];   // fewest and most points of a detection area (the server checks the same)
   const { units } = window.Dashboard;
   const $ = (id) => document.getElementById(id);
   const dialog = $("calib-dialog");
@@ -37,14 +39,27 @@ window.Dashboard.onPage("#calib-dialog", () => {
     return node;
   }
 
+  const maxPoints = () => (options.zone ? ZONE_POINTS[1] : 4);
+  const enoughPoints = () => (options.zone ? points.length >= ZONE_POINTS[0] : points.length === 4);
+
+  function nextHint() {
+    if (options.zone) {
+      return points.length < ZONE_POINTS[0]
+        ? interpolate(gettext("Click point %(n)s around the area"), { n: points.length + 1 }, true) : "";
+    }
+    return points.length < 4
+      ? interpolate(gettext("Click point %(n)s: %(name)s"), { n: points.length + 1, name: POINT_NAMES[points.length] }, true)
+      : "";
+  }
+
   function draw() {
     const w = img.naturalWidth || 1;
     const r = Math.max(6, w / 130);
     svg.replaceChildren();
     if (points.length > 1) {
-      svg.append(svgEl(points.length === 4 ? "polygon" : "polyline", {
+      svg.append(svgEl(enoughPoints() ? "polygon" : "polyline", {
         points: points.map((p) => p.join(",")).join(" "),
-        fill: points.length === 4 ? "rgba(59,130,246,0.18)" : "none",
+        fill: enoughPoints() ? "rgba(59,130,246,0.18)" : "none",
         stroke: "#facc15", "stroke-width": 2, "vector-effect": "non-scaling-stroke",
       }));
     }
@@ -59,15 +74,13 @@ window.Dashboard.onPage("#calib-dialog", () => {
       g.append(label);
       svg.append(g);
     });
-    $("calib-next").textContent = points.length < 4
-      ? interpolate(gettext("Click point %(n)s: %(name)s"), { n: points.length + 1, name: POINT_NAMES[points.length] }, true)
-      : "";
+    $("calib-next").textContent = nextHint();
     updateSave();
   }
 
   function updateSave() {
-    saveBtn.disabled = !(frameReady && points.length === 4
-      && Number(widthInput.value) > 0 && Number(lengthInput.value) > 0);
+    saveBtn.disabled = !(frameReady && enoughPoints()
+      && (options.zone || (Number(widthInput.value) > 0 && Number(lengthInput.value) > 0)));
   }
 
   // Spinner in the middle of the image area while a frame is on its way; error = why there is none
@@ -125,7 +138,7 @@ window.Dashboard.onPage("#calib-dialog", () => {
       dragIndex = Number(g.dataset.i);
       g.classList.add("is-dragging");
       svg.setPointerCapture(ev.pointerId);
-    } else if (points.length < 4) {
+    } else if (points.length < maxPoints()) {
       points.push(svgPoint(ev));
       draw();
     }
@@ -152,8 +165,9 @@ window.Dashboard.onPage("#calib-dialog", () => {
     status(gettext("Saving…"), "busy");
     try {
       // Typed in the account's units (m or ft); always saved in metres
-      await options.save({ points, width_m: units.toMetres(Number(widthInput.value)),
-                           length_m: units.toMetres(Number(lengthInput.value)) });
+      await options.save(options.zone ? { points } : {
+        points, width_m: units.toMetres(Number(widthInput.value)), length_m: units.toMetres(Number(lengthInput.value)),
+      });
       dialog.close();
       options.onSaved?.();
     } catch (e) {
@@ -162,12 +176,15 @@ window.Dashboard.onPage("#calib-dialog", () => {
     }
   });
 
-  /* options: source (label shown in the title), points / width_m / length_m (the saved calibration, or
-     null to start empty), frameUrl (JPEG of the current frame), save(body) (returns a promise; rejects
+  /* options: zone (draw a detection area instead of a speed calibration), source (label shown in the
+     title), points / width_m / length_m (the saved calibration or area, or null to start empty), frameUrl (JPEG of the current frame), save(body) (returns a promise; rejects
      with the message to show), onSaved(), onClose() (saved or cancelled). The dialog opens at once and
      the frame loads inside it. */
   function open(opts) {
     options = opts;
+    dialog.dataset.mode = opts.zone ? "zone" : "speed";
+    $("calib-title").textContent = opts.zone ? gettext("Detection area") : gettext("Speed calibration");
+    saveBtn.textContent = opts.zone ? gettext("Save area") : gettext("Save calibration");
     status("");
     $("calib-source").textContent = opts.source;
     points = opts.points ? opts.points.map((p) => [p[0], p[1]]) : [];

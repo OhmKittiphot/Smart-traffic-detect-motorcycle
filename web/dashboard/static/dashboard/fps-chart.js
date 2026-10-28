@@ -40,7 +40,7 @@ window.Dashboard.onPage("#fps-chart", (page) => {
     if (i == null) return;
     const s = samples[i];
     tip.textContent = `${new Date(s.wall).toLocaleTimeString(document.documentElement.lang)} · `
-      + (s.fps != null ? `${s.fps.toFixed(1)} fps` : gettext(gettext("detection off")));
+      + (s.fps != null ? `${s.fps.toFixed(1)} fps` : gettext("detection off"));
     const cx = u.valToPos(u.data[0][i], "x");
     tip.style.left = `${plot.offsetLeft + Math.min(Math.max(cx, 60), plot.clientWidth - 60)}px`;   // stays in the card
   }
@@ -103,7 +103,9 @@ window.Dashboard.onPage("#fps-chart", (page) => {
   }
 
   makeChart();
-  const resized = new ResizeObserver(() => { if (plot.clientWidth) chart.setSize({ width: plot.clientWidth, height: HEIGHT }); });
+  const resized = new ResizeObserver(() => {
+    if (plot.clientWidth) chart.setSize({ width: plot.clientWidth, height: HEIGHT });
+  });
   resized.observe(plot);
   const themed = new MutationObserver(makeChart);
   themed.observe(document.documentElement, { attributeFilter: ["data-theme"] });

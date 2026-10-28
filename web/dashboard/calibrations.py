@@ -32,7 +32,7 @@ def uses_env_fallback(source_key: str, calibration: Optional[SpeedCalibration], 
 
 def for_estimator(source_key: str, config):
     """(points, (width_m, length_m)) to give SpeedEstimator.set_calibration, or None."""
-    from speed import parse_calibration
+    from src.speed import parse_calibration
 
     calibration = saved(source_key)
     if uses_env_fallback(source_key, calibration, config):
