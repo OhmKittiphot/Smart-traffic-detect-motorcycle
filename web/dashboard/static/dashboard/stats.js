@@ -9,7 +9,7 @@ window.Dashboard.onPage("#per-day", (page) => {
   const REPEAT_REFRESH_MS = 60000;
   const WEEKDAYS = [gettext("Mon"), gettext("Tue"), gettext("Wed"), gettext("Thu"), gettext("Fri"), gettext("Sat"),
                     gettext("Sun")];
-  const { api, el } = window.Dashboard;
+  const { api, el, provinceOf } = window.Dashboard;
   const $ = (id) => document.getElementById(id);
 
   // Bar sizes are set through element.style, which the page's CSP allows (unlike style="" in markup)
@@ -118,7 +118,7 @@ window.Dashboard.onPage("#per-day", (page) => {
     }
     $("repeat").replaceChildren(...rows.map((r) => el("li", {},
       el("button", { type: "button", class: "repeat-item", "data-plate": r.plate },
-        el("span", {}, el("span", { class: "repeat-plate" }, r.plate), r.province ? ` · ${r.province}` : ""),
+        el("span", {}, el("span", { class: "repeat-plate" }, r.plate), ` · ${provinceOf(r)}`),
         el("span", { class: "repeat-count", title: gettext("Violations") }, `×${r.count}`),
         el("span", { class: "repeat-meta" }, `${r.types.join(", ")} · ${interpolate(gettext("last %s"), [r.last_seen])}`,
           r.also_read_as.length ? ` · ${interpolate(gettext("also read as %s"), [r.also_read_as.join(", ")])}` : "")))));

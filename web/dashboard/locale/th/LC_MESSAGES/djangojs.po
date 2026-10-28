@@ -144,6 +144,9 @@ msgstr "แหล่งวิดีโอเปลี่ยนไปแล้ว
 msgid "Tick at least two files for the playlist"
 msgstr "ติ๊กอย่างน้อยสองไฟล์สำหรับเพลย์ลิสต์"
 
+msgid "Unknown Province"
+msgstr "ไม่ทราบจังหวัด"
+
 msgid "Unknown: its motorcycles are saved at the time they are played."
 msgstr "ไม่ทราบ: รถจะถูกบันทึกเป็นเวลาที่เล่นไฟล์"
 

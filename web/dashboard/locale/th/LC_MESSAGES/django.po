@@ -306,6 +306,9 @@ msgstr "ปิดถ้าต้องการตรวจจับไฟล์
 msgid "Unknown"
 msgstr "ไม่ทราบ"
 
+msgid "Unknown Province"
+msgstr "ไม่ทราบจังหวัด"
+
 msgid "Unreadable"
 msgstr "ไม่พบป้ายทะเบียน"
 

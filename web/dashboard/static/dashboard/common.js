@@ -183,12 +183,18 @@ window.Dashboard = (() => {
       : el("span", { class: "muted" }, "—");
   }
 
+  // The province read off a plate; "Unknown Province" when its letters were read but the province was not,
+  // "" when nothing was read
+  function provinceOf(r) {
+    return r.province || (r.plate ? gettext("Unknown Province") : "");
+  }
+
   // The plate photo when one was saved (opens larger like the evidence photo), and beside it the plate's
   // letters and numbers with the province under them, as on the plate itself
   function plateCell(r) {
     const text = el("span", { class: "plate-text" },
-      r.plate || el("span", { class: "muted" }, gettext("Unreadable")),
-      r.province ? el("small", { class: "plate-province" }, r.province) : null);
+      r.plate ? el("span", { class: "plate-number" }, r.plate) : el("span", { class: "muted" }, gettext("Unreadable")),
+      r.plate ? el("small", { class: "plate-province" }, provinceOf(r)) : null);
     if (!r.plate_snapshot) return text;
     const src = `/snapshot/${r.id}/plate/`;
     return el("span", { class: "plate-with-photo" },
@@ -292,6 +298,6 @@ window.Dashboard = (() => {
     });
   }
 
-  return { api, el, units, onPage, thumbCell, plateCell, helmetCell, statusCell, locationCell, watchEvents, watchRecords,
+  return { api, el, units, onPage, thumbCell, plateCell, helmetCell, statusCell, locationCell, provinceOf, watchEvents, watchRecords,
            openSnapshotsFrom };
 })();

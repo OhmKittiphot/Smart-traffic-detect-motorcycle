@@ -78,12 +78,12 @@ window.Dashboard.onPage("#toasts", (page) => {
 
   // One violation: what was broken, the plate and when / where. Opens the violations page.
   function violationToast(r) {
-    const { el } = window.Dashboard;   // builds with textContent only: plate text comes from OCR
+    const { el, provinceOf } = window.Dashboard;   // builds with textContent only: plate text comes from OCR
     return el("div", { class: "toast" },
       el("a", { class: "toast-link", href: "/violations/" },
         el("span", { class: "toast-text" },
           el("b", {}, `${gettext("Violation")} · ${r.violations.join(", ")}`),
-          el("span", {}, `${r.plate || gettext("Unreadable plate")}${r.province ? " · " + r.province : ""}`),
+          el("span", {}, r.plate ? `${r.plate} · ${provinceOf(r)}` : gettext("Unreadable plate")),
           el("small", {}, `${r.time} · ${r.source}`))));
   }
 

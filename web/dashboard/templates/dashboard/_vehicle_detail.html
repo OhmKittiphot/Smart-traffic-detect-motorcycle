@@ -1,7 +1,7 @@
 {% load i18n %}
 {# The details pop-up of one record (views.records.vehicle_detail and review_vehicle), put into #detail-dialog by htmx #}
 <div class="detail-head">
-  <h3 id="detail-title">{{ record.plate_text }}</h3>
+  <h3 id="detail-title" class="plate-number">{{ record.plate_text }}</h3>
   {% include "dashboard/_review_tag.html" with in_detail=True %}
 </div>
 <div class="detail-body">
@@ -11,12 +11,12 @@
   </div>
   <dl class="detail-list">
     <dt>{% translate "Date & time" %}</dt><dd>{{ record.detected_at|date:"d/m/Y H:i:s" }}</dd>
-    <dt>{% translate "Plate" %}</dt><dd>{{ record.plate_text|default:"—" }}</dd>
+    <dt>{% translate "Plate" %}</dt><dd>{% if record.plate_text %}<span class="plate-number">{{ record.plate_text }}</span>{% else %}—{% endif %}</dd>
     {% if record.plate_snapshot %}
     <dt>{% translate "Plate photo" %}</dt>
     <dd><img class="detail-plate" src="{% url 'plate_snapshot' record.id %}" alt="{% blocktranslate with plate=record.plate_text %}Plate {{ plate }}{% endblocktranslate %}"></dd>
     {% endif %}
-    <dt>{% translate "Province" %}</dt><dd>{{ record.province_text|default:"—" }}</dd>
+    <dt>{% translate "Province" %}</dt><dd>{% if record.province_text %}{{ record.province_text }}{% elif record.plate_text %}<span class="muted">{% translate "Unknown Province" %}</span>{% else %}—{% endif %}</dd>
     <dt>{% translate "OCR confidence" %}</dt><dd>{% if record.plate_conf %}{% widthratio record.plate_conf 1 100 %}%{% else %}—{% endif %}</dd>
     <dt>{% translate "Riders" %}</dt><dd>{{ record.riders|default_if_none:"—" }}</dd>
     <dt>{% translate "Helmet" %}</dt><dd>{% include "dashboard/_helmet_tags.html" %}</dd>
