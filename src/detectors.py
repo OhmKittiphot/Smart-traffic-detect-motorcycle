@@ -1,13 +1,16 @@
 """The models run on each frame, one class per model: motorcycles, licence plates, rider heads (helmet
-model) and the rider classifier. Optional models that are missing are skipped (available = False)."""
+model, with the head classifier deciding helmet or not) and the rider classifier. Optional models that are
+missing are skipped (available = False)."""
 import os
 
 import torch
 
-from app_config import load_yolo_model
-from rider_classifier import RiderClassifier
-from rider_voting import RiderVoting
-from utils import log_error, suppress_overlapping_boxes
+from .app_config import load_yolo_model
+from .cuda_graphs import split_batch
+from .head_classifier import HeadClassifier, crop_head
+from .rider_classifier import RiderClassifier
+from .rider_voting import RiderVoting
+from .utils import log, log_error, suppress_overlapping_boxes
 
 
 def _boxes(result):
@@ -32,6 +35,17 @@ class _YoloModel:
         return self.model.predict(images, imgsz=imgsz, verbose=False, device=self.device,
                                   quantize=self.config.inference_quantize, **options)
 
+    def _predict_crops(self, crops: list, imgsz: int, **options) -> list:
+        """predict() on image crops, one result each. Every crop is letterboxed to the same imgsz square
+        (rect=False), and on a GPU the crops go in padded batches, so a few CUDA graphs cover any number of
+        them (cuda_graphs.split_batch)."""
+        if not str(self.device).startswith("cuda"):
+            return self._predict(crops, imgsz, rect=False, **options)
+        results = []
+        for part, size in split_batch(crops):
+            results += self._predict(part + part[:1] * (size - len(part)), imgsz, rect=False, **options)[:len(part)]
+        return results
+
     def _warmup(self, image, imgsz: int) -> None:
         """Run once on a blank image so CUDA kernels load before playback starts."""
         if self.model is None:
@@ -53,12 +67,12 @@ class MotorcycleDetector(_YoloModel):
                 self.model = load_yolo_model(path, device, use_half)
                 # Works for both the custom detector ({0: motorcycle}) and COCO models ({3: motorcycle})
                 self.classes = [i for i, n in self.model.names.items() if n in ("motorcycle", "motorbike")] or None
-                print(f"[Motorcycle] Detector loaded: {path}")
+                log.info("[Motorcycle] Detector loaded: %s", path)
             except Exception as e:
                 self.model = None
-                print(f"[Motorcycle] Model '{path}' not loaded ({e}).")
+                log.warning("[Motorcycle] Model '%s' not loaded (%s).", path, e)
         if self.model is None:
-            print("[Motorcycle] No detector found. Motorcycle detection disabled.")
+            log.warning("[Motorcycle] No detector found. Motorcycle detection disabled.")
 
     def warmup(self, frame):
         self._warmup(frame, self.config.detection_imgsz)
@@ -109,7 +123,7 @@ class PlateDetector(_YoloModel):
     def detect(self, frame, mc_bboxes, search_rois: bool) -> list:
         """Plate boxes [x1, y1, x2, y2, conf] in frame coordinates. search_rois: look only inside the
         motorcycles (config.plate_search "roi"), else in the whole frame."""
-        options = dict(conf=self.config.detection_conf, classes=self.classes)
+        options = dict(conf=self.config.plate_conf, classes=self.classes)
         if not search_rois:
             results = self._predict(frame, self.config.plate_imgsz, **options)
             return [[x1, y1, x2, y2, conf] for r in results for x1, y1, x2, y2, conf, _ in _boxes(r)]
@@ -118,7 +132,7 @@ class PlateDetector(_YoloModel):
         if not crops:
             return []   # no motorcycle close enough: no plate inference at all
         boxes, scores = [], []
-        for r, (rx1, ry1, bike_h) in zip(self._predict(crops, self.config.plate_roi_imgsz, **options), rois):
+        for r, (rx1, ry1, bike_h) in zip(self._predict_crops(crops, self.config.plate_roi_imgsz, **options), rois):
             for bx1, by1, bx2, by2, conf, _ in _boxes(r):
                 # The model sometimes boxes a whole small bike, a wheel or the rider as a plate
                 if by2 - by1 > self.config.plate_max_bike_h_ratio * bike_h:
@@ -131,17 +145,17 @@ class PlateDetector(_YoloModel):
 
 
 class HeadDetector(_YoloModel):
-    """Rider heads above each motorcycle, with and without a helmet (only used without the rider classifier)."""
+    """Rider heads above each motorcycle, with and without a helmet. With the head classifier loaded, the
+    helmet model only finds the heads and the classifier decides helmet or not on each head crop."""
 
-    def __init__(self, config, device, use_half, load: bool = True):
+    def __init__(self, config, device, use_half):
         super().__init__(config, device)
         self.helmet_ids, self.head_ids = set(), set()
-        if not load:
-            return
+        self.classifier = None
         try:
             self.model = load_yolo_model(config.helmet_model_path, device, use_half)
         except Exception as e:
-            print(f"[Helmet] Model not loaded ({e}). Helmet detection disabled.")
+            log.warning("[Helmet] Model not loaded (%s). Helmet detection disabled.", e)
             return
         norm = lambda s: str(s).lower().replace("_", " ").replace("-", " ").strip()
         helmet_names = {norm(n) for n in config.helmet_class_names}
@@ -151,12 +165,23 @@ class HeadDetector(_YoloModel):
                 self.helmet_ids.add(int(cid))
             elif norm(name) in head_names:
                 self.head_ids.add(int(cid))
-        print(f"[Helmet] Model classes: {dict(self.model.names)}")
-        if not self.head_ids:
-            print("[Helmet] No bare-head/no-helmet class found; NO HELMET will never be reported.")
+        log.info("[Helmet] Model classes: %s", dict(self.model.names))
+        if os.path.isfile(config.head_classifier_path):
+            try:
+                self.classifier = HeadClassifier(config.head_classifier_path, device, use_half)
+                log.info("[Helmet] Head classifier loaded: %s", config.head_classifier_path)
+            except Exception as e:
+                log.warning("[Helmet] Head classifier not loaded (%s); using the helmet model's classes.", e)
+        if self.classifier is None and not self.head_ids:
+            log.warning("[Helmet] No bare-head/no-helmet class found; NO HELMET will never be reported.")
 
     def warmup(self, frame):
         self._warmup(frame[:400, :300], self.config.helmet_imgsz)
+        if self.classifier is not None:
+            try:
+                self.classifier.no_helmet_probs([frame[:40, :40]])
+            except Exception as e:
+                log_error("Warmup", e)
 
     @staticmethod
     def _crop_rider_rois(frame, mc_bboxes):
@@ -183,12 +208,12 @@ class HeadDetector(_YoloModel):
     def detect(self, frame, mc_bboxes):
         """(helmet boxes, bare-head boxes, rider boxes) in frame coordinates. Rider boxes are every head at
         the lower rider_conf; helmet / bare-head ones only those at helmet_conf."""
-        helmets, heads, riders = [], [], []
+        helmets, heads = [], []
         crops, rois = self._crop_rider_rois(frame, mc_bboxes) if self.model is not None else ([], [])
         if not crops:
-            return helmets, heads, riders
-        results = self._predict(crops, self.config.helmet_imgsz,
-                                conf=min(self.config.helmet_conf, self.config.rider_conf))
+            return helmets, heads, []
+        results = self._predict_crops(crops, self.config.helmet_imgsz,
+                                      conf=min(self.config.helmet_conf, self.config.rider_conf))
         boxes, scores, is_helmet = [], [], []
         for r, (rx1, ry1) in zip(results, rois):
             for bx1, by1, bx2, by2, score, cls in _boxes(r):
@@ -199,10 +224,15 @@ class HeadDetector(_YoloModel):
 
         # Class-agnostic NMS: one head is one rider, even if the model scored it as both
         # Helmet and No-Helmet (or it appears in two overlapping bike crops)
-        for i in suppress_overlapping_boxes(list(range(len(boxes))), scores, boxes_xyxy=boxes):
-            riders.append(boxes[i])
-            if scores[i] >= self.config.helmet_conf:
-                (helmets if is_helmet[i] else heads).append(boxes[i])
+        kept = suppress_overlapping_boxes(list(range(len(boxes))), scores, boxes_xyxy=boxes)
+        riders = [boxes[i] for i in kept]
+        sure = [i for i in kept if scores[i] >= self.config.helmet_conf]
+        if self.classifier is not None:
+            bare = self.classifier.no_helmet_probs([crop_head(frame, boxes[i]) for i in sure]) >= 0.5
+        else:
+            bare = [not is_helmet[i] for i in sure]
+        for i, is_bare in zip(sure, bare):
+            (heads if is_bare else helmets).append(boxes[i])
         return helmets, heads, riders
 
 
@@ -211,17 +241,19 @@ class RiderClassification:
     track's frames (RiderVoting)."""
 
     def __init__(self, config, device, use_half):
+        self.config = config
         self.classifier = None
         if os.path.isfile(config.rider_model_path):
             try:
                 self.classifier = RiderClassifier(config.rider_model_path, device, use_half)
-                print(f"[Rider] Classifier loaded: {config.rider_model_path} (replaces the helmet model)")
+                log.info("[Rider] Classifier loaded: %s", config.rider_model_path)
             except Exception as e:
-                print(f"[Rider] Classifier not loaded ({e}); using the helmet model.")
+                log.warning("[Rider] Classifier not loaded (%s); using the helmet model.", e)
         self.voting = RiderVoting(
             window=config.rider_vote_window,
             min_frames=config.rider_vote_min_frames,
             max_age_s=config.motorcycle_track_max_age_s,
+            seat_threshold=config.rider_seat_threshold,
         )
 
     @property
@@ -240,15 +272,16 @@ class RiderClassification:
         except Exception as e:
             log_error("Warmup", e)
 
-    @staticmethod
-    def _crop_motorcycles(frame, mc_ids):
-        """Motorcycle crops (5% padding) with their track IDs."""
+    def _crop_motorcycles(self, frame, mc_ids):
+        """Crops of the motorcycles and their riders (5% padding, rider_crop_pad_up above for the heads) with
+        their track IDs. Crops shorter than rider_min_crop_h are skipped."""
         h, w = frame.shape[:2]
         crops, tids = [], []
         for (x1, y1, x2, y2), tid in mc_ids.items():
             pad_w, pad_h = int((x2 - x1) * 0.05), int((y2 - y1) * 0.05)
-            crop = frame[max(0, y1 - pad_h):min(h, y2 + pad_h), max(0, x1 - pad_w):min(w, x2 + pad_w)]
-            if crop.shape[0] >= 24 and crop.shape[1] >= 24:
+            pad_up = int((y2 - y1) * self.config.rider_crop_pad_up)
+            crop = frame[max(0, y1 - pad_up):min(h, y2 + pad_h), max(0, x1 - pad_w):min(w, x2 + pad_w)]
+            if crop.shape[0] >= self.config.rider_min_crop_h and crop.shape[1] >= 24:
                 crops.append(crop)
                 tids.append(tid)
         return crops, tids
@@ -263,8 +296,8 @@ class RiderClassification:
         with torch.inference_mode():
             probs = self.classifier.predict_probs(crops)
         with det_lock:
-            for tid, p in zip(tids, probs):
-                self.voting.update(tid, p)
+            for tid, p, crop in zip(tids, probs, crops):
+                self.voting.update(tid, p, weight=crop.shape[0])
             self.voting.prune()
             return {tid: self.voting.get(tid) for tid in tids}
 

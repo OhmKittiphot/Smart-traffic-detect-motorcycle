@@ -1,0 +1,3 @@
+{% load i18n %}{# Each violation of a record as a tag, or Normal #}
+{% if record.is_violation %}<span>{% for label in record.violation_labels %}<span class="tag tag-bad">{{ label }}</span>{% endfor %}</span>
+{% else %}<span class="tag tag-ok">{% translate "Normal" %}</span>{% endif %}

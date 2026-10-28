@@ -1,5 +1,7 @@
-"""The pictures the live view shows: the annotated frame as JPEG for the stream, a card while there is no
-video, and the raw frame to click calibration points on."""
+"""The pictures the live view shows: the annotated frame (as JPEG for the MJPEG stream, as pixels for
+WebRTC), a card while there is no video, and the raw frame to click calibration points on."""
+import functools
+import io
 import threading
 import time
 
@@ -7,6 +9,20 @@ import cv2
 import numpy as np
 from django.conf import settings
 from django.utils import timezone
+from PIL import Image
+
+
+# Live cameras are sent at the desktop viewer's rate; for a video file each account chooses (chosen_fps)
+LIVE_STREAM_FPS = 25
+
+
+@functools.lru_cache(maxsize=256)
+def chosen_fps(user_id: int) -> int:
+    """The frame rate this account chose for video files (the live view's fps menu). Read by its streams
+    for every frame, so it is kept in memory; saving preferences clears it (chosen_fps.cache_clear())."""
+    from .models import UserPreferences
+
+    return UserPreferences.objects.get_or_create(user_id=user_id)[0].stream_fps
 
 
 def placeholder_frame(title: str, subtitle: str = "", detail: str = "") -> np.ndarray:
@@ -33,35 +49,65 @@ def placeholder_frame(title: str, subtitle: str = "", detail: str = "") -> np.nd
     return frame
 
 
-def encode_jpeg(frame: np.ndarray, quality: int = 80, max_width: int = 0) -> bytes:
-    """JPEG of a frame, scaled down to max_width when it is wider (0 = full size)."""
+def fit_width(frame: np.ndarray, max_width: int) -> np.ndarray:
+    """The frame, scaled down to max_width when it is wider. INTER_LINEAR: about 3x faster than
+    INTER_AREA, and looks the same for the small scale-downs here (1080p to 1280 wide)."""
     h, w = frame.shape[:2]
-    if max_width and w > max_width:
-        frame = cv2.resize(frame, (max_width, int(h * max_width / w)), interpolation=cv2.INTER_AREA)
-    ok, buf = cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, quality])
-    return buf.tobytes() if ok else b""
+    if w <= max_width:
+        return frame
+    return cv2.resize(frame, (max_width, int(h * max_width / w)), interpolation=cv2.INTER_LINEAR)
+
+
+def encode_jpeg(frame: np.ndarray, quality: int = 80) -> bytes:
+    """BGR frame as JPEG. Encoded with Pillow, whose libjpeg-turbo is about 3x faster than cv2.imencode
+    here (4 ms vs 13 ms for 1280x720), which a 60 fps stream needs."""
+    buf = io.BytesIO()
+    Image.fromarray(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)).save(buf, "JPEG", quality=quality)
+    return buf.getvalue()
 
 
 class LiveFrames:
-    """Frames of one DetectionService, shared by every open stream: each picture is encoded once, and
-    again only when the frame, the detections or the card's text changed."""
+    """Frames of one DetectionService, shared by every open stream: each picture is drawn (and encoded as
+    JPEG) once, and again only when the frame, the detections or the card's text changed."""
 
     def __init__(self, service):
         self._service = service
         self._lock = threading.Lock()
-        self._jpeg = b""
-        self._jpeg_key = None
+        self._frame = None   # the picture now on screen, at most STREAM_MAX_WIDTH wide
+        self._jpeg = None    # self._frame as JPEG, once a stream asked for it
+        self._key = None
+
+    def _refresh(self) -> None:
+        """Draw the picture again if what should be on screen changed (called holding _lock)."""
+        key, make = self._picture()
+        if key != self._key:
+            frame = make()
+            if frame is not None:
+                self._frame, self._jpeg, self._key = fit_width(frame, settings.STREAM_MAX_WIDTH), None, key
+
+    def frame(self):
+        """Current annotated frame (BGR pixels) or a placeholder card, for WebRTC; None before the first."""
+        with self._lock:
+            self._refresh()
+            return self._frame
 
     def jpeg(self) -> bytes:
-        """Current annotated frame as JPEG, or a placeholder card."""
+        """Current annotated frame as JPEG, or a placeholder card, for the MJPEG stream."""
         with self._lock:
-            key, make = self._picture()
-            if key != self._jpeg_key:
-                frame = make()
-                if frame is not None:
-                    self._jpeg = encode_jpeg(frame, max_width=settings.STREAM_MAX_WIDTH)
-                    self._jpeg_key = key
-            return self._jpeg
+            self._refresh()
+            if self._jpeg is None and self._frame is not None:
+                self._jpeg = encode_jpeg(self._frame)
+            return self._jpeg or b""
+
+    def stream_fps(self, user_id: int) -> float:
+        """Frames a second to send this account's live view: a video file at the rate it chose, at most the
+        file's own; a live camera at LIVE_STREAM_FPS, at most the camera's."""
+        service = self._service
+        if service.state != service.RUNNING:
+            return LIVE_STREAM_FPS
+        stream = service.app.video_stream
+        wanted = chosen_fps(user_id) if stream.is_video_file else LIVE_STREAM_FPS
+        return min(wanted, stream.source_fps)
 
     def _picture(self) -> tuple:
         """(key, make): what should be on screen now, and how to draw it. Cards carry the second they were

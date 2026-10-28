@@ -1,5 +1,7 @@
 from typing import Any, Callable, Dict, List, Optional
 
+from .utils import log
+
 
 # Called with (meta, speed_calibrated) for every reported motorcycle, e.g. to store it in the web dashboard
 _report_listeners: List[Callable[[Dict[str, Any], bool], None]] = []
@@ -79,9 +81,9 @@ def print_motorcycle_reports(finished, speed_calibrated: bool, min_frames: int) 
         # Only report a motorcycle detected together with its rider; short tracks or bikes with no
         # rider detected (parked bikes, false detections) are skipped
         if meta.get("hits", 0) >= min_frames and meta.get("rider_seen"):
-            print("\n" + format_motorcycle_report(meta, speed_calibrated) + "\n")
+            log.info("\n%s\n", format_motorcycle_report(meta, speed_calibrated))
             for fn in _report_listeners:
                 try:
                     fn(meta, speed_calibrated)
-                except Exception as e:
-                    print(f"[Report] Listener failed: {type(e).__name__}: {e}")
+                except Exception:
+                    log.exception("[Report] Listener failed")

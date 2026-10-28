@@ -1,18 +1,36 @@
+import logging
 import os
 import re
+import sys
+import threading
 import time
-import traceback
 from urllib.parse import urlsplit
 
 import cv2
 from typing import Dict, List, Tuple
 
 
+# Messages of the detection pipeline. Each one already starts with its part's tag ("[Video] ..."). The desktop
+# app (main.py) and the OCR process show them with setup_console_logging(); the web dashboard's
+# settings.LOGGING shows them in its console
+log = logging.getLogger("pipeline")
+
+
+def setup_console_logging() -> None:
+    """Print the pipeline's messages (INFO and up) to the console, as they are."""
+    if not log.handlers:
+        handler = logging.StreamHandler(sys.stdout)   # where print() wrote before
+        handler.setFormatter(logging.Formatter("%(message)s"))
+        log.addHandler(handler)
+        log.setLevel(logging.INFO)
+        log.propagate = False
+
+
 _last_error_log: Dict[str, float] = {}
 
 
 def log_error(tag: str, exc: BaseException, interval_s: float = 5.0) -> None:
-    """Print an error with its traceback, at most once per interval per (tag, error type)
+    """Log an error with its traceback, at most once per interval per (tag, error type)
     so a failure repeating inside a worker loop does not flood the console."""
     key = f"{tag}:{type(exc).__name__}"
     now = time.monotonic()
@@ -20,65 +38,26 @@ def log_error(tag: str, exc: BaseException, interval_s: float = 5.0) -> None:
     if last is not None and now - last < interval_s:
         return
     _last_error_log[key] = now
-    print(f"[{tag}] {type(exc).__name__}: {exc}")
-    traceback.print_exception(type(exc), exc, exc.__traceback__)
+    log.error("[%s] %s: %s", tag, type(exc).__name__, exc, exc_info=(type(exc), exc, exc.__traceback__))
+
 
 def format_thai_plate(plate_text: str, province_text: str) -> str:
-    """
-    Format Thai motorcycle license plate correctly.
-    
-    Structure:
-    - Line 1: 2-3 Thai letters/digits
-      * If 2 chars: only Thai letters (no digits)
-      * If 3 chars: 1st can be digit/letter, 2nd-3rd must be Thai letters
-    - Line 2: Province name
-    - Line 3: 1-4 digits
-    """
+    """A Thai motorcycle plate as its lines in order: series, province, number ('1กข987', 'ชลบุรี' ->
+    '1กข ชลบุรี 987'). The series is 2 Thai letters, or a digit or letter and then 2 letters; text that does
+    not start with one is returned as it is, with the province after it."""
     plate_text = plate_text.replace(" ", "").strip()
-    
-    # Split into plate characters and digits
-    # Match: an optional digit/letter and 2 Thai letters, followed by (digits). A greedy {2,3} would take
-    # the number's first digit into a 2-letter series ("\u0E01\u0E021234" -> "\u0E01\u0E021" + "234")
+    # A greedy {2,3} would take the number's first digit into a 2-letter series ("กข1234" -> "กข1" + "234")
     match = re.match(r"([\d\u0E00-\u0E7F]?[\u0E00-\u0E7F]{2})([0-9]*)", plate_text)
-    
     if not match:
         return f"{plate_text} {province_text}" if province_text else plate_text
-    
-    plate_chars = match.group(1)
-    digits = match.group(2)
-    
-    is_valid = False
-    
-    if len(plate_chars) == 2:
-        # Must be 2 Thai letters only (no digits)
-        if re.match(r"[\u0E00-\u0E7F]{2}", plate_chars):
-            is_valid = True
-    elif len(plate_chars) >= 3:
-        # First char: digit or Thai letter
-        # Remaining chars: must be Thai letters
-        first_char = plate_chars[0]
-        rest_chars = plate_chars[1:]
-        
-        is_first_valid = bool(re.match(r"[\d\u0E00-\u0E7F]", first_char))
-        is_rest_thai = bool(re.match(r"[\u0E00-\u0E7F]+$", rest_chars))
-        
-        if is_first_valid and is_rest_thai:
-            is_valid = True
-    
-    if is_valid:
-        formatted = plate_chars
-        if province_text:
-            formatted += f" {province_text}"
-        if digits:
-            formatted += f" {digits}"
-        return formatted
-    else:
-        return f"{plate_text} {province_text}" if province_text else plate_text
+    series, digits = match.groups()
+    return " ".join(part for part in (series, province_text, digits) if part)
 
 
 # Fail fast on a stalled RTSP connection instead of OpenCV's default ~30s hang
 _RTSP_OPEN_TIMEOUT_MS = 10000
 _RTSP_READ_TIMEOUT_MS = 10000
+_capture_options_lock = threading.Lock()
 
 
 def describe_capture_url(camera_url: str) -> str:
@@ -98,22 +77,27 @@ def open_capture(camera_url: str) -> cv2.VideoCapture:
     """Open a cv2 VideoCapture for an RTSP / http(s) stream URL or a local video file path."""
     is_rtsp = camera_url.lower().startswith(("rtsp://", "rtsps://"))
     is_network = is_rtsp or camera_url.lower().startswith(("http://", "https://"))
-    # Low-latency RTSP options; read by OpenCV on every open, and they would break probing of video files
-    if is_rtsp:
-        os.environ["OPENCV_FFMPEG_CAPTURE_OPTIONS"] = (
-            "rtsp_transport;tcp|fflags;nobuffer|flags;low_delay|analyzeduration;0|probesize;32"
-        )
-    else:
-        os.environ.pop("OPENCV_FFMPEG_CAPTURE_OPTIONS", None)
 
     cap = cv2.VideoCapture()
     if is_network:
         cap.set(cv2.CAP_PROP_OPEN_TIMEOUT_MSEC, _RTSP_OPEN_TIMEOUT_MS)
         cap.set(cv2.CAP_PROP_READ_TIMEOUT_MSEC, _RTSP_READ_TIMEOUT_MS)
 
-    if not cap.open(camera_url, cv2.CAP_FFMPEG):
+    # Low-latency RTSP options; read by OpenCV on every open, and they would break probing of video files.
+    # The variable is shared by the whole process, so two sources opened at once (the capture thread and a
+    # calibration frame for the web dashboard) must not set it for each other
+    with _capture_options_lock:
+        if is_rtsp:
+            os.environ["OPENCV_FFMPEG_CAPTURE_OPTIONS"] = (
+                "rtsp_transport;tcp|fflags;nobuffer|flags;low_delay|analyzeduration;0|probesize;32"
+            )
+        else:
+            os.environ.pop("OPENCV_FFMPEG_CAPTURE_OPTIONS", None)
+        opened = cap.open(camera_url, cv2.CAP_FFMPEG)
+
+    if not opened:
         # Never print the RTSP URL itself: it usually carries the camera password
-        print(f"[Capture] Failed to open source: {describe_capture_url(camera_url)}")
+        log.warning("[Capture] Failed to open source: %s", describe_capture_url(camera_url))
         return cap
 
     if is_rtsp:

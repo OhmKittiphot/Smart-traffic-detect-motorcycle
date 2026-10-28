@@ -4,7 +4,7 @@
 
 Then open http://127.0.0.1:8000 and log in with an admin account
 (create one first with: venv\Scripts\python web\manage.py createsuperuser).
-Detection (models, video stream) runs only while staff have the live view open.
+Detection (models, video stream) runs only while staff are logged in.
 Always use the project's venv: the detection models and Django are installed there.
 """
 import multiprocessing as mp
@@ -16,7 +16,7 @@ WEB_DIR = Path(__file__).resolve().parent
 PROJECT_DIR = WEB_DIR.parent
 
 
-def main():
+def _set_up_process() -> None:
     # Model paths in AppConfig are relative to the project root
     os.chdir(PROJECT_DIR)
     sys.path.insert(0, str(WEB_DIR))
@@ -28,6 +28,9 @@ def main():
         except (AttributeError, ValueError):
             pass
 
+
+def _set_up_django() -> None:
+    """Load Django, bring the database and static files up to date, and stop if nobody can log in yet."""
     import django
     from django.core.management import call_command
 
@@ -42,27 +45,41 @@ def main():
               "    venv\\Scripts\\python web\\manage.py createsuperuser\n")
         sys.exit(1)
 
+
+def _warn_about_settings(host: str) -> None:
     from django.conf import settings
-    from waitress import serve
 
-    from admin.wsgi import application
-    from dashboard.engine import stop_service   # detection starts from the live view, not here
-    from dashboard.storage import start_cleanup_thread
-
-    # Old records and photos are removed now and every few hours (limits in .env, see dashboard/storage.py)
-    start_cleanup_thread()
-
-    host = os.getenv("DASHBOARD_HOST", "127.0.0.1")
-    port = int(os.getenv("DASHBOARD_PORT", "8000"))
     if host not in ("127.0.0.1", "localhost") and not os.getenv("DJANGO_ALLOWED_HOSTS"):
         print(f"[Warning] Listening on {host} but DJANGO_ALLOWED_HOSTS is not set; other hosts will get 400.")
     if settings.DEBUG:
         print("[Warning] DJANGO_DEBUG is on. Never use it on a shared network.")
 
+
+def main():
+    _set_up_process()
+    _set_up_django()
+
+    from waitress import serve
+
+    from admin.wsgi import application
+    from dashboard.engine import resume_logged_in_staff, stop_service
+    from dashboard.storage import start_cleanup_thread
+
+    # Old records and photos are removed now and every few hours (limits in .env, see dashboard/storage.py)
+    start_cleanup_thread()
+    # Detection starts when staff log in; those still logged in from before the restart count too
+    resume_logged_in_staff()
+
+    host = os.getenv("DASHBOARD_HOST", "127.0.0.1")
+    port = int(os.getenv("DASHBOARD_PORT", "8000"))
+    # Each open video stream and event stream (views/events.py) holds one thread while its tab is shown:
+    # up to 4 for a live view, at most 1 for the other pages. The rest answer API requests
+    threads = int(os.getenv("DASHBOARD_THREADS", "48"))
+    _warn_about_settings(host)
+
     print(f"\nCCTV dashboard: http://{'127.0.0.1' if host == '0.0.0.0' else host}:{port}\n")
     try:
-        # Each open video stream holds one thread, so keep plenty for API requests
-        serve(application, host=host, port=port, threads=24, ident="cctv",
+        serve(application, host=host, port=port, threads=threads, ident="cctv",
               channel_timeout=60, connection_limit=200)
     finally:
         stop_service()

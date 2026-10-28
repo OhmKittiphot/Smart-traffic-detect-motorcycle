@@ -2,15 +2,14 @@ import multiprocessing as mp
 import os
 import queue
 import re
-import traceback
 
 import cv2
 import numpy as np
 import torch
 
-from ocr_voting import UNKNOWN
-from province import extract_thai_province
-from utils import log_error
+from .ocr_voting import UNKNOWN
+from .province import extract_thai_province
+from .utils import log, log_error, setup_console_logging
 
 # A Thai motorcycle plate has three lines: the series (e.g. '6ขน'), the province and the number (e.g. '690').
 # Each line is cut from the plate crop by a fixed band of its height (the crop carries 10% padding around
@@ -104,13 +103,14 @@ def load_recognizer(model_dir=None, device="gpu"):
     from paddleocr import TextRecognition
 
     if model_dir and os.path.isdir(model_dir):
-        print(f"[OCR-Process] Plate recognizer: {model_dir}")
+        log.info("[OCR-Process] Plate recognizer: %s", model_dir)
         return TextRecognition(model_name=REC_MODEL, model_dir=model_dir, device=device)
-    print(f"[OCR-Process] Plate recognizer: stock {REC_MODEL} (no fine-tuned model at '{model_dir}')")
+    log.info("[OCR-Process] Plate recognizer: stock %s (no fine-tuned model at '%s')", REC_MODEL, model_dir)
     return TextRecognition(model_name=REC_MODEL, device=device)
 
 
-def ocr_worker(in_q: mp.Queue, out_q: mp.Queue, model_dir: str = ""):
+def _configure_paddle() -> None:
+    """Quiet Paddle's logs, and let it share the GPU (set before Paddle is imported)."""
     import warnings
 
     os.environ["PADDLE_PDX_ENABLE_MKLDNN_BYDEFAULT"] = "0"
@@ -121,16 +121,38 @@ def ocr_worker(in_q: mp.Queue, out_q: mp.Queue, model_dir: str = ""):
     os.environ.setdefault("FLAGS_allocator_strategy", "auto_growth")
     warnings.filterwarnings("ignore")
 
-    print("[OCR-Process] Loading PaddleOCR ...")
+
+def _read_batch(rec, item) -> list:
+    """The reads of the plate crops of one request from the YOLO process (crops too small are skipped)."""
+    results = []
+    for bbox, crop_bytes, shape, dtype_str, track_id in item["items"]:
+        try:
+            crop_bgr = np.frombuffer(crop_bytes, dtype=np.dtype(dtype_str)).reshape(shape)
+            if min(crop_bgr.shape[:2]) < 10:
+                continue
+            read = read_plate(rec, crop_bgr)
+            read.update(bbox=bbox, track_id=track_id, sharpness=plate_sharpness(crop_bgr))
+            results.append(read)
+        except Exception as e:
+            log_error("OCR-Process", e)
+    return results
+
+
+def ocr_worker(in_q: mp.Queue, out_q: mp.Queue, model_dir: str = ""):
+    """The OCR process: reads the plate crops sent on in_q and answers on out_q, until it gets None."""
+    _configure_paddle()
+    # A process of its own: the main process's logging set-up is not inherited
+    setup_console_logging()
+    log.info("[OCR-Process] Loading PaddleOCR ...")
     try:
         rec = load_recognizer(model_dir, "gpu" if torch.cuda.is_available() else "cpu")
     except Exception as e:
         # Tell the main process why OCR is unavailable instead of dying silently
-        traceback.print_exc()
+        log.exception("[OCR-Process] PaddleOCR failed to load")
         out_q.put({"error": f"PaddleOCR failed to load: {type(e).__name__}: {e}"})
         return
     out_q.put("ready")
-    print("[OCR-Process] PaddleOCR is ready!")
+    log.info("[OCR-Process] PaddleOCR is ready!")
 
     while True:
         try:
@@ -144,18 +166,7 @@ def ocr_worker(in_q: mp.Queue, out_q: mp.Queue, model_dir: str = ""):
         if item is None:
             break
 
-        results = []
-        for bbox, crop_bytes, shape, dtype_str, track_id in item["items"]:
-            try:
-                crop_bgr = np.frombuffer(crop_bytes, dtype=np.dtype(dtype_str)).reshape(shape)
-                if min(crop_bgr.shape[:2]) < 10:
-                    continue
-                read = read_plate(rec, crop_bgr)
-                read.update(bbox=bbox, track_id=track_id, sharpness=plate_sharpness(crop_bgr))
-                results.append(read)
-            except Exception as e:
-                log_error("OCR-Process", e)
-
+        results = _read_batch(rec, item)
         try:
             out_q.put({"gen": item["gen"], "t": item["t"], "results": results}, timeout=5.0)
         except queue.Full:

@@ -1,9 +1,15 @@
 {% load i18n %}
   <h2 class="search-title">{% translate "Plate search" %}</h2>
-  <form id="search-form" class="search-form" role="search">
+  {# htmx sends the form to vehicle_rows and puts the rows it answers into #result-rows: on Search, as the plate is #}
+  {# typed (once typing stops), when a filter changes, and when the page opens if it lists every record or has a plate #}
+  <form id="search-form" class="search-form" role="search"
+        hx-get="{% url 'vehicle_rows' %}" hx-target="#result-rows" hx-include="#search-source"
+        hx-indicator="#search-busy" hx-sync="this:replace"
+        hx-trigger="submit, input changed delay:300ms from:#search-q, change from:#search-province, change from:#search-violations, change from:#search-source{% if browse or request.GET.q %}, load{% endif %}">
+    {% if browse %}<input type="hidden" name="browse" value="true">{% endif %}
     <label class="search-field search-plate">
       <span>{% translate "Plate" %}</span>
-      <input type="text" id="search-q" name="q" maxlength="300" autocomplete="off"{% if autofocus %} autofocus{% endif %}
+      <input type="text" id="search-q" name="q" maxlength="300" autocomplete="off" value="{{ request.GET.q|default:'' }}"{% if autofocus %} autofocus{% endif %}
              placeholder="{% translate "e.g. 1กข987" %}">
     </label>
     <label class="search-field">
@@ -15,7 +21,7 @@
       </select>
     </label>
     <label class="search-check">
-      <input type="checkbox" id="search-violations" name="violations_only"{% if violations_only %} checked{% endif %}><span>{% translate "Violations only" %}</span>
+      <input type="checkbox" id="search-violations" name="violations_only" value="true"{% if violations_only %} checked{% endif %}><span>{% translate "Violations only" %}</span>
     </label>
     <button type="submit" class="btn btn-primary search-btn">
       <svg viewBox="0 0 16 16" width="15" height="15" aria-hidden="true"><circle cx="6.5" cy="6.5" r="5" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="m10.5 10.5 4 4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
@@ -27,38 +33,12 @@
   <section class="table-panel search-results" aria-label="{% translate "Search results" %}">
     <div class="table-head">
       <h2 id="result-title">{% translate "Results" %}</h2>
-      <div class="source-menu" id="source-menu">
-        <input type="hidden" id="search-source" value="">
-        <button type="button" class="source-btn" aria-haspopup="true" aria-expanded="false" aria-controls="source-list">
-          <span class="source-btn-label">{% translate "All sources" %}</span>
-          <svg viewBox="0 0 16 16" width="12" height="12" aria-hidden="true"><path d="m4 6 4 4 4-4" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
-        </button>
-        <div class="source-list" id="source-list" hidden>
-          <button type="button" class="source-item" data-value="" data-label="{% translate "All sources" %}" aria-pressed="true">{% translate "All sources" %}</button>
-          {% for mode, items in sources.items %}
-          {% if mode == "live" %}{% translate "Live cameras" as group %}{% translate "All live cameras" as all %}{% translate "Show each of the live cameras" as show %}{% else %}{% translate "Video files" as group %}{% translate "All video files" as all %}{% translate "Show each of the video files" as show %}{% endif %}
-          <div class="source-group">
-            <div class="source-group-head">
-              <button type="button" class="source-toggle" aria-expanded="false" aria-label="{{ show }}">
-                <svg viewBox="0 0 16 16" width="12" height="12" aria-hidden="true"><path d="m6 4 4 4-4 4" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
-              </button>
-              <button type="button" class="source-item" data-value="{{ mode }}" data-label="{{ all }}" aria-pressed="false">
-                {{ group }} <span class="source-count">{{ items|length }}</span>
-              </button>
-            </div>
-            <div class="source-children" hidden>
-              {% for value, label in items %}
-              <button type="button" class="source-item" data-value="{{ value }}" data-label="{{ label }}" aria-pressed="false">{{ label }}</button>
-              {% empty %}
-              <span class="source-none muted">{% translate "None" %}</span>
-              {% endfor %}
-            </div>
-          </div>
-          {% endfor %}
-        </div>
-      </div>
+      {# search.js puts the chosen source into #search-source #}
+      <input type="hidden" id="search-source" name="source" value="">
+      {% include "dashboard/_source_menu.html" with menu_id="source-menu" chosen="" %}
+      <span class="form-msg is-busy htmx-indicator" id="search-busy">{% translate "Searching…" %}</span>
       <span class="form-msg" id="search-msg" role="status" aria-live="polite"></span>
-      {% if deletable and perms.dashboard.delete_records %}
+      {% if browse and perms.dashboard.delete_records %}
       {# Delete turns on selection mode and hides itself: checkboxes, All, Cancel and Delete selected take its place #}
       <div class="bulk-actions" id="bulk-actions">
         <button type="button" class="btn btn-sm btn-danger-ghost" id="delete-btn">{% translate "Delete" %}</button>
@@ -73,11 +53,10 @@
     </div>
     <div class="table-wrap">
       <table class="vehicles{% if plain_rows %} plain-rows{% endif %}" id="results" data-filter="all"
-             data-browse="{% if browse %}true{% endif %}"
-             data-can-delete="{% if deletable and perms.dashboard.delete_records %}true{% endif %}">
+             data-can-delete="{% if browse and perms.dashboard.delete_records %}true{% endif %}">
         <thead>
           <tr>
-            {% if deletable and perms.dashboard.delete_records %}
+            {% if browse and perms.dashboard.delete_records %}
             <th class="check-col"><span class="check-wrap"></span></th>
             {% endif %}
             <th>{% translate "Time" %}</th><th>{% translate "Photo" %}</th><th>{% translate "Plate" %}</th><th>{% translate "Province" %}</th><th class="num">{% translate "Riders" %}</th>
@@ -91,39 +70,10 @@
     </div>
   </section>
 
-<dialog id="detail-dialog" class="detail-dialog" aria-labelledby="detail-title">
-  <div class="detail-head">
-    <h3 id="detail-title"></h3>
-    <span id="detail-review" class="tag"></span>
-  </div>
-  <div class="detail-body">
-    <div class="detail-photo">
-      <img id="detail-img" alt="{% translate "Evidence photo" %}">
-      <p id="detail-nophoto" class="muted">{% translate "No evidence photo" %}</p>
-    </div>
-    <dl class="detail-list" id="detail-list"></dl>
-  </div>
-  {% if perms.dashboard.use_dashboard %}
-  <label class="detail-note">
-    <span>{% translate "Note" %} <small class="muted">{% translate "optional, saved with the review" %}</small></span>
-    <textarea id="detail-note" maxlength="255" rows="2"></textarea>
-  </label>
-  <p class="form-msg" id="detail-msg" role="status" aria-live="polite"></p>
-  {% endif %}
-  <div class="detail-actions">
-    {% if perms.dashboard.use_dashboard %}
-      <button type="button" class="btn btn-sm btn-ghost" id="review-undo">{% translate "Undo review" %}</button>
-    {% endif %}
-    <span class="spacer"></span>
-    <button type="button" class="btn" id="detail-close">{% translate "Close" %}</button>
-    {% if perms.dashboard.use_dashboard %}
-      <button type="button" class="btn btn-danger-ghost" id="review-reject">{% translate "Reject" %}</button>
-      <button type="button" class="btn btn-primary" id="review-confirm">{% translate "Confirm event" %}</button>
-    {% endif %}
-  </div>
-</dialog>
+{# Filled by htmx with _vehicle_detail.html when a row is opened (search.js) #}
+<dialog id="detail-dialog" class="detail-dialog" aria-labelledby="detail-title"></dialog>
 
-{% if deletable and perms.dashboard.delete_records %}
+{% if browse and perms.dashboard.delete_records %}
 <dialog id="delete-dialog" class="confirm-dialog" aria-labelledby="delete-title">
   <h3 id="delete-title"></h3>
   <p class="muted">{% translate "The records and their evidence photos are removed permanently. This cannot be undone." %}</p>

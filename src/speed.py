@@ -32,7 +32,10 @@ class SpeedEstimator:
         self.smooth_n = smooth_n
         self.max_kmh = max_kmh
         self.still_dist_m = still_dist_m
-        self._H: Optional[np.ndarray] = None
+        self._H: Optional[np.ndarray] = None       # current image -> road plane (metres)
+        self._H_ref: Optional[np.ndarray] = None   # the frame the points were clicked on -> road plane
+        self._ref_pts: Optional[np.ndarray] = None
+        self._motion: Optional[np.ndarray] = None  # camera motion, clicked frame -> current (None: still)
         self._tracks: Dict[int, dict] = {}
 
     @property
@@ -50,8 +53,27 @@ class SpeedEstimator:
         H = cv2.getPerspectiveTransform(src, dst)
         if not np.isfinite(H).all():
             raise ValueError("degenerate points")
-        self._H = H
+        self._H = self._H_ref = H
+        self._ref_pts = src
+        self._motion = None
         self._tracks = {}
+
+    def set_camera_motion(self, motion: Optional[np.ndarray]) -> None:
+        """The camera moved: motion maps the frame the points were clicked on onto the current frame
+        (from CameraMotion). Road positions stay in the same metric frame, so speeds are not disturbed."""
+        if self._H_ref is None or motion is None:
+            return
+        self._motion = motion
+        self._H = self._H_ref @ np.linalg.inv(motion)
+
+    def image_points(self) -> Optional[List[Tuple[float, float]]]:
+        """The 4 calibration points where they are on the current frame (they move with the camera)."""
+        if self._ref_pts is None:
+            return None
+        if self._motion is None:
+            return [tuple(map(float, p)) for p in self._ref_pts]
+        moved = cv2.perspectiveTransform(self._ref_pts.reshape(-1, 1, 2), self._motion)
+        return [tuple(map(float, p)) for p in moved.reshape(-1, 2)]
 
     def _to_world(self, x: float, y: float) -> Tuple[float, float]:
         p = cv2.perspectiveTransform(np.array([[[x, y]]], dtype=np.float32), self._H)
@@ -104,7 +126,7 @@ class SpeedEstimator:
 
     def clear_calibration(self) -> None:
         """Forget the calibration; speeds are not measured until it is set again."""
-        self._H = None
+        self._H = self._H_ref = self._ref_pts = self._motion = None
         self._tracks = {}
 
     def reset(self) -> None:

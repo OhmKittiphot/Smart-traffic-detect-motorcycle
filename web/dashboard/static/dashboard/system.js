@@ -1,7 +1,7 @@
 "use strict";
 
 // Admin system status page: polls /api/system/ (cameras are re-checked by the server every 30 s)
-(() => {
+window.Dashboard.onPage("#system-page", (page) => {
   const POLL_MS = 5000;
   const { api, el } = window.Dashboard;
   const $ = (id) => document.getElementById(id);
@@ -37,7 +37,9 @@
     sourcesByKey.set(source.source_key, { ...source, name });
     const c = source.calibration;
     const cell = el("td", { class: "sys-calib" });
-    if (c) cell.append(el("span", { class: "tag tag-ok" }, interpolate(gettext("Calibrated · %(width)s × %(length)s m"), { width: c.width_m, length: c.length_m }, true)));
+    const size = c && interpolate(gettext("Calibrated · %(width)s × %(length)s m"),
+                                  { width: c.width_m, length: c.length_m }, true);
+    if (c) cell.append(el("span", { class: "tag tag-ok" }, size));
     else if (source.calibration_from_env) cell.append(el("span", { class: "tag tag-ok" }, gettext("Calibrated (.env)")));
     else cell.append(el("span", { class: "tag tag-muted" }, gettext("Not calibrated")));
     if (canCalibrate && (c || canRedraw(source))) {
@@ -93,12 +95,25 @@
     }));
   }
 
+  const RECORDED_FROM = { set: gettext("set by staff"), file: gettext("from the file") };
+
+  // When a file started recording (its motorcycles are saved at that time plus their time in the clip).
+  // Staff set it on the live view while the file plays.
+  function recordingCell(f) {
+    return el("td", {},
+      f.recorded_at ? time(f.recorded_at)
+        : el("span", { class: "tag tag-muted", title: gettext("Its motorcycles are saved at the time they are played") },
+             gettext("Unknown")),
+      f.recorded_from ? el("small", { class: "muted" }, ` · ${RECORDED_FROM[f.recorded_from]}`) : null);
+  }
+
   function renderFiles(files) {
     $("no-files").hidden = files.length > 0;
     $("file-rows").replaceChildren(...files.map((f) => el("tr", {},
       sourceCell(f.name, f),
       el("td", { class: "num" }, bytes(f.size)),
       el("td", {}, time(f.modified)),
+      recordingCell(f),
       calibrationCell(f, f.name))));
   }
 
@@ -203,10 +218,10 @@
   // Opened, the card covers the table below it: a click elsewhere or Esc closes it
   document.addEventListener("click", (ev) => {
     if (modelCard.classList.contains("is-open") && !modelCard.contains(ev.target)) setModelsOpen(false);
-  });
+  }, { signal: page.signal });
   document.addEventListener("keydown", (ev) => {
     if (ev.key === "Escape" && modelCard.classList.contains("is-open")) setModelsOpen(false);
-  });
+  }, { signal: page.signal });
 
   // ---------- polling ----------
 
@@ -230,11 +245,5 @@
   }
 
   // No requests while the tab is hidden; refreshed as soon as it is shown again
-  async function poll() {
-    if (!document.hidden) await refresh();
-    setTimeout(poll, POLL_MS);
-  }
-  document.addEventListener("visibilitychange", () => { if (!document.hidden) refresh(); });
-
-  poll();
-})();
+  page.every(refresh, POLL_MS);
+});

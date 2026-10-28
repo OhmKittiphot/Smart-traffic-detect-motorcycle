@@ -2,20 +2,21 @@ import gc
 
 import cv2
 
-from calibration import CalibrationController
-from utils import log_error
+from .calibration import CalibrationController
+from .utils import log_error
 
 FIRST_FRAME_TIMEOUT_S = 30.0
 _WINDOW_TITLE = "Motorcycle License Plate Detection"
 
 
 class DesktopViewer:
-    """Shows a DetectionApp in an OpenCV window (src/main.py): [Space] pause, [C] calibrate speed, [Q] quit."""
+    """Shows a DetectionApp in an OpenCV window (python -m src.main): [Space] pause, [C] calibrate speed, [Q] quit."""
 
     def __init__(self, app):
         self.app = app
         self.calibration = CalibrationController(
             speed_estimator=app.speed_estimator,
+            lock=app.det_lock,
             on_pause=lambda: self._set_paused(True),
             on_resume=lambda: self._set_paused(False),
         )
@@ -37,11 +38,8 @@ class DesktopViewer:
                 pass
             print("Program exited.")
 
-    def _run(self) -> None:
-        app = self.app
-        app.start_workers()
-        stream = app.video_stream
-
+    @staticmethod
+    def _wait_for_video(stream) -> None:
         print("Waiting for video feed...")
         if not stream.wait_for_first_frame(timeout=FIRST_FRAME_TIMEOUT_S):
             reason = stream.error or f"no frame received within {FIRST_FRAME_TIMEOUT_S:.0f}s"
@@ -52,6 +50,25 @@ class DesktopViewer:
             print("  [Space] Pause/Resume  |  [Q] Quit")
         else:
             print("Camera feed active! Detection starting... Press 'q' to exit.")
+
+    def _handle_key(self, key: int, raw) -> bool:
+        """Act on a key pressed in the window (raw: the frame on screen). False when the user quits."""
+        stream = self.app.video_stream
+        if self.calibration.is_active:
+            self.calibration.handle_key(key)
+        elif key == ord("q"):
+            return False
+        elif key == ord(" ") and stream.is_video_file:
+            stream.playback.toggle_pause()
+        elif key == ord("c") and raw is not None:
+            self.calibration.begin(raw)
+        return True
+
+    def _run(self) -> None:
+        app = self.app
+        app.start_workers()
+        stream = app.video_stream
+        self._wait_for_video(stream)
 
         cv2.namedWindow(_WINDOW_TITLE, cv2.WINDOW_NORMAL)
         cv2.resizeWindow(_WINDOW_TITLE, 1024, 576)
@@ -83,14 +100,8 @@ class DesktopViewer:
             # Window closed with the X button: treat like [Q] instead of letting imshow reopen it
             if window_shown and cv2.getWindowProperty(_WINDOW_TITLE, cv2.WND_PROP_VISIBLE) < 1:
                 break
-            if self.calibration.is_active:
-                self.calibration.handle_key(key)
-            elif key == ord("q"):
+            if not self._handle_key(key, raw):
                 break
-            elif key == ord(" ") and stream.is_video_file:
-                stream.playback.toggle_pause()
-            elif key == ord("c") and raw is not None:
-                self.calibration.begin(raw)
 
     def _draw(self):
         if not self.calibration.is_active:

@@ -2,7 +2,7 @@ from django.contrib.auth.views import LogoutView
 from django.urls import path
 from django.views.i18n import JavaScriptCatalog
 
-from .views import calibration, live, pages, records, settings, system
+from .views import calibration, events, live, pages, records, settings, source_settings, system, webrtc
 
 urlpatterns = [
     # Pages
@@ -17,9 +17,13 @@ urlpatterns = [
 
     # Live view
     path("stream/", live.stream, name="stream"),
-    path("api/status/", live.StatusView.as_view(), name="api_status"),
+    path("api/webrtc/offer/", webrtc.WebRTCOfferView.as_view(), name="api_webrtc_offer"),
     path("api/vehicles/", live.VehicleListView.as_view(), name="api_vehicles"),
     path("api/vehicles/clear/", live.VehicleClearView.as_view(), name="api_vehicles_clear"),
+    # Pushed by the server (Server-Sent Events): the live view's status, and new records as they are
+    # saved for its table and the notifications
+    path("api/events/status/", events.status_events, name="api_status_events"),
+    path("api/events/records/", events.record_events, name="api_record_events"),
     path("api/source/", live.SourceView.as_view(), name="api_source"),
     path("api/pause/", live.PauseView.as_view(), name="api_pause"),
     path("api/seek/", live.SeekView.as_view(), name="api_seek"),
@@ -29,11 +33,15 @@ urlpatterns = [
     path("snapshot/<int:pk>/plate/", records.snapshot, {"field": "plate_snapshot"}, name="plate_snapshot"),
     path("api/stats/", records.StatsView.as_view(), name="api_stats"),
     path("api/stats/repeat/", records.RepeatOffendersView.as_view(), name="api_stats_repeat"),
-    path("api/violations/new/", records.NewViolationsView.as_view(), name="api_violations_new"),
-    path("api/vehicles/search/", records.PlateSearchView.as_view(), name="api_vehicles_search"),
-    path("api/vehicles/<int:pk>/review/", records.VehicleReviewView.as_view(), name="api_vehicle_review"),
     path("api/vehicles/delete/", records.VehicleDeleteView.as_view(), name="api_vehicles_delete"),
+    # Records list and details pop-up, as HTML for htmx
+    path("vehicles/rows/", records.vehicle_rows, name="vehicle_rows"),
+    path("vehicles/<int:pk>/", records.vehicle_detail, name="vehicle_detail"),
+    path("vehicles/review/<int:pk>/", records.review_vehicle, name="vehicle_review"),
 
+    # The video settings menu of the live view: the source it shows
+    path("api/source-settings/", source_settings.SourceSettingsView.as_view(), name="api_source_settings"),
+    path("api/source-settings/zone/", source_settings.DetectionZoneView.as_view(), name="api_detection_zone"),
     # Speed calibration: current source (live view) and any source (system page)
     path("api/calibration/", calibration.CalibrationView.as_view(), name="api_calibration"),
     path("api/calibration/frame/", calibration.CalibrationFrameView.as_view(), name="api_calibration_frame"),

@@ -57,6 +57,99 @@ msgid "+%s more violation"
 msgid_plural "+%s more violations"
 msgstr[0] "และฝ่าฝืนอีก %s ครั้ง"
 
+msgid "Area of %s points"
+msgstr "พื้นที่ %s จุด"
+
+msgid "Calibrated"
+msgstr "ปรับเทียบแล้ว"
+
+msgid "Click point %(n)s around the area"
+msgstr "คลิกจุดที่ %(n)s รอบพื้นที่"
+
+msgid "Click the map where the video was filmed"
+msgstr "คลิกบนแผนที่ตรงจุดที่ถ่ายวิดีโอ"
+
+msgid "Detection area"
+msgstr "พื้นที่ตรวจจับ"
+
+msgid "Detection area saved"
+msgstr "บันทึกพื้นที่ตรวจจับแล้ว"
+
+msgid "Detection stopped"
+msgstr "ระบบตรวจจับหยุดทำงาน"
+
+msgid "Draw"
+msgstr "วาด"
+
+msgid "Empty: the system's limit (%s). 0: speed is not a violation on this source."
+msgstr "เว้นว่าง: ใช้ค่าของระบบ (%s) · 0: ไม่ตัดสินความเร็วเกินในแหล่งนี้"
+
+msgid "Its motorcycles are saved at the time they are played"
+msgstr "รถในไฟล์นี้จะถูกบันทึกเป็นเวลาที่เล่นไฟล์"
+
+msgid "Motorcycles already saved keep their time."
+msgstr "รถที่บันทึกไปแล้วจะคงเวลาเดิม"
+
+msgid "Motorcycles are detected in the whole frame"
+msgstr "ตรวจจับรถจักรยานยนต์ทั้งภาพแล้ว"
+
+msgid "Not picked"
+msgstr "ยังไม่ได้เลือก"
+
+msgid "Not picked on the map"
+msgstr "ยังไม่ได้เลือกบนแผนที่"
+
+msgid "Nothing found by that name"
+msgstr "ไม่พบสถานที่ชื่อนี้"
+
+msgid "On the map: %s"
+msgstr "บนแผนที่: %s"
+
+msgid "Read from the file."
+msgstr "อ่านจากไฟล์"
+
+msgid "Redraw"
+msgstr "วาดใหม่"
+
+msgid "Save area"
+msgstr "บันทึกพื้นที่"
+
+msgid "Save calibration"
+msgstr "บันทึกการปรับเทียบ"
+
+msgid "Saved"
+msgstr "บันทึกแล้ว"
+
+msgid "Set"
+msgstr "ตั้งค่า"
+
+msgid "Set by staff."
+msgstr "ตั้งโดยเจ้าหน้าที่"
+
+msgid "Set recording time"
+msgstr "กำหนดเวลาถ่าย"
+
+msgid "Speed calibration"
+msgstr "ปรับเทียบความเร็ว"
+
+msgid "The map search is not answering"
+msgstr "ระบบค้นหาแผนที่ไม่ตอบสนอง"
+
+msgid "The time in the file is used again"
+msgstr "กลับไปใช้เวลาจากไฟล์แล้ว"
+
+msgid "The video source has changed"
+msgstr "แหล่งวิดีโอเปลี่ยนไปแล้ว"
+
+msgid "Tick at least two files for the playlist"
+msgstr "ติ๊กอย่างน้อยสองไฟล์สำหรับเพลย์ลิสต์"
+
+msgid "Unknown: its motorcycles are saved at the time they are played."
+msgstr "ไม่ทราบ: รถจะถูกบันทึกเป็นเวลาที่เล่นไฟล์"
+
+msgid "Whole frame"
+msgstr "ทั้งภาพ"
+
 msgid "a deleted user"
 msgstr "ผู้ใช้ที่ถูกลบ"
 
@@ -197,6 +290,9 @@ msgstr "สวมหมวกนิรภัย %s"
 msgid "In use"
 msgstr "กำลังใช้งาน"
 
+msgid "from the file"
+msgstr "จากไฟล์"
+
 msgid "last %s"
 msgstr "ล่าสุด %s"
 
@@ -277,6 +373,9 @@ msgstr "หมายเหตุ"
 
 msgid "Nothing to review"
 msgstr "ไม่มีรายการให้ตรวจสอบ"
+
+msgid "none"
+msgstr "ไม่มี"
 
 msgid "now"
 msgstr "ขณะนี้"
@@ -426,10 +525,16 @@ msgid "Unknown"
 msgstr "ไม่ทราบ"
 
 msgid "Unreadable"
-msgstr "อ่านไม่ได้"
+msgstr "ไม่พบป้ายทะเบียน"
 
 msgid "Unreadable plate"
 msgstr "อ่านป้ายทะเบียนไม่ได้"
+
+msgid "set by staff"
+msgstr "เจ้าหน้าที่ตั้ง"
+
+msgid "set here"
+msgstr "ตั้งเอง"
 
 msgid "updated %s"
 msgstr "อัปเดตเมื่อ %s"

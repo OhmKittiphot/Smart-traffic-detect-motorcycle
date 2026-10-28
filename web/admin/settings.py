@@ -16,10 +16,9 @@ PROJECT_DIR = BASE_DIR.parent                          # repository root (models
 
 load_dotenv(PROJECT_DIR / ".env")
 
-# The detection pipeline lives in src/ and imports its modules by bare name
-SRC_DIR = PROJECT_DIR / "src"
-if str(SRC_DIR) not in sys.path:
-    sys.path.insert(0, str(SRC_DIR))
+# The detection pipeline is the package src/ at the repository root (imported as src.<module>)
+if str(PROJECT_DIR) not in sys.path:
+    sys.path.insert(0, str(PROJECT_DIR))
 
 
 def _env_bool(name: str, default: bool = False) -> bool:
@@ -59,10 +58,11 @@ INSTALLED_APPS = [
     "django.contrib.contenttypes",
     "django.contrib.sessions",
     "django.contrib.messages",
+    # Before staticfiles: its runserver command (dashboard/management/commands/runserver.py) replaces that one
+    "dashboard",
     "django.contrib.staticfiles",
     "axes",
     "rest_framework",
-    "dashboard",
 ]
 
 MIDDLEWARE = [
@@ -106,10 +106,14 @@ TEMPLATES = [
     },
 ]
 
+# The database has a folder of its own (SQLite cannot create it)
+DATA_DIR = BASE_DIR / "database"
+DATA_DIR.mkdir(exist_ok=True)
+
 DATABASES = {
     "default": {
         "ENGINE": "django.db.backends.sqlite3",
-        "NAME": BASE_DIR / "db.sqlite3",
+        "NAME": DATA_DIR / "db.sqlite3",
         # Reports are written from the detection thread while requests read; wait instead of failing
         "OPTIONS": {"timeout": 20},
     }
@@ -148,7 +152,8 @@ LOGIN_REDIRECT_URL = "dashboard"
 LOGOUT_REDIRECT_URL = "login"
 
 # --- Sessions & cookies ---
-# Absolute 8-hour session (status polling does not extend it); closing the browser logs out
+# 8-hour session, counted again only when the session's own data changes (logging in, saving Settings), not
+# by the pages' requests and streams; closing the browser logs out
 SESSION_COOKIE_AGE = int(timedelta(hours=8).total_seconds())
 SESSION_EXPIRE_AT_BROWSER_CLOSE = True
 SESSION_COOKIE_HTTPONLY = True
@@ -162,6 +167,9 @@ SECURE_CONTENT_TYPE_NOSNIFF = True
 SECURE_REFERRER_POLICY = "same-origin"
 SECURE_CROSS_ORIGIN_OPENER_POLICY = "same-origin"
 
+# Behind a reverse proxy, which sets the X-Forwarded-* headers (dashboard.security.client_ip)
+BEHIND_PROXY = _env_bool("DJANGO_BEHIND_PROXY")
+
 # Behind HTTPS (directly or via a reverse proxy) set DJANGO_HTTPS=1
 if _env_bool("DJANGO_HTTPS"):
     SESSION_COOKIE_SECURE = True
@@ -169,7 +177,7 @@ if _env_bool("DJANGO_HTTPS"):
     SECURE_SSL_REDIRECT = True
     SECURE_HSTS_SECONDS = 31536000
     SECURE_HSTS_INCLUDE_SUBDOMAINS = True
-    if _env_bool("DJANGO_BEHIND_PROXY"):
+    if BEHIND_PROXY:
         SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
 
 # --- Login brute-force protection (django-axes) ---
@@ -178,10 +186,9 @@ AXES_COOLOFF_TIME = timedelta(minutes=15)
 AXES_LOCKOUT_PARAMETERS = [["username", "ip_address"]]
 AXES_RESET_ON_SUCCESS = True
 AXES_LOCKOUT_CALLABLE = "dashboard.views.pages.lockout"
-# Only trust X-Forwarded-For when a reverse proxy sets it
-AXES_IPWARE_META_PRECEDENCE_ORDER = (
-    ["HTTP_X_FORWARDED_FOR", "REMOTE_ADDR"] if _env_bool("DJANGO_BEHIND_PROXY") else ["REMOTE_ADDR"]
-)
+# The browser's address, from X-Forwarded-For only behind a reverse proxy (without django-ipware, axes
+# would otherwise always take REMOTE_ADDR: the proxy's address, shared by every browser)
+AXES_CLIENT_IP_CALLABLE = "dashboard.security.client_ip"
 
 # --- API (Django REST Framework) ---
 REST_FRAMEWORK = {
@@ -205,7 +212,6 @@ VIDEO_EXTENSIONS = (".mp4", ".mov", ".avi", ".mkv", ".m4v", ".ts")
 NO_SIGNAL_AFTER_S = 5.0
 # The loading indicator shows while detection is this far (seconds) behind the frame on screen
 LOADING_LAG_S = 1.0
-STREAM_FPS = 12
 STREAM_MAX_WIDTH = 1280
 
 # --- Storage (dashboard/storage.py): evidence photos and records are kept within these limits ---
@@ -223,10 +229,18 @@ CLEANUP_EVERY_H = 6
 LOGGING = {
     "version": 1,
     "disable_existing_loggers": False,
-    "formatters": {"plain": {"format": "[{name}] {message}", "style": "{"}},
-    "handlers": {"console": {"class": "logging.StreamHandler", "formatter": "plain"}},
+    "formatters": {
+        "plain": {"format": "[{name}] {message}", "style": "{"},
+        "message": {"format": "{message}", "style": "{"},
+    },
+    "handlers": {
+        "console": {"class": "logging.StreamHandler", "formatter": "plain"},
+        "pipeline": {"class": "logging.StreamHandler", "formatter": "message", "stream": "ext://sys.stdout"},
+    },
     "loggers": {
         "dashboard": {"handlers": ["console"], "level": "INFO", "propagate": False},
+        # The detection pipeline (src/), whose messages carry their own tags ("[Video] ...")
+        "pipeline": {"handlers": ["pipeline"], "level": "INFO", "propagate": False},
         "axes": {"handlers": ["console"], "level": "WARNING", "propagate": False},
         "django.security": {"handlers": ["console"], "level": "WARNING", "propagate": False},
     },

@@ -1,6 +1,7 @@
 {% extends "dashboard/base.html" %}
 {% load i18n static %}
 {% block title %}{% translate "Violations" %} · CCTV Control{% endblock %}
+{% block head %}{% include "dashboard/_scripts.html" %}{% endblock %}
 {% block body %}
 {% include "dashboard/_topbar.html" %}
 
@@ -9,6 +10,8 @@
   <section class="violation-stats" aria-labelledby="stats-title">
     <div class="table-head">
       <h2 id="stats-title">{% translate "Violation statistics" %}</h2>
+      {# The statistics of one video source or of all of them; stats.js keeps the choice in the URL (?source=) #}
+      {% include "dashboard/_source_menu.html" with menu_id="stats-source-menu" chosen=request.GET.source|default:"" %}
       <span class="stats-meta muted" id="stats-meta"></span>
       <span class="form-msg" id="stats-msg" role="status" aria-live="polite"></span>
       {# Empty dates mean the last 30 days; the server fills them in #}
@@ -56,7 +59,8 @@
           <div id="per-day" class="day-chart"><p class="chart-loading"><span class="value-loading" aria-label="{% translate "Loading" %}"></span></p></div>
         </figure>
       </div>
-      <div class="stats-charts">
+      {# The calendar takes the narrow column, so its square days fill it at about the list's height #}
+      <div class="stats-charts stats-charts-wide-first">
         <figure class="chart-panel">
           <div class="chart-title">{% translate "Repeat offenders" %} <span class="chart-legend">{% translate "Click a plate to search it" %}</span></div>
           <ol id="repeat" class="repeat-list"><li class="chart-loading"><span class="value-loading" aria-label="{% translate "Loading" %}"></span></li></ol>
@@ -77,11 +81,7 @@
     </div>
   </section>
 
-  {% include "dashboard/_plate_search.html" with violations_only=True browse=True plain_rows=True deletable=True %}
+  {% include "dashboard/_plate_search.html" with violations_only=True browse=True plain_rows=True %}
 </main>
 
-<meta name="csrf-token" content="{{ csrf_token }}">
-<script src="{% static 'dashboard/common.js' %}" defer></script>
-<script src="{% static 'dashboard/stats.js' %}" defer></script>
-<script src="{% static 'dashboard/search.js' %}" defer></script>
 {% endblock %}

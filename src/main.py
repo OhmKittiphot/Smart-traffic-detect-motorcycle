@@ -6,9 +6,13 @@ import multiprocessing as mp
 import warnings
 warnings.filterwarnings("ignore", category=DeprecationWarning)
 
-from app_config import AppConfig, configure_torch_runtime
-from desktop_viewer import DesktopViewer
-from detection_app import DetectionApp
+if not __package__:   # started as a file (python src\main.py): its package imports below would fail
+    sys.exit("Run it as part of the src package, from the repository root: venv\\Scripts\\python -m src.main")
+
+from .app_config import AppConfig, configure_torch_runtime
+from .desktop_viewer import DesktopViewer
+from .detection_app import DetectionApp
+from .utils import setup_console_logging
 
 
 def select_source(config: AppConfig) -> str:
@@ -62,6 +66,7 @@ if __name__ == "__main__":
             stream.reconfigure(encoding="utf-8", errors="replace")
         except (AttributeError, ValueError):
             pass
+    setup_console_logging()
 
     config = AppConfig.from_env()
     video_camera = select_source(config)

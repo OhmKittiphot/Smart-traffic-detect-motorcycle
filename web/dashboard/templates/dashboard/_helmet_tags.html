@@ -1,0 +1,3 @@
+{% load i18n %}{# Riders with and without a helmet, as tags; Unknown when the riders were not checked #}
+{% if record.helmet_count or record.no_helmet_count %}<span>{% if record.helmet_count %}<span class="tag tag-ok">{% blocktranslate with n=record.helmet_count %}Helmet {{ n }}{% endblocktranslate %}</span>{% endif %}{% if record.no_helmet_count %}<span class="tag tag-bad">{% blocktranslate with n=record.no_helmet_count %}No helmet {{ n }}{% endblocktranslate %}</span>{% endif %}</span>
+{% else %}<span class="muted">{% translate "Unknown" %}</span>{% endif %}

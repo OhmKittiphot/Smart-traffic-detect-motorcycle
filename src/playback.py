@@ -5,6 +5,8 @@ from typing import Optional
 
 import cv2
 
+from .utils import log
+
 # Live-like file playback: skip up to this many frames with grab(); further behind, seek instead
 _MAX_GRAB_SKIP = 15
 _DROP_LOG_EVERY = 300
@@ -19,9 +21,9 @@ class Playback:
     holding is True while playback waits for the processing thread (start of the video, after a seek).
     """
 
-    def __init__(self):
+    def __init__(self, paused: bool = False):
         self._lock = threading.Lock()
-        self._paused = False
+        self._paused = paused
         self._position_ms = 0.0
         self._total_ms = 0.0
         self._seek_request_ms: Optional[float] = None
@@ -36,7 +38,7 @@ class Playback:
         with self._lock:
             self._paused = (not self._paused) if paused is None else paused
             paused = self._paused
-        print(f"[Video] {'PAUSED' if paused else 'RESUMED'}")
+        log.info("[Video] %s", "PAUSED" if paused else "RESUMED")
         return paused
 
     def rewind_paused(self) -> None:
@@ -108,7 +110,7 @@ class RealtimeClock:
                     break
                 self._dropped += 1
         if self._dropped >= _DROP_LOG_EVERY:
-            print(f"[Video] Behind real time: dropped {self._dropped} frames")
+            log.info("[Video] Behind real time: dropped %d frames", self._dropped)
             self._dropped = 0
 
     def wait_for(self, pos_ms: float) -> None:

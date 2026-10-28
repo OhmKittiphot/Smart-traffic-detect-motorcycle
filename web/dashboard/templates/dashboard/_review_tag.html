@@ -1,0 +1,4 @@
+{# The review of a record as a tag: in its row (id review-<id>) or in the details pop-up (in_detail). #}
+{# oob: sent with a review's answer to replace the tag in the row (views.records.review_vehicle) #}
+<span class="tag {% if record.review == 'confirmed' %}tag-ok{% elif record.review == 'rejected' %}tag-bad{% else %}tag-muted{% endif %}"
+      id="{% if in_detail %}detail-review{% else %}review-{{ record.id }}{% endif %}"{% if oob %} hx-swap-oob="true"{% endif %}>{{ record.get_review_display }}</span>

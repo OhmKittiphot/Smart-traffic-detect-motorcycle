@@ -3,30 +3,33 @@ import queue
 import numpy as np
 import torch
 
-from detectors import HeadDetector, MotorcycleDetector, PlateDetector, RiderClassification
-from ocr import plate_sharpness
-from report import print_motorcycle_reports
-from utils import log_error, merge_related_boxes
+from .detectors import HeadDetector, MotorcycleDetector, PlateDetector, RiderClassification
+from .ocr import plate_sharpness
+from .report import print_motorcycle_reports
+from .utils import log, log_error, merge_related_boxes
 
 
 class YoloPipeline:
     """What happens to each frame: detect motorcycles, plates and riders (detectors.py), track the
     motorcycles, count riders, measure speeds, report the motorcycles that left, and send new plates to OCR."""
 
-    def __init__(self, config, device, use_half, tracker, speed_estimator, ocr_manager, ocr_in_q, det_lock):
+    def __init__(self, config, device, use_half, tracker, speed_estimator, ocr_manager, ocr_in_q, det_lock,
+                 zone):
         self.config = config
         self.tracker = tracker
+        self.zone = zone   # DetectionZone: motorcycles outside it are dropped before tracking
         self.speed_estimator = speed_estimator
         self.ocr_manager = ocr_manager
         self.ocr_in_q = ocr_in_q
         self.det_lock = det_lock
 
-        print("Loading YOLO models...")
+        log.info("Loading YOLO models...")
         self.plates = PlateDetector(config, device, use_half)
         self.motorcycles = MotorcycleDetector(config, device, use_half)
+        # Both run: the rider classifier counts the riders on each whole motorcycle, the helmet model and head
+        # classifier decide helmet or not on each head up close (RiderCounter combines the two)
         self.rider_classification = RiderClassification(config, device, use_half)
-        # The rider classifier replaces the helmet model for rider counts and helmet status
-        self.heads = HeadDetector(config, device, use_half, load=not self.rider_classification.available)
+        self.heads = HeadDetector(config, device, use_half)
 
     def warmup(self, frame_shape=(1080, 1920, 3)):
         """Run every model once on a blank frame so CUDA kernels load before playback starts
@@ -43,7 +46,7 @@ class YoloPipeline:
         """Runs the detection pipeline for a single frame; returns the plates found with their cached OCR
         text, [(box, text, conf)]."""
         with torch.inference_mode():
-            mc_bboxes = self.motorcycles.detect(frame)
+            mc_bboxes = self.zone.keep(self.motorcycles.detect(frame))
             # Needs the motorcycles first: in "roi" mode plates are only searched inside them
             search_rois = self.config.plate_search == "roi" and self.motorcycles.available
             plate_boxes = self.plates.detect(frame, mc_bboxes, search_rois)

@@ -80,12 +80,15 @@
   document.addEventListener("DOMContentLoaded", () => {
     apply(readPref());
     ready = true;
-    const btn = document.getElementById("theme-btn");
-    if (!btn) return;   // the login page has no Settings pop-up
-    btn.addEventListener("click", () => {
-      const next = CHOICES[(CHOICES.indexOf(readPref()) + 1) % CHOICES.length];
-      savePref(next);
-      apply(next);
-    });
+  });
+  // A page swapped in by a boosted link (common.js) has a new button, labelled by the server
+  document.addEventListener("htmx:afterSettle", () => updateButton(readPref()));
+
+  // The button is in the Settings pop-up (the login page has none)
+  document.addEventListener("click", (ev) => {
+    if (!ev.target.closest("#theme-btn")) return;
+    const next = CHOICES[(CHOICES.indexOf(readPref()) + 1) % CHOICES.length];
+    savePref(next);
+    apply(next);
   });
 })();

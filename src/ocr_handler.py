@@ -1,7 +1,7 @@
 import queue
 import time
 
-from utils import format_thai_plate, log_error
+from .utils import format_thai_plate, log, log_error
 
 
 class OCRResultHandler:
@@ -27,7 +27,7 @@ class OCRResultHandler:
                 continue
             except (EOFError, OSError) as e:
                 # The OCR process exited and the queue pipe is closed
-                print(f"[OCR-Result] OCR queue closed ({e}). Stopping result handler.")
+                log.warning("[OCR-Result] OCR queue closed (%s). Stopping result handler.", e)
                 return
 
             try:
@@ -35,7 +35,7 @@ class OCRResultHandler:
                 result_gen = None
                 if isinstance(results, dict):
                     if "error" in results:
-                        print(f"[OCR-Result] OCR worker error: {results['error']}")
+                        log.error("[OCR-Result] OCR worker error: %s", results["error"])
                         continue
                     result_gen = results.get("gen")
                     frame_t = float(results.get("t", frame_t))

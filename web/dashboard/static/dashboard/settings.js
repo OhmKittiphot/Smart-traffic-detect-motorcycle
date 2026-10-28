@@ -5,13 +5,11 @@
 // the value of the checked one.
 // Forms marked data-autosave save on every change. Saved preferences are announced with a
 // "settings:preferences" event, so the live view and the notifications (notify.js) apply them at once.
-(() => {
+window.Dashboard.onPage("#settings-panel", () => {
   const panel = document.getElementById("settings-panel");
-  if (!panel) return;
   const REOPEN_KEY = "cctv-settings-reopen";
   const LANGUAGE_RELOAD_MS = 300;   // a little longer than the toggle's slide (app.css .lang-toggle)
-  // common.js is loaded after the top bar, so window.Dashboard is looked up when a form is sent
-  const api = (...args) => window.Dashboard.api(...args);
+  const { api } = window.Dashboard;
 
   function showMsg(form, text, kind) {
     const msg = form.querySelector(".form-msg");
@@ -33,7 +31,7 @@
   async function send(form) {
     const buttons = form.querySelectorAll("button");
     buttons.forEach((b) => { b.disabled = true; });
-    showMsg(form, gettext(gettext("Saving…")), "busy");
+    showMsg(form, gettext("Saving…"), "busy");
     try {
       const saved = await api(form.dataset.api, { method: "POST", body: JSON.stringify(formData(form)) });
       if ("reset" in form.dataset) form.reset();   // never leave passwords in the fields
@@ -74,7 +72,7 @@
     const form = cleanupBtn.closest("form");
     cleanupBtn.addEventListener("click", async () => {
       cleanupBtn.disabled = true;
-      showMsg(form, gettext(gettext("Cleaning up…")), "busy");
+      showMsg(form, gettext("Cleaning up…"), "busy");
       try {
         const r = await api(cleanupBtn.dataset.api, { method: "POST", body: "{}" });
         const mb = (r.bytes_freed / 1024 / 1024).toFixed(1);
@@ -87,4 +85,4 @@
       }
     });
   }
-})();
+});

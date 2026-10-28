@@ -18,7 +18,8 @@ def _load_font(font_size):
 _MEASURE = ImageDraw.Draw(Image.new("L", (1, 1)))
 
 
-def draw_text_on_cv_img(img_cv, text, pos, font_size=24, text_color=(255, 255, 255), bg_color=(0, 180, 0), bg_alpha=1.0):
+def draw_text_on_cv_img(img_cv, text, pos, font_size=24, text_color=(255, 255, 255), bg_color=(0, 180, 0),
+                        bg_alpha=1.0):
     """Draw a label in place and return img_cv. Only a small ROI goes through PIL, not the whole frame."""
     x, y = int(pos[0]), int(pos[1])
     font = _load_font(font_size)
@@ -68,9 +69,8 @@ def draw_video_overlay(frame, pos_ms: float, total_ms: float, proc_fps: float, p
     fps_text = f"Proc FPS: {proc_fps:.1f}"
     pause_text = "  [PAUSED]" if paused else ""
 
-    overlay = frame.copy()
-    cv2.rectangle(overlay, (0, 0), (320, 56), (0, 0, 0), -1)
-    cv2.addWeighted(overlay, 0.5, frame, 0.5, 0, frame)
+    # Half-dark box behind the text, blended in place (not a copy and blend of the whole frame)
+    frame[:56, :320] //= 2
 
     cv2.putText(frame, time_text + pause_text, (10, 22),
                 cv2.FONT_HERSHEY_SIMPLEX, 0.65, (255, 255, 255), 1, cv2.LINE_AA)
@@ -89,6 +89,25 @@ def draw_video_overlay(frame, pos_ms: float, total_ms: float, proc_fps: float, p
     cv2.rectangle(frame, (0, bar_y), (w, h), (60, 60, 60), -1)
     cv2.rectangle(frame, (0, bar_y), (filled_w, h), (0, 200, 120), -1)
 
+    return frame
+
+
+def draw_calibration(frame, points):
+    """Outline the speed calibration rectangle (4 points), where it is on this frame."""
+    pts = np.round(np.array(points)).astype(np.int32)
+    cv2.polylines(frame, [pts], isClosed=True, color=(21, 204, 250), thickness=2, lineType=cv2.LINE_AA)
+    for i, (x, y) in enumerate(pts):
+        cv2.circle(frame, (int(x), int(y)), 7, (77, 72, 229), -1, cv2.LINE_AA)
+        cv2.circle(frame, (int(x), int(y)), 7, (255, 255, 255), 2, cv2.LINE_AA)
+        cv2.putText(frame, str(i + 1), (int(x) + 9, int(y) - 9), cv2.FONT_HERSHEY_SIMPLEX, 0.7,
+                    (255, 255, 255), 2, cv2.LINE_AA)
+    return frame
+
+
+def draw_zone(frame, points):
+    """Outline the area motorcycles are detected in."""
+    pts = np.round(np.array(points)).astype(np.int32)
+    cv2.polylines(frame, [pts], isClosed=True, color=(246, 130, 59), thickness=2, lineType=cv2.LINE_AA)
     return frame
 
 

@@ -11,11 +11,27 @@ msgstr ""
 msgid "%(n)s missing"
 msgstr "ขาด %(n)s ไฟล์"
 
+msgid "%(n)s motorcycle found"
+msgid_plural "%(n)s motorcycles found"
+msgstr[0] "พบรถจักรยานยนต์ %(n)s คัน"
+
+msgid "%(review)s by %(user)s · %(when)s"
+msgstr "%(review)s โดย %(user)s · %(when)s"
+
 msgid "%(s)s s"
 msgstr "%(s)s วินาที"
 
+msgid "(best %(n)s shown)"
+msgstr "(แสดง %(n)s รายการที่ใกล้เคียงที่สุด)"
+
+msgid "(newest %(n)s shown)"
+msgstr "(แสดง %(n)s รายการล่าสุด)"
+
 msgid "0 = not checked"
 msgstr "0 = ไม่ตรวจ"
+
+msgid "A file of the playlist was not found"
+msgstr "ไม่พบไฟล์บางไฟล์ในเพลย์ลิสต์"
 
 msgid "Administrators only"
 msgstr "สำหรับผู้ดูแลระบบเท่านั้น"
@@ -23,11 +39,20 @@ msgstr "สำหรับผู้ดูแลระบบเท่านั้
 msgid "All"
 msgstr "ทั้งหมด"
 
+msgid "All %(n)s motorcycles"
+msgstr "รถจักรยานยนต์ทั้งหมด %(n)s คัน"
+
 msgid "All live cameras"
 msgstr "กล้องสดทั้งหมด"
 
+msgid "All locations"
+msgstr "ทุกสถานที่"
+
 msgid "All motorcycles"
 msgstr "รถจักรยานยนต์ทั้งหมด"
+
+msgid "All places"
+msgstr "ทุกสถานที่"
 
 msgid "All provinces"
 msgstr "ทุกจังหวัด"
@@ -104,8 +129,17 @@ msgstr ""
 msgid "Click a plate to search it"
 msgstr "คลิกป้ายทะเบียนเพื่อค้นหา"
 
+msgid "Click at least 3 points around the area"
+msgstr "คลิกอย่างน้อย 3 จุดรอบพื้นที่"
+
+msgid "Click at most {n} points"
+msgstr "คลิกได้ไม่เกิน {n} จุด"
+
 msgid "Click exactly 4 points"
 msgstr "คลิกให้ครบ 4 จุดพอดี"
+
+msgid "Click points around the part of the road to detect motorcycles in (3 to 12, in order around it). A motorcycle counts when the bottom middle of its box, where it touches the road, is inside. Drag a point to move it."
+msgstr "คลิกจุดรอบส่วนของถนนที่ต้องการตรวจจับรถจักรยานยนต์ (3 ถึง 12 จุด เรียงตามขอบรอบพื้นที่) รถจะถูกนับเมื่อกึ่งกลางขอบล่างของกรอบ (จุดที่ล้อแตะถนน) อยู่ในพื้นที่ ลากจุดเพื่อย้ายได้"
 
 msgid "Close"
 msgstr "ปิด"
@@ -121,6 +155,180 @@ msgstr "ยืนยันแล้ว"
 
 msgid "Could not capture a frame"
 msgstr "ดึงเฟรมจากวิดีโอไม่ได้"
+
+msgid "Date & time"
+msgstr "วันที่และเวลา"
+
+msgid "Details of %(plate)s"
+msgstr "รายละเอียดของ %(plate)s"
+
+msgid "Detection area"
+msgstr "พื้นที่ตรวจจับ"
+
+msgid "Detection is not running"
+msgstr "ระบบตรวจจับไม่ได้ทำงาน"
+
+msgid "Do not save motorcycles already saved from this file"
+msgstr "ไม่บันทึกรถที่บันทึกจากไฟล์นี้ไปแล้วซ้ำ"
+
+msgid "Helmet %(n)s"
+msgstr "สวมหมวกนิรภัย %(n)s"
+
+msgid "Location"
+msgstr "สถานที่"
+
+msgid "Location on the map"
+msgstr "ตำแหน่งบนแผนที่"
+
+msgid "Locations"
+msgstr "สถานที่"
+
+msgid "Map"
+msgstr "แผนที่"
+
+msgid "No helmet %(n)s"
+msgstr "ไม่สวมหมวกนิรภัย %(n)s"
+
+msgid "No motorcycles recorded"
+msgstr "ยังไม่มีรถจักรยานยนต์ที่บันทึกไว้"
+
+msgid "No plate looks like “%(query)s”"
+msgstr "ไม่มีป้ายทะเบียนที่คล้าย “%(query)s”"
+
+msgid "No video signal to draw on"
+msgstr "ไม่มีสัญญาณวิดีโอให้วาด"
+
+msgid "OCR confidence"
+msgstr "ความมั่นใจของ OCR"
+
+msgid "Only a video file has a recording time, location and repeats"
+msgstr "เวลาที่ถ่าย สถานที่ และการเล่นซ้ำ ตั้งได้เฉพาะไฟล์วิดีโอ"
+
+msgid "Only a video file has a recording time, place and repeats"
+msgstr "เวลาที่ถ่าย สถานที่ และการเล่นซ้ำ ตั้งได้เฉพาะไฟล์วิดีโอ"
+
+msgid "Pick on the map"
+msgstr "เลือกบนแผนที่"
+
+msgid "Pick the location on the map again"
+msgstr "กรุณาเลือกตำแหน่งบนแผนที่ใหม่"
+
+msgid "Place"
+msgstr "สถานที่"
+
+msgid "Places"
+msgstr "สถานที่"
+
+msgid "Plate %(plate)s"
+msgstr "ป้ายทะเบียน %(plate)s"
+
+msgid "Plate photo"
+msgstr "ภาพป้ายทะเบียน"
+
+msgid "Play the ticked files in order"
+msgstr "เล่นไฟล์ที่ติ๊กไว้ตามลำดับ"
+
+msgid "Played again"
+msgstr "เล่นไฟล์ซ้ำ"
+
+msgid "Playlist"
+msgstr "เพลย์ลิสต์"
+
+msgid "Recorded"
+msgstr "วันเวลาที่ถ่าย"
+
+msgid "Recording date and time"
+msgstr "วันและเวลาที่ถ่ายคลิป"
+
+msgid "Review undone"
+msgstr "ยกเลิกการตรวจสอบแล้ว"
+
+msgid "Saved with each motorcycle; the statistics and search can show one location."
+msgstr "บันทึกไปกับรถทุกคัน หน้าสถิติและค้นหาเลือกดูทีละสถานที่ได้"
+
+msgid "Saved with each motorcycle; the statistics and search can show one place."
+msgstr "บันทึกไปกับรถทุกคัน หน้าสถิติและค้นหาเลือกดูทีละสถานที่ได้"
+
+msgid "Saved: %(review)s"
+msgstr "บันทึกแล้ว: %(review)s"
+
+msgid "Saving…"
+msgstr "กำลังบันทึก…"
+
+msgid "Search for a place"
+msgstr "ค้นหาสถานที่"
+
+msgid "Search for a place, e.g. KMITL"
+msgstr "ค้นหาสถานที่ เช่น สจล."
+
+msgid "Searching…"
+msgstr "กำลังค้นหา…"
+
+msgid "Select %(plate)s"
+msgstr "เลือก %(plate)s"
+
+msgid "Select record"
+msgstr "เลือกรายการ"
+
+msgid "Show each of the locations"
+msgstr "แสดงแต่ละสถานที่"
+
+msgid "Show each of the places"
+msgstr "แสดงแต่ละสถานที่"
+
+msgid "Speed measurement"
+msgstr "วัดความเร็ว"
+
+msgid "Started recording"
+msgstr "เริ่มถ่ายเมื่อ"
+
+msgid "The recording time cannot be in the future"
+msgstr "เวลาที่ถ่ายต้องไม่เป็นเวลาในอนาคต"
+
+msgid "The speed limit must be a whole number"
+msgstr "ความเร็วจำกัดต้องเป็นจำนวนเต็ม"
+
+msgid "The speed limit must be from 0 to 300 km/h"
+msgstr "ความเร็วจำกัดต้องอยู่ระหว่าง 0 ถึง 300 กม./ชม."
+
+msgid "The video source has changed; open the video settings again"
+msgstr "แหล่งวิดีโอเปลี่ยนไปแล้ว กรุณาเปิดตั้งค่าวิดีโอใหม่"
+
+msgid "Track ID"
+msgstr "หมายเลขติดตาม"
+
+msgid "Turn off to detect the file again from scratch, e.g. after changing the detection area."
+msgstr "ปิดถ้าต้องการตรวจจับไฟล์ใหม่ทั้งหมด เช่น หลังเปลี่ยนพื้นที่ตรวจจับ"
+
+msgid "Unknown"
+msgstr "ไม่ทราบ"
+
+msgid "Unreadable"
+msgstr "ไม่พบป้ายทะเบียน"
+
+msgid "Use the time in the file"
+msgstr "ใช้เวลาจากไฟล์"
+
+msgid "Use this location"
+msgstr "ใช้ตำแหน่งนี้"
+
+msgid "Video settings"
+msgstr "ตั้งค่าวิดีโอ"
+
+msgid "View evidence photo"
+msgstr "ดูภาพหลักฐาน"
+
+msgid "View plate photo"
+msgstr "ดูภาพป้ายทะเบียน"
+
+msgid "When this file started recording. Its motorcycles are saved at this time plus their time in the clip, so the statistics count them on the day and hour they were filmed. Motorcycles already saved keep their time."
+msgstr "เวลาที่ไฟล์นี้เริ่มถ่าย รถจักรยานยนต์ในคลิปจะถูกบันทึกเป็นเวลานี้บวกกับเวลาในคลิปที่พบ สถิติจึงนับตามวันและชั่วโมงที่ถ่ายจริง รถที่บันทึกไปแล้วจะคงเวลาเดิม"
+
+msgid "Whole frame"
+msgstr "ทั้งภาพ"
+
+msgid "a deleted user"
+msgstr "ผู้ใช้ที่ถูกลบ"
 
 msgid "counts riders and checks their helmets"
 msgstr "นับจำนวนคนบนรถและตรวจหมวกนิรภัย"
@@ -175,6 +383,9 @@ msgstr "ภาพหลักฐาน"
 
 msgid "File"
 msgstr "ไฟล์"
+
+msgid "e.g. Front gate, Soi 5"
+msgstr "เช่น หน้าประตู, ซอย 5"
 
 msgid "file missing"
 msgstr "ไม่พบไฟล์"
@@ -413,6 +624,15 @@ msgstr "ภาพ"
 msgid "Photo space"
 msgstr "พื้นที่เก็บภาพ"
 
+msgid "Choose one of the frame rates"
+msgstr "เลือกจำนวนภาพต่อวินาทีจากรายการ"
+
+msgid "higher = smoother, more network"
+msgstr "ค่ามาก = ภาพลื่นขึ้น ใช้เน็ตมากขึ้น"
+
+msgid "Frames per second"
+msgstr "ภาพต่อวินาที"
+
 msgid "Photos"
 msgstr "ภาพ"
 
@@ -596,8 +816,8 @@ msgstr "กำลังเริ่ม"
 msgid "Starting…"
 msgstr "กำลังเริ่ม…"
 
-msgid "Starts when staff open the live view"
-msgstr "เริ่มทำงานเมื่อเจ้าหน้าที่เปิดหน้าภาพสด"
+msgid "Starts when staff log in"
+msgstr "เริ่มทำงานเมื่อเจ้าหน้าที่เข้าสู่ระบบ"
 
 msgid "Status"
 msgstr "สถานะ"

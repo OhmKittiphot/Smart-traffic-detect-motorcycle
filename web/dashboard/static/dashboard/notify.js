@@ -2,36 +2,42 @@
 
 // In-page notifications, bottom right of every page (#toasts, _settings_panel.html). Each kind is switched on
 // per account in the Settings pop-up:
-// - new violations (off by default): /api/violations/new/ is asked every few seconds for violations recorded
-//   since the last one seen; that id is kept for the browser tab, so moving to another page neither repeats
-//   nor misses one.
+// - new violations (off by default): the server pushes each violation as it is saved (watchRecords in
+//   common.js). The last record id seen is kept for the browser tab, so moving to another page neither
+//   repeats nor misses one.
 // - live camera status (admins, on by default): /api/system/cameras/ is asked every CAMERA_POLL_MS and each
 //   camera's state is compared with the one last seen, also kept for the browser tab.
-(() => {
+// Only on pages with #toasts: accounts that can see records or the system status.
+window.Dashboard.onPage("#toasts", (page) => {
   const box = document.getElementById("toasts");
-  if (!box) return;   // this account cannot see records or the system status
-  const POLL_MS = 3000;
   const SHOW_MS = 10000;   // a notification closes itself after this
   const MAX_SHOWN = 3;     // at most this many violations; the rest are counted in one "+N more" under them
   const KEY = "cctv-notify-after";
   let on = box.dataset.on === "true";
-  let after = readAfter();
+  let stopWatching = null;
+  page.onLeave(() => stopWatching?.());
   let more = null;         // the "+N more" notification while it is open
   let moreCount = 0;
   let moreTimer = null;
 
+  // The last record id seen in this browser tab, or null: start from now
   function readAfter() {
-    try { return Number(sessionStorage.getItem(KEY)) || 0; } catch (e) { return 0; }
+    try {
+      const id = sessionStorage.getItem(KEY);
+      return id === null ? null : Number(id);
+    } catch (e) { return null; }
   }
 
   function saveAfter(id) {
-    after = id;
-    try { sessionStorage.setItem(KEY, String(id)); } catch (e) { /* only this page remembers it */ }
+    try {
+      if (id === null) sessionStorage.removeItem(KEY);
+      else sessionStorage.setItem(KEY, String(id));
+    } catch (e) { /* only this page remembers it */ }
   }
 
   function addCloseButton(toast, close) {
     toast.append(Object.assign(document.createElement("button"), {
-      type: "button", className: "toast-close", textContent: "✕", ariaLabel: gettext(gettext("Dismiss")), onclick: close }));
+      type: "button", className: "toast-close", textContent: "✕", ariaLabel: gettext("Dismiss"), onclick: close }));
   }
 
   // Newest on top. Pushing a 4th violation out counts it in "+N more" instead (camera notifications are not counted)
@@ -39,6 +45,7 @@
     const close = () => toast.remove();
     addCloseButton(toast, close);
     box.prepend(toast);
+    htmx.process(toast);   // its link is boosted like the top bar's (hx-boost on #toasts)
     const shown = box.querySelectorAll(".toast:not(.toast-more):not(.toast-camera)");
     for (let i = MAX_SHOWN; i < shown.length; i++) {
       shown[i].remove();
@@ -53,6 +60,7 @@
       more = moreToast();
       addCloseButton(more, closeMore);
       box.append(more);
+      htmx.process(more);
     }
     moreCount += count;
     more.querySelector("b").textContent = interpolate(
@@ -75,7 +83,7 @@
       el("a", { class: "toast-link", href: "/violations/" },
         el("span", { class: "toast-text" },
           el("b", {}, `${gettext("Violation")} · ${r.violations.join(", ")}`),
-          el("span", {}, `${r.plate || gettext(gettext("Unreadable plate"))}${r.province ? " · " + r.province : ""}`),
+          el("span", {}, `${r.plate || gettext("Unreadable plate")}${r.province ? " · " + r.province : ""}`),
           el("small", {}, `${r.time} · ${r.source}`))));
   }
 
@@ -84,18 +92,19 @@
     return el("div", { class: "toast toast-more" },
       el("a", { class: "toast-link", href: "/violations/" },
         el("span", { class: "toast-text" }, el("b", {}),
-          el("small", {}, gettext(gettext("See them on the violations page"))))));
+          el("small", {}, gettext("See them on the violations page")))));
   }
 
-  async function poll() {
-    if (!on || document.hidden) return;
-    try {
-      const data = await window.Dashboard.api(`/api/violations/new/?after=${after}`);
-      // Oldest first, so the newest ends up on top
-      for (const r of [...data.rows].reverse()) show(violationToast(r));
-      if (data.total > data.rows.length) addMore(data.total - data.rows.length);   // not sent, only counted
-      saveAfter(data.last_id);
-    } catch (e) { /* try again on the next poll */ }
+  function onViolations(data, lastId) {
+    // Oldest first, so the newest ends up on top
+    for (const r of [...data.rows].reverse()) show(violationToast(r));
+    if (data.total > data.rows.length) addMore(data.total - data.rows.length);   // not sent, only counted
+    saveAfter(lastId);
+  }
+
+  function watchViolations() {
+    stopWatching?.();
+    stopWatching = on ? window.Dashboard.watchRecords({ after: readAfter(), violations: true }, onViolations) : null;
   }
 
   // ---------- live camera status (admins) ----------
@@ -124,9 +133,9 @@
     return el("div", { class: "toast toast-camera" + (online ? " is-ok" : "") },
       el("a", { class: "toast-link", href: "/system/" },
         el("span", { class: "toast-text" },
-          el("b", {}, online ? gettext(gettext("Camera back online")) : gettext(gettext("Camera offline"))),
+          el("b", {}, online ? gettext("Camera back online") : gettext("Camera offline")),
           el("span", {}, c.label),
-          el("small", {}, online ? time : `${time} · ${c.detail || gettext(gettext("Not answering"))}`))));
+          el("small", {}, online ? time : `${time} · ${c.detail || gettext("Not answering")}`))));
   }
 
   // Many cameras at once (e.g. the network dropped): one notification counting them
@@ -145,7 +154,7 @@
   }
 
   async function pollCameras() {
-    if (!camerasOn || document.hidden) return;
+    if (!camerasOn) return;
     try {
       const data = await window.Dashboard.api(CAMERA_API);
       const last = readStates();
@@ -167,31 +176,17 @@
   document.addEventListener("settings:preferences", (ev) => {
     if (ev.detail.violation_notify !== on) {
       on = ev.detail.violation_notify;
-      if (on) {
-        saveAfter(0);
-        poll();
-      }
+      saveAfter(null);
+      watchViolations();
     }
     if (CAMERA_API && ev.detail.camera_notify !== camerasOn) {
       camerasOn = ev.detail.camera_notify;
       saveStates(null);
       pollCameras();
     }
-  });
+  }, { signal: page.signal });
 
-  // common.js (window.Dashboard) is loaded after the top bar; it is there once the page has loaded
-  document.addEventListener("DOMContentLoaded", () => {
-    poll();
-    setInterval(poll, POLL_MS);
-    if (CAMERA_API) {
-      pollCameras();
-      setInterval(pollCameras, CAMERA_POLL_MS);
-    }
-  });
-  // Polls skip a hidden tab; catch up as soon as it is shown again
-  document.addEventListener("visibilitychange", () => {
-    if (document.hidden) return;
-    poll();
-    if (CAMERA_API) pollCameras();
-  });
-})();
+  watchViolations();
+  // Camera checks skip a hidden tab and catch up as soon as it is shown again
+  if (CAMERA_API) page.every(pollCameras, CAMERA_POLL_MS);
+});

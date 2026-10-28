@@ -12,10 +12,12 @@ from django.utils.text import format_lazy
 from django.utils.translation import gettext_lazy as _
 from rest_framework import serializers
 
-from province import THAI_PROVINCES
+from src.province import THAI_PROVINCES
 
-from .models import SEEK_STEPS_S, Review, SourceMode, SystemSettings, TableFilter, Units, UserPreferences
+from .models import (SEEK_STEPS_S, STREAM_FPS_CHOICES, Review, SourceMode, SystemSettings, TableFilter, Units,
+                     UserPreferences)
 from .plate_search import MAX_QUERIES, MIN_QUERY_LENGTH, normalize_query, split_queries
+from .sources import list_video_files
 
 # Largest real distance accepted for a calibration side, in meters
 MAX_CALIBRATION_M = 500.0
@@ -23,20 +25,30 @@ MAX_CALIBRATION_M = 500.0
 
 # ---------- requests ----------
 
-class VehicleQuerySerializer(serializers.Serializer):
-    """?after=<id>: only rows newer than this id; 0 (default) means the latest rows."""
-    after = serializers.IntegerField(min_value=0, default=0)
+def _known_source(source):
+    """A source filter: "<source_mode>:<source_name>" ("file:clip.mp4", "live:" = IP camera) is one source,
+    "<source_mode>" alone ("live" = every live camera, "file" = every video file) a whole group.
+    "location:<name>" is the video files filmed at one location, "location" alone those with one set."""
+    if source and source.partition(":")[0] not in (*SourceMode.values, "location"):
+        raise serializers.ValidationError(_("Unknown video source"))
+
+class RecordEventsSerializer(serializers.Serializer):
+    """?after=<id> (or the Last-Event-ID header): records newer than this id; none means from now on."""
+    after = serializers.IntegerField(min_value=0, required=False, allow_null=True, default=None)
 
 
 class StatsQuerySerializer(serializers.Serializer):
     """?start=<YYYY-MM-DD>&end=<YYYY-MM-DD>: the days the violation statistics cover, both included.
     Without them, the last DEFAULT_DAYS days, today included.
-    &month=<YYYY-MM>: the month the calendar shows, this month by default (given as its first day)."""
+    &month=<YYYY-MM>: the month the calendar shows, this month by default (given as its first day).
+    &source=<mode>:<name> or <mode>: only the records of that video source (see _known_source), all by default."""
     DEFAULT_DAYS = 30
     MAX_DAYS = 366
     start = serializers.DateField(required=False)
     end = serializers.DateField(required=False)
     month = serializers.DateField(input_formats=["%Y-%m"], required=False)
+    source = serializers.CharField(max_length=300, required=False, allow_blank=True, default="",
+                                   validators=[_known_source])
 
     def validate(self, data):
         today = timezone.localdate()
@@ -49,27 +61,24 @@ class StatsQuerySerializer(serializers.Serializer):
         month = data.get("month") or today.replace(day=1)
         if month > today:
             raise serializers.ValidationError(_("That month has not started yet"))
-        return {"start": start, "end": end, "month": month}
+        return {"start": start, "end": end, "month": month, "source": data["source"]}
 
 
 class PlateSearchSerializer(serializers.Serializer):
     """?q=<plate or part of it, or several separated by commas>&province=<Thai name>&source=<mode>:<name>
     &violations_only=true
-    An empty q lists every record, newest first, a page at a time (&before=<id of the last row shown>)."""
+    An empty q with browse=true (the violations page) lists every record, newest first, a page at a time
+    (&before=<id of the last row shown>); without browse it lists nothing until a plate is typed."""
     q = serializers.CharField(max_length=300, required=False, allow_blank=True, default="")
     # Thai name, as stored on the records; the page lists them by their English names
     province = serializers.ChoiceField(choices=THAI_PROVINCES, required=False, allow_blank=True, default="",
                                        error_messages={"invalid_choice": _("Unknown province")})
-    # Where the records came from, as "<source_mode>:<source_name>" ("file:clip.mp4", "live:" = IP camera),
-    # or a whole group as "<source_mode>" ("live" = every live camera, "file" = every video file)
-    source = serializers.CharField(max_length=300, required=False, allow_blank=True, default="")
+    # Where the records came from (see _known_source)
+    source = serializers.CharField(max_length=300, required=False, allow_blank=True, default="",
+                                   validators=[_known_source])
     violations_only = serializers.BooleanField(default=False)
+    browse = serializers.BooleanField(default=False)
     before = serializers.IntegerField(min_value=1, required=False, default=None)
-
-    def validate_source(self, source):
-        if source and source.partition(":")[0] not in SourceMode.values:
-            raise serializers.ValidationError(_("Unknown video source"))
-        return source
 
     def validate_q(self, q):
         plates = split_queries(q)
@@ -106,13 +115,23 @@ class SourceSerializer(serializers.Serializer):
     # Video file name inside input/ (mode "file"), or add-on camera key (mode "live", empty = IP camera)
     file = serializers.CharField(required=False, allow_blank=True, default="")
     live = serializers.CharField(required=False, allow_blank=True, default="")
+    # Mode "file": video files to play one after another, in this order, instead of "file" alone
+    playlist = serializers.ListField(child=serializers.CharField(max_length=255), required=False, default=list,
+                                     max_length=500)
 
     def validate(self, data):
         # Only the choice that belongs to the selected mode is kept
         if data["mode"] == SourceMode.LIVE:
-            data["file"] = ""
-        else:
-            data["live"] = ""
+            data["file"], data["playlist"] = "", []
+            return data
+        data["live"] = ""
+        playlist = list(dict.fromkeys(data["playlist"]))   # each file once
+        if not set(playlist) <= set(list_video_files()):
+            raise serializers.ValidationError(_("A file of the playlist was not found"))
+        if playlist:
+            data["file"] = playlist[0]
+        # A single file is not a playlist
+        data["playlist"] = playlist if len(playlist) > 1 else []
         return data
 
 
@@ -124,6 +143,10 @@ class SeekSerializer(serializers.Serializer):
     pos_ms = serializers.FloatField(min_value=0)   # position in the video, in milliseconds
 
 
+class WebRTCOfferSerializer(serializers.Serializer):
+    sdp = serializers.CharField(max_length=20000)   # the browser's session description (a few KB)
+
+
 def _size_field(name):
     message = format_lazy(_("{name} must be between 0.1 and {max} m"), name=name, max=f"{MAX_CALIBRATION_M:.0f}")
     return serializers.FloatField(min_value=0.1, max_value=MAX_CALIBRATION_M, error_messages={
@@ -132,6 +155,15 @@ def _size_field(name):
         "min_value": message,
         "max_value": message,
     })
+
+
+def _points_in_frame(points, frame_size):
+    """Points clicked on a frame of frame_size = (width, height), rounded to a tenth of a pixel."""
+    frame_w, frame_h = frame_size
+    for x, y in points:
+        if not (0 <= x <= frame_w and 0 <= y <= frame_h):
+            raise serializers.ValidationError(_("Points must be inside the frame"))
+    return [[round(x, 1), round(y, 1)] for x, y in points]
 
 
 class CalibrationSerializer(serializers.Serializer):
@@ -148,11 +180,22 @@ class CalibrationSerializer(serializers.Serializer):
     length_m = _size_field(_("Length"))
 
     def validate_points(self, points):
-        frame_w, frame_h = self.context["frame_size"]
-        for x, y in points:
-            if not (0 <= x <= frame_w and 0 <= y <= frame_h):
-                raise serializers.ValidationError(_("Points must be inside the frame"))
-        return [[round(x, 1), round(y, 1)] for x, y in points]
+        return _points_in_frame(points, self.context["frame_size"])
+
+
+class DetectionZoneSerializer(serializers.Serializer):
+    """Corners of the area motorcycles are detected in (frame pixels, in order around it); null = the whole
+    frame. The view passes the current frame size as context["frame_size"] = (width, height)."""
+    MAX_POINTS = 12
+    points = serializers.ListField(
+        child=serializers.ListField(child=serializers.FloatField(), min_length=2, max_length=2),
+        min_length=3, max_length=MAX_POINTS, allow_null=True,
+        error_messages={"min_length": _("Click at least 3 points around the area"),
+                        "max_length": format_lazy(_("Click at most {n} points"), n=MAX_POINTS)},
+    )
+
+    def validate_points(self, points):
+        return _points_in_frame(points, self.context["frame_size"]) if points else None
 
 
 class SourceKeySerializer(serializers.Serializer):
@@ -171,6 +214,39 @@ class SourceDistancesSerializer(SourceKeySerializer):
     """New real width and length of a source's saved calibration rectangle (its points stay)."""
     width_m = _size_field(_("Width"))
     length_m = _size_field(_("Length"))
+
+
+class SourceSettingsSerializer(serializers.Serializer):
+    """Settings of the source the live view shows (any of them may be left out). A video file also has the
+    rest: a recording time without a zone is local time, null goes back to the time the camera wrote into
+    the file."""
+    speed_limit_kmh = serializers.IntegerField(min_value=0, max_value=300, allow_null=True, required=False,
+                                               error_messages={
+                                                   "invalid": _("The speed limit must be a whole number"),
+                                                   "min_value": _("The speed limit must be from 0 to 300 km/h"),
+                                                   "max_value": _("The speed limit must be from 0 to 300 km/h")})
+    recorded_at = serializers.DateTimeField(allow_null=True, required=False)
+    location = serializers.CharField(max_length=100, allow_blank=True, required=False, trim_whitespace=True)
+    # Where the location is on the map: both, or both null (not picked)
+    latitude = serializers.FloatField(min_value=-90, max_value=90, allow_null=True, required=False)
+    longitude = serializers.FloatField(min_value=-180, max_value=180, allow_null=True, required=False)
+    skip_repeats = serializers.BooleanField(required=False)
+
+    FILE_ONLY = ("recorded_at", "location", "latitude", "longitude", "skip_repeats")
+
+    def validate_recorded_at(self, recorded_at):
+        if recorded_at is not None and recorded_at > timezone.now():
+            raise serializers.ValidationError(_("The recording time cannot be in the future"))
+        return recorded_at
+
+    def validate(self, data):
+        if not self.context["is_file"] and any(field in data for field in self.FILE_ONLY):
+            raise serializers.ValidationError(_("Only a video file has a recording time, location and repeats"))
+        sent = [field in data for field in ("latitude", "longitude")]
+        picked = [data.get(field) is not None for field in ("latitude", "longitude")]
+        if sent[0] != sent[1] or picked[0] != picked[1]:   # one without the other
+            raise serializers.ValidationError(_("Pick the location on the map again"))
+        return data
 
 
 def _whole_field(name, low, high, unit):
@@ -207,12 +283,14 @@ class PreferencesSerializer(serializers.ModelSerializer):
     table_filter = serializers.ChoiceField(choices=TableFilter.choices)
     seek_step_s = serializers.ChoiceField(choices=SEEK_STEPS_S,
                                           error_messages={"invalid_choice": _("Choose one of the skip lengths")})
+    stream_fps = serializers.ChoiceField(choices=STREAM_FPS_CHOICES,
+                                         error_messages={"invalid_choice": _("Choose one of the frame rates")})
     units = serializers.ChoiceField(choices=Units.choices)
 
     class Meta:
         model = UserPreferences
-        fields = ["table_filter", "seek_step_s", "show_fps_chart", "violation_notify", "camera_notify", "units",
-                  "language"]
+        fields = ["table_filter", "seek_step_s", "show_fps_chart", "stream_fps", "violation_notify", "camera_notify",
+                  "units", "language"]
 
 
 class PasswordChangeSerializer(serializers.Serializer):

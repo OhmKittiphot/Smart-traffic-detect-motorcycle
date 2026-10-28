@@ -1,0 +1,66 @@
+{% load i18n %}
+{# The details pop-up of one record (views.records.vehicle_detail and review_vehicle), put into #detail-dialog by htmx #}
+<div class="detail-head">
+  <h3 id="detail-title">{{ record.plate_text }}</h3>
+  {% include "dashboard/_review_tag.html" with in_detail=True %}
+</div>
+<div class="detail-body">
+  <div class="detail-photo">
+    {% if record.snapshot %}<img src="{% url 'snapshot' record.id %}" alt="{% translate "Evidence photo" %}">
+    {% else %}<p class="muted">{% translate "No evidence photo" %}</p>{% endif %}
+  </div>
+  <dl class="detail-list">
+    <dt>{% translate "Date & time" %}</dt><dd>{{ record.detected_at|date:"d/m/Y H:i:s" }}</dd>
+    <dt>{% translate "Plate" %}</dt><dd>{{ record.plate_text|default:"—" }}</dd>
+    {% if record.plate_snapshot %}
+    <dt>{% translate "Plate photo" %}</dt>
+    <dd><img class="detail-plate" src="{% url 'plate_snapshot' record.id %}" alt="{% blocktranslate with plate=record.plate_text %}Plate {{ plate }}{% endblocktranslate %}"></dd>
+    {% endif %}
+    <dt>{% translate "Province" %}</dt><dd>{{ record.province_text|default:"—" }}</dd>
+    <dt>{% translate "OCR confidence" %}</dt><dd>{% if record.plate_conf %}{% widthratio record.plate_conf 1 100 %}%{% else %}—{% endif %}</dd>
+    <dt>{% translate "Riders" %}</dt><dd>{{ record.riders|default_if_none:"—" }}</dd>
+    <dt>{% translate "Helmet" %}</dt><dd>{% include "dashboard/_helmet_tags.html" %}</dd>
+    <dt>{% translate "Speed" %}</dt><dd>{% include "dashboard/_speed.html" %}</dd>
+    <dt>{% translate "Status" %}</dt><dd>{% include "dashboard/_status_tags.html" %}</dd>
+    <dt>{% translate "Source" %}</dt><dd>{{ record.source_name|default:record.get_source_mode_display }}</dd>
+    {% if record.location %}<dt>{% translate "Location" %}</dt><dd>{{ record.location }}</dd>{% endif %}
+    <dt>{% translate "Track ID" %}</dt><dd>{{ record.track_id }}</dd>
+    <dt>{% translate "Review" %}</dt>
+    <dd>{% if record.review == "pending" %}{{ record.get_review_display }}{% else %}{% translate "a deleted user" as deleted_user %}
+      {% blocktranslate with review=record.get_review_display user=record.reviewed_by.get_username|default:deleted_user when=record.reviewed_at|date:"d/m/Y H:i" %}{{ review }} by {{ user }} · {{ when }}{% endblocktranslate %}{% endif %}</dd>
+    {% if record.review_note %}<dt>{% translate "Note" %}</dt><dd>{{ record.review_note }}</dd>{% endif %}
+  </dl>
+</div>
+
+{# Only users who may review get the note and the review buttons #}
+{% if perms.dashboard.use_dashboard %}
+<label class="detail-note">
+  <span>{% translate "Note" %} <small class="muted">{% translate "optional, saved with the review" %}</small></span>
+  <textarea id="detail-note" name="note" maxlength="255" rows="2">{{ record.review_note }}</textarea>
+</label>
+<p class="form-msg{% if error %} is-error{% elif saved %} is-ok{% endif %}" id="detail-msg" role="status" aria-live="polite">
+  {% if error %}{{ error }}
+  {% elif saved and record.review == "pending" %}{% translate "Review undone" %}
+  {% elif saved %}{% blocktranslate with review=record.get_review_display %}Saved: {{ review }}{% endblocktranslate %}{% endif %}
+</p>
+{% endif %}
+{% url 'vehicle_review' record.id as review_url %}
+{# The review buttons send the note with them, and the answer replaces this pop-up #}
+<div class="detail-actions" hx-target="#detail-dialog" hx-include="#detail-note" hx-indicator="#detail-busy">
+  {% if perms.dashboard.use_dashboard and record.review != "pending" %}
+    <button type="button" class="btn btn-sm btn-ghost" hx-post="{{ review_url }}" hx-vals='{"review": "pending"}'>{% translate "Undo review" %}</button>
+  {% endif %}
+  <span class="form-msg is-busy htmx-indicator" id="detail-busy">{% translate "Saving…" %}</span>
+  <span class="spacer"></span>
+  <button type="button" class="btn" data-close>{% translate "Close" %}</button>
+  {% if perms.dashboard.use_dashboard %}
+    {% if record.review != "rejected" %}
+    <button type="button" class="btn btn-danger-ghost" hx-post="{{ review_url }}" hx-vals='{"review": "rejected"}'>{% translate "Reject" %}</button>
+    {% endif %}
+    {% if record.review != "confirmed" %}
+    <button type="button" class="btn btn-primary" hx-post="{{ review_url }}" hx-vals='{"review": "confirmed"}'>{% translate "Confirm event" %}</button>
+    {% endif %}
+  {% endif %}
+</div>
+
+{% if saved %}{% include "dashboard/_review_tag.html" with oob=True %}{% endif %}

@@ -5,6 +5,9 @@ from dotenv import load_dotenv
 
 import torch
 
+from .cuda_graphs import graph_yolo
+from .utils import log
+
 
 load_dotenv()
 
@@ -26,9 +29,22 @@ class AppConfig:
     # Fine-tuned plate text recognizer; PaddleOCR's stock Thai recognizer
     # is used when this folder does not exist
     plate_ocr_model_path: str = "models/plate_ocr_th"
+    # Helmet / no helmet of each head the helmet model finds, decided on the head crop (head_classifier.py).
+    # When the file exists it decides helmet status; the helmet model's own classes are used without it
+    head_classifier_path: str = "models/head_cls.pt"
     # Frames of classifier output averaged per motorcycle before its result is used
     rider_vote_window: int = 15
     rider_vote_min_frames: int = 3
+    # Fraction of the motorcycle box height added above its rider classifier crop. The COCO motorcycle box
+    # ends near the handlebars and cuts riders off at the neck; on input/IMG_9122.MOV the classifier then
+    # guessed NO HELMET for riders wearing one. 0.5 brings the heads of seated riders into the crop
+    rider_crop_pad_up: float = 0.5
+    # A seat counts as taken once its averaged probability of not being empty reaches this. With argmax a
+    # passenger half hidden behind the driver rarely beat "empty"; seats that are empty score about 0.15
+    rider_seat_threshold: float = 0.35
+    # Motorcycle crops shorter than this (pixels) are not classified: their riders are too small to tell
+    # apart. Larger crops weigh more in the vote (weight = crop height)
+    rider_min_crop_h: int = 64
 
     # Detection parameters
     detection_imgsz: int = 640
@@ -46,14 +62,19 @@ class AppConfig:
     # 0 = the box itself: on the video it found 138 plates vs 102 with (0.2, 0.1), whose larger region
     # shrinks the plate
     plate_roi_pad: tuple = (0.0, 0.0)
-    # Motorcycles shorter than this (pixels) are too far away for a readable plate and are skipped.
-    # On the 1080p video, OCR read nothing useful from bikes under ~220 px; skipping them cut plate search
-    # from 54 to 17 ms on frames with 5+ bikes (where playback lagged) and kept 93 of 95 plates >= 25 px tall
-    plate_min_bike_h: int = 200
+    # Plate settings favour finding a plate over reading it exactly (the plate search tolerates misreads).
+    # On input/IMG_9122.MOV these four together gave a plate to 40% of motorcycles, against 26% with
+    # the stricter 200 px / 0.2 / 0.25 / 0.40; going lower still (80 px, 0.1) found no more, only partial reads.
+    # Motorcycles shorter than this (pixels) are too far away for a plate and are skipped (it also keeps
+    # plate search fast on frames with many small bikes)
+    plate_min_bike_h: int = 120
     # Plate boxes taller than this fraction of their motorcycle are dropped. On the video real plates
     # were 0.09-0.17 of the bike height; boxes around a whole bike, wheel or rider were 0.23-0.48
-    plate_max_bike_h_ratio: float = 0.2
+    plate_max_bike_h_ratio: float = 0.25
     detection_conf: float = 0.25
+    # Plate detector confidence, lower than the motorcycles': a missed plate costs more than a false one,
+    # which OCR then reads as nothing
+    plate_conf: float = 0.15
     helmet_conf: float = 0.25
     # Lower threshold for counting riders only: a passenger's head behind the driver often scores
     # 0.25-0.4, while single-rider bikes show no extra heads even far below this.
@@ -87,7 +108,8 @@ class AppConfig:
     
     # Display parameters
     display_fps: int = 25
-    ocr_conf_threshold: float = 0.40
+    # Lowest voted OCR confidence a plate is kept with (see the plate settings above)
+    ocr_conf_threshold: float = 0.20
     ocr_cache_ttl_s: float = 5.0
     ocr_cache_distance: float = 120.0
 
@@ -98,10 +120,13 @@ class AppConfig:
 
     @classmethod
     def from_env(cls) -> "AppConfig":
-        # Only the video source comes from .env; everything else is set above.
+        # Only the video source and the speed calibration printed by the desktop window ([C]) come from .env;
+        # everything else is set above.
         return cls(
             rtsp_url=os.getenv("RTSP_URL", ""),
             video_file=os.getenv("VIDEO_FILE", ""),
+            speed_calib_points=os.getenv("SPEED_CALIB_POINTS", ""),
+            speed_calib_world=os.getenv("SPEED_CALIB_WORLD", ""),
         )
 
     @property
@@ -145,12 +170,15 @@ def load_yolo_model(model_path: str, device: str, use_half: bool):
     try:
         model.to(device)
     except Exception as e:
-        print(f"[Model] Could not move {model_path} to {device} ({e}); predict() will place it per call.")
+        log.warning("[Model] Could not move %s to %s (%s); predict() will place it per call.", model_path, device, e)
 
     if use_half:
         try:
             model.model.half()
         except Exception as e:
-            print(f"[Model] FP16 not applied to {model_path} ({e}); running in FP32.")
+            log.warning("[Model] FP16 not applied to %s (%s); running in FP32.", model_path, e)
+
+    if device.startswith("cuda"):
+        graph_yolo(model)   # several times faster on this project's GPU (see cuda_graphs.py)
 
     return model

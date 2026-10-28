@@ -6,6 +6,7 @@ from rest_framework.views import APIView
 
 from .. import storage
 from ..engine import current_service
+from ..live_frames import chosen_fps
 from ..middleware import remember_language
 from ..models import SystemSettings, UserPreferences
 from ..serializers import PasswordChangeSerializer, PreferencesSerializer, SystemSettingsSerializer
@@ -41,10 +42,12 @@ class SettingsCleanupView(APIView):
 
 class PreferencesView(APIView):
     def post(self, request):
-        """Save this account's preferences; the Settings pop-up sends only the fields its page shows."""
+        """Save this account's preferences; the Settings pop-up (and the live view's fps menu) send only the
+        fields they show. A new frame rate applies to this account's open live views too."""
         serializer = PreferencesSerializer(UserPreferences.load(request.user), data=request.data, partial=True)
         serializer.is_valid(raise_exception=True)
         prefs = serializer.save()
+        chosen_fps.cache_clear()
         remember_language(request, prefs.language)
         return Response(serializer.data)
 

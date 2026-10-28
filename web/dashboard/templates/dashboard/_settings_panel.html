@@ -150,7 +150,7 @@
 {% comment %}In-page notifications (notify.js), bottom right of every page: new violations (data-on: switched on)
    and, for admins, live cameras going offline or coming back (data-camera-api; data-cameras: switched on){% endcomment %}
 {% if records or cameras %}
-<div id="toasts" class="toasts" role="status" aria-live="polite"
+<div id="toasts" class="toasts" role="status" aria-live="polite" hx-boost="true" hx-swap="innerHTML transition:true"
      data-on="{% if records and prefs.violation_notify %}true{% endif %}"
      {% if cameras %}data-camera-api="{% url 'api_system_cameras' %}" data-cameras="{% if prefs.camera_notify %}true{% endif %}"{% endif %}></div>
 {% endif %}

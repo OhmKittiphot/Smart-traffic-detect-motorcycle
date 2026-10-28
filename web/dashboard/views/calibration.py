@@ -11,17 +11,28 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from .. import calibrations
-from ..engine import current_service, get_service
+from ..engine import current_service
 from ..live_frames import encode_jpeg
 from ..models import SpeedCalibration
 from ..serializers import CalibrationSerializer, SourceDistancesSerializer, SourceKeySerializer
 from ..sources import grab_frame
-from .common import audit, conflict, jpeg_response
+from .common import audit, conflict, jpeg_response, running_service
 
 _NOT_A_RECTANGLE = {"points": [gettext_lazy("The 4 points must outline a rectangle on the road, clicked in order")]}
-# Size of the last frame sent for redrawing a source's points, so the points saved for it can be checked
-_REDRAW_FRAME_SIZE = "calibration-frame-size:{}"
 _REDRAW_FRAME_KEEP_S = 60 * 60
+
+
+# Cached per user and source, so two people editing one source each save the frame they clicked on
+
+def _frame_size_key(request, source_key) -> str:
+    """Size of the last frame sent for redrawing a source's points, so the points saved for it can be checked."""
+    return f"calibration-frame-size:{request.user.pk}:{source_key}"
+
+
+def _clicked_frame_key(request, source_key) -> str:
+    """The last frame sent to click a source's points on (JPEG): a video file keeps it with its calibration,
+    so the points can follow a moving camera."""
+    return f"calibration-frame:{request.user.pk}:{source_key}"
 
 
 # ---------- current source (live view) ----------
@@ -29,22 +40,25 @@ _REDRAW_FRAME_KEEP_S = 60 * 60
 class CalibrationView(APIView):
     def get(self, request):
         """Speed calibration of the current source (points in frame pixels)."""
-        return Response(get_service().calibration())
+        return Response(running_service().calibration())
 
 
 class CalibrationFrameView(APIView):
     def get(self, request):
         """The current frame without overlays, as JPEG, for clicking the calibration points on."""
+        service = running_service()
         try:
-            return jpeg_response(get_service().frames.raw_jpeg())
+            jpeg = service.frames.raw_jpeg()
         except RuntimeError as e:
             return conflict(e)
+        cache.set(_clicked_frame_key(request, service.source.key), jpeg, _REDRAW_FRAME_KEEP_S)
+        return jpeg_response(jpeg)
 
 
 class CalibrationSaveView(APIView):
     def post(self, request):
         """Save the 4 points and real size clicked on the current source's frame."""
-        service = get_service()
+        service = running_service()
         frame_size = service.frames.size()
         if frame_size is None:
             return conflict(_("No video signal to calibrate on"))
@@ -53,7 +67,8 @@ class CalibrationSaveView(APIView):
         serializer.is_valid(raise_exception=True)
         points, width_m, length_m = (serializer.validated_data[f] for f in ("points", "width_m", "length_m"))
         try:
-            service.save_calibration(points, width_m, length_m, request.user)
+            service.save_calibration(points, width_m, length_m, request.user,
+                                     cache.get(_clicked_frame_key(request, service.source.key)))
         except ValueError:
             # The speed estimator rejects shapes that are not a convex 4-sided outline
             return Response(_NOT_A_RECTANGLE, status=status.HTTP_400_BAD_REQUEST)
@@ -66,7 +81,7 @@ class CalibrationSaveView(APIView):
 class CalibrationRemoveView(APIView):
     def post(self, request):
         """Remove the speed calibration of the current source (speeds are no longer measured)."""
-        service = get_service()
+        service = running_service()
         try:
             service.remove_calibration(request.user)
         except RuntimeError as e:
@@ -118,19 +133,20 @@ class SourceCalibrationFrameView(APIView):
                     raise RuntimeError(_("Could not capture a frame"))
         except RuntimeError as e:
             return conflict(e)
-        cache.set(_REDRAW_FRAME_SIZE.format(key), size, _REDRAW_FRAME_KEEP_S)
+        cache.set(_frame_size_key(request, key), size, _REDRAW_FRAME_KEEP_S)
+        cache.set(_clicked_frame_key(request, key), jpeg, _REDRAW_FRAME_KEEP_S)
         return jpeg_response(jpeg)
 
 
 class SourceCalibrationPointsView(APIView):
     def post(self, request):
         """Admin: save the 4 points (and real size) redrawn on the frame from SourceCalibrationFrameView."""
-        from speed import SpeedEstimator
+        from src.speed import SpeedEstimator
 
         source = SourceKeySerializer(data=request.data)
         source.is_valid(raise_exception=True)
         key = source.validated_data["source_key"]
-        frame_size = cache.get(_REDRAW_FRAME_SIZE.format(key))
+        frame_size = cache.get(_frame_size_key(request, key))
         if frame_size is None:
             return conflict(_("The frame expired; open the editor again"))
 
@@ -142,7 +158,7 @@ class SourceCalibrationPointsView(APIView):
             SpeedEstimator().set_calibration([tuple(p) for p in points], (width_m, length_m))
         except ValueError:
             return Response(_NOT_A_RECTANGLE, status=status.HTTP_400_BAD_REQUEST)
-        calibrations.save(key, points, width_m, length_m, request.user)
+        calibrations.save(key, points, width_m, length_m, request.user, cache.get(_clicked_frame_key(request, key)))
         _reload_calibration(key)
         audit(request, "speed_calibration", f"{key}: {width_m:g} x {length_m:g} m (points redrawn)")
         return Response({"source_key": key, "points": points, "width_m": width_m, "length_m": length_m})

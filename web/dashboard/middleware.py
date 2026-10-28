@@ -48,15 +48,16 @@ class PagePermissionMiddleware:
         ("/api/settings/cleanup/", "dashboard.manage_settings"),
         ("/api/settings/password/", None),
         ("/api/settings/preferences/", None),   # each account's own; the pop-up shows only what applies to it
-        ("/api/violations/new/", "dashboard.view_records"),
+        ("/api/events/records/", None),   # checks itself: every record for the live view, else violations
         ("/system/", "dashboard.view_system_status"),
         ("/api/system/calibration/", "dashboard.manage_calibration"),
         ("/api/system/", "dashboard.view_system_status"),
         ("/search/", "dashboard.view_records"),
         ("/violations/", "dashboard.view_records"),
-        ("/api/vehicles/search/", "dashboard.view_records"),
+        ("/vehicles/review/", "dashboard.use_dashboard"),
+        ("/vehicles/", "dashboard.view_records"),
         ("/api/vehicles/delete/", "dashboard.delete_records"),
-        ("/api/vehicles/clear/", "dashboard.delete_records"),
+        ("/api/vehicles/clear/", "dashboard.use_dashboard"),   # Delete all of the live view's table
         ("/api/stats/", "dashboard.view_records"),
         ("/snapshot/", "dashboard.view_records"),
     ]
@@ -66,8 +67,8 @@ class PagePermissionMiddleware:
         ("dashboard.view_records", "violations"),
         ("dashboard.view_system_status", "system_status"),
     ]
-    # Answered with JSON instead of a redirect, since they are called by the page's JavaScript
-    api_paths = ["/api/", "/stream/", "/snapshot/"]
+    # Answered with JSON instead of a redirect, since they are called by the page's JavaScript (or htmx)
+    api_paths = ["/api/", "/stream/", "/snapshot/", "/vehicles/"]
 
     def __init__(self, get_response):
         self.get_response = get_response

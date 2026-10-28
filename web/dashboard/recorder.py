@@ -1,6 +1,6 @@
 """Saves each motorcycle the detection pipeline reports as a VehicleRecord, with its evidence photos."""
 import uuid
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 
 import cv2
@@ -8,33 +8,55 @@ from django.conf import settings
 from django.db import close_old_connections
 from django.utils import timezone
 
+# A motorcycle of a video file played again is the one saved before when it left view within this many
+# seconds of the same time into the clip (frames skipped while the GPU is busy shift it a little)
+REPEAT_TOLERANCE_S = 1.0
+
 
 class ReportRecorder:
-    """A report listener (src/report.py). It asks the service for the rules and the source at each report,
-    since both can change while detection runs."""
+    """A report listener (src/report.py). It asks the service for the rules, the source and its settings at
+    each report, since they can change while detection runs."""
 
-    def __init__(self, get_config, get_source):
-        self._get_config = get_config   # -> AppConfig with the current violation rules
-        self._get_source = get_source   # -> VideoSource being shown
+    def __init__(self, get_config, get_source, get_settings):
+        self._get_config = get_config       # -> AppConfig with the current violation rules
+        self._get_source = get_source       # -> VideoSource being shown
+        self._get_settings = get_settings   # -> SourceSettings of that source
+        # One pass = a video file played on from where it was opened or seeked to. Records of the current
+        # pass have ids above this (None: a new pass, set at its first report); only earlier passes are
+        # looked at for repeats, since two motorcycles side by side in one pass are two motorcycles
+        self._pass_after_id = None
+
+    def new_pass(self) -> None:
+        """The file was opened, seeked, or played to its end: what comes next may be a part played before."""
+        self._pass_after_id = None
 
     def __call__(self, meta: dict, speed_calibrated: bool) -> None:
         """Called from the processing thread for each motorcycle that left the scene."""
-        from report import find_violations, median_speed
+        from src.report import find_violations, median_speed
 
         from .models import VehicleRecord
 
-        config, source = self._get_config(), self._get_source()
+        config, source, own = self._get_config(), self._get_source(), self._get_settings()
         try:
-            violations = find_violations(meta, speed_calibrated, config.max_riders, config.speed_limit_kmh)
+            if source.is_file:
+                if self._pass_after_id is None:
+                    self._pass_after_id = VehicleRecord.objects.order_by("-id").values_list("id", flat=True).first() or 0
+                if own.skip_repeats and self._saved_before(source, meta):
+                    return
+            limit = config.speed_limit_kmh if own.speed_limit_kmh is None else own.speed_limit_kmh
+            violations = find_violations(meta, speed_calibrated, config.max_riders, limit)
             helmet = meta.get("helmet")
             if helmet == (0, 0):
                 helmet = None   # no head seen clearly enough: unknown, same as the console report
             speed = median_speed(meta) if speed_calibrated else None
             VehicleRecord.objects.create(
-                detected_at=timezone.now(),
+                detected_at=detected_at(source, meta, own),
                 source_mode=source.mode,
                 source_name=source.record_name,
+                location=own.location if source.is_file else "",
                 track_id=meta["track_id"],
+                clip_start_s=meta["first_seen"] if source.is_file else None,
+                clip_end_s=meta["last_seen"] if source.is_file else None,
                 plate_text=(meta.get("plate_text") or "")[:32],
                 province_text=(meta.get("province_text") or "")[:64],
                 plate_conf=meta.get("plate_conf"),
@@ -49,6 +71,32 @@ class ReportRecorder:
             )
         finally:
             close_old_connections()
+
+    def _saved_before(self, source, meta: dict) -> bool:
+        """Whether an earlier pass of the file saved this motorcycle: one that left view at about the same
+        time into the clip, and came into view no later (this pass may have started part-way through its
+        time in view, after a seek)."""
+        from .models import VehicleRecord
+
+        start, end = meta["first_seen"], meta["last_seen"]
+        return VehicleRecord.objects.filter(
+            source_mode="file", source_name=source.video_file, id__lte=self._pass_after_id,
+            clip_end_s__range=(end - REPEAT_TOLERANCE_S, end + REPEAT_TOLERANCE_S),
+            clip_start_s__lte=start + REPEAT_TOLERANCE_S).exists()
+
+
+def detected_at(source, meta: dict, settings=None) -> datetime:
+    """When the motorcycle passed the camera. In a video file it is the time the file started recording plus
+    the time into the clip it was last seen (its frame times are positions in the clip, in seconds), so the
+    statistics count it on the day and hour it was filmed; without a known recording time, and live, now.
+    settings: the source's SourceSettings, when already loaded."""
+    from .source_settings import recording_start
+
+    if source.is_file:
+        start, _where = recording_start(source.video_file, settings)
+        if start is not None:
+            return start + timedelta(seconds=meta["last_seen"])
+    return timezone.now()
 
 
 def save_snapshot(crop) -> str:

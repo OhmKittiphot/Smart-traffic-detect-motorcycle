@@ -1,55 +1,43 @@
 """The live view: its video stream, the source it shows and playback, and the table of vehicles passing."""
 import time
 
-from django.conf import settings
 from django.http import StreamingHttpResponse
-from django.utils import timezone
 from django.views.decorators.http import require_GET
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from .. import storage
-from ..engine import get_service
+from ..engine import current_service
+from ..live_frames import LIVE_STREAM_FPS
 from ..models import CameraSettings, VehicleRecord
-from ..serializers import PauseSerializer, SeekSerializer, SourceSerializer, VehicleQuerySerializer, VehicleRecordSerializer
+from ..security import session_allows
+from ..serializers import PauseSerializer, SeekSerializer, SourceSerializer, VehicleRecordSerializer
 from ..sources import VideoSource
-from .common import audit, bad_request, conflict
+from .common import audit, bad_request, conflict, running_service
 
-# Rows sent on first load / per poll
-_INITIAL_ROWS = 100
-_MAX_NEW_ROWS = 200
-
-
-class StatusView(APIView):
-    def get(self, request):
-        """Engine state, playback position and today's vehicle counts (polled every second)."""
-        data = get_service(request.session.session_key).status()
-        today = timezone.localtime().replace(hour=0, minute=0, second=0, microsecond=0)
-        records = VehicleRecord.objects.filter(detected_at__gte=today)
-        total = records.count()
-        violations = records.filter(is_violation=True).count()
-        data["today"] = {"total": total, "violation": violations, "normal": total - violations}
-        return Response(data)
+# Rows the table starts with, and adds each time Load more is pressed; newer ones arrive on the event
+# stream (events.py). Few, so opening the live view loads only a few rows and their photos
+_PAGE_ROWS = 10
 
 
 class VehicleListView(APIView):
     def get(self, request):
-        """New rows after ?after=<id>, or the latest rows on first load (newest first)."""
-        query = VehicleQuerySerializer(data=request.query_params)
-        query.is_valid(raise_exception=True)
-        after = query.validated_data["after"]
-
+        """The latest rows, newest first, that the table starts with; with ?before=<id>, the rows older
+        than that one (Load more). "more" says whether older rows are left."""
         records = VehicleRecord.objects.select_related("reviewed_by")
-        if after > 0:
-            records = records.filter(id__gt=after)[:_MAX_NEW_ROWS]
-        else:
-            records = records[:_INITIAL_ROWS]
-        return Response({"rows": VehicleRecordSerializer(records, many=True).data})
+        before = request.query_params.get("before", "")
+        if before:
+            if not before.isdigit():
+                return bad_request("before must be a record id")
+            records = records.filter(id__lt=int(before))
+        page = list(records[:_PAGE_ROWS + 1])
+        return Response({"rows": VehicleRecordSerializer(page[:_PAGE_ROWS], many=True).data,
+                         "more": len(page) > _PAGE_ROWS})
 
 
 class VehicleClearView(APIView):
     def post(self, request):
-        """Delete every vehicle record and its evidence snapshot (live view; needs delete_records)."""
+        """Delete every vehicle record and its evidence snapshot (Delete all of the live view, for staff)."""
         deleted = storage.delete_records(VehicleRecord.objects.values_list("id", flat=True))
         audit(request, "clear_vehicles", f"{deleted} records")
         return Response({"deleted": deleted})
@@ -61,9 +49,9 @@ class SourceView(APIView):
         serializer = SourceSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         data = serializer.validated_data
-        source = VideoSource(data["mode"], data["file"], data["live"])
+        source = VideoSource(data["mode"], data["file"], data["live"], tuple(data["playlist"]))
 
-        service = get_service()
+        service = running_service()
         try:
             service.switch(source)
         except ValueError as e:
@@ -73,6 +61,7 @@ class SourceView(APIView):
 
         saved = CameraSettings.load()
         saved.mode, saved.video_file, saved.live_source = source.mode, source.video_file, source.live_key
+        saved.playlist = list(source.playlist)
         saved.updated_by = request.user
         saved.save()
         audit(request, "switch_source", source.describe())
@@ -84,7 +73,7 @@ class PauseView(APIView):
         """Pause or resume the video file: {"paused": true/false} sets it, {} flips it."""
         serializer = PauseSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        service = get_service()
+        service = running_service()
         try:
             paused = service.toggle_pause(serializer.validated_data.get("paused"))
         except RuntimeError as e:
@@ -99,7 +88,7 @@ class SeekView(APIView):
         serializer = SeekSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         try:
-            get_service().seek(serializer.validated_data["pos_ms"])
+            running_service().seek(serializer.validated_data["pos_ms"])
         except RuntimeError as e:
             return conflict(e)
         return Response({"ok": True})
@@ -108,9 +97,8 @@ class SeekView(APIView):
 @require_GET
 def stream(request):
     """MJPEG stream of the annotated video (or the No Signal card)."""
-    session = request.session
-    viewer = session.session_key
-    interval = 1.0 / settings.STREAM_FPS
+    session_key = request.session.session_key
+    user_id = request.user.pk
 
     def frames():
         last = None
@@ -120,21 +108,28 @@ def stream(request):
         # arrives, so a paused video's single frame would otherwise stay black
         part_head = b"--frame\r\nContent-Type: image/jpeg\r\n\r\n"
         yield part_head
+        next_t = time.monotonic()
         while True:
-            # A stream outlives its page; stop it once the session has expired or the user logged out.
-            # Checked every second so it cannot restart detection just after logout stopped it
+            # A stream outlives its page; stop it once its login is no longer valid
             if time.time() >= next_check:
                 next_check = time.time() + 1
-                if not session.exists(session.session_key) or session.get_expiry_date() <= timezone.now():
+                if not session_allows(session_key, "dashboard.use_dashboard"):
                     return
-            # Looked up every frame: an open stream keeps detection on, and follows it if it restarted
-            jpeg = get_service(viewer).frames.jpeg()
+            # Looked up every frame, so it follows detection when it restarts. Never starts it: only
+            # logging in does (engine.py), not a stream left open after logout
+            service = current_service()
+            jpeg = service.frames.jpeg() if service else None
             # An unchanged frame (paused video) is sent again every second: the server only notices a
             # closed page when it writes, and a stream that never writes would hold its thread forever
             if jpeg and (jpeg is not last or time.time() - last_sent_t >= 1.0):
                 last, last_sent_t = jpeg, time.time()
                 yield jpeg + b"\r\n" + part_head
-            time.sleep(interval)
+            # A steady clock, like the desktop viewer: the time spent above counts toward the interval.
+            # The rate is read every frame, so a new choice in the fps menu applies to open streams.
+            # A stream that fell behind (a slow client) starts counting again instead of bursting.
+            fps = service.frames.stream_fps(user_id) if service else LIVE_STREAM_FPS
+            next_t = max(next_t + 1.0 / fps, time.monotonic())
+            time.sleep(max(0.0, next_t - time.monotonic()))
 
     response = StreamingHttpResponse(frames(), content_type="multipart/x-mixed-replace; boundary=frame")
     response["Cache-Control"] = "no-store"

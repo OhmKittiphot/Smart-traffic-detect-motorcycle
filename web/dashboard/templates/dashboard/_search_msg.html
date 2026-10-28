@@ -1,0 +1,2 @@
+{# The message beside the records list's title: empty, or why the search could not be done. Sent out of band #}
+<span class="form-msg{% if error %} is-error{% endif %}" id="search-msg" role="status" aria-live="polite" hx-swap-oob="true">{{ error }}</span>

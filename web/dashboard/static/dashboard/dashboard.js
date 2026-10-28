@@ -1,19 +1,19 @@
 "use strict";
 
-(() => {
-  const STATUS_EVERY_MS = 1000;
-  const ROWS_EVERY_MS = 2000;
+// The live view: video, status, playback and source controls, and the table of motorcycles passing
+window.Dashboard.onPage("#stream", (page) => {
   // This account's live view preferences, rendered into the page by the view and changed from the
   // Settings pop-up (see "preferences" below)
   const prefs = JSON.parse(document.getElementById("prefs").textContent);
   const MAX_ROWS = 300;
-  const { api, el, units, thumbCell, plateCell, helmetCell, statusCell, openSnapshotsFrom } = window.Dashboard;
+  const {
+    api, el, units, thumbCell, plateCell, helmetCell, statusCell, watchEvents, watchRecords, openSnapshotsFrom,
+  } = window.Dashboard;
 
   const $ = (id) => document.getElementById(id);
   const streamImg = $("stream");
   const form = $("source-form");
-  const fileSelect = $("file-select");
-  const liveSelect = $("live-select");   // only rendered when an add-on adds live cameras
+  const sourceList = $("source-pick-list");   // the source menu, an Alpine.js component (menus.js)
   const applyBtn = $("apply-btn");
   const playBtn = $("play-btn");
   const seekbar = $("seekbar");
@@ -26,10 +26,11 @@
   const rowsEl = $("vehicle-rows");
   const table = $("vehicles");
   const emptyMsg = $("empty-msg");
+  const loadMoreBtn = $("load-more");
 
   let lastId = 0;
   let busy = false;
-  // Playback position, advanced locally between status polls so the seek bar moves smoothly
+  // Playback position, advanced locally between status events so the seek bar moves smoothly
   const playback = { pos: 0, total: 0, playing: false, at: performance.now() };
   let dragging = false;
 
@@ -40,18 +41,9 @@
     formMsg.className = "form-msg" + (kind ? " is-" + kind : "");
   }
 
-  function selectedMode() {
-    return form.querySelector('input[name="mode"]:checked').value;
-  }
-
-  function syncFormState() {
-    const mode = selectedMode();
-    fileSelect.disabled = mode !== "file" || !fileSelect.options.length || !fileSelect.value;
-    if (liveSelect) {
-      // Show only the dropdown that belongs to the selected mode
-      liveSelect.hidden = mode !== "live";
-      fileSelect.hidden = mode === "live";
-    }
+  // The source chosen in the source menu (a .source-item), or null before one is
+  function chosenSource() {
+    return sourceList.querySelector('.source-item[aria-pressed="true"]');
   }
 
   // ---------- status ----------
@@ -61,7 +53,8 @@
     chip.dataset.state = s.state;
     $("engine-text").textContent =
       s.state === "running" ? gettext("Detection running") :
-      s.state === "error" ? interpolate(gettext("System error: %s"), [s.error]) : gettext("Loading models…");
+      s.state === "error" ? interpolate(gettext("System error: %s"), [s.error]) :
+      s.state === "stopped" ? gettext("Detection stopped") : gettext("Loading models…");
 
     const badge = $("source-badge");
     let kind = "nosignal";
@@ -75,7 +68,9 @@
     badge.textContent = label;
     $("source-text").textContent = s.source;
     $("fps").textContent = s.fps.toFixed(1);
-    renderCalibration(s);
+    renderRules(s);
+    // The video settings menu (source-settings.js) follows the status too
+    document.dispatchEvent(new CustomEvent("live:status", { detail: s }));
 
     applyBtn.disabled = busy || s.state !== "running";
 
@@ -85,7 +80,6 @@
     const isFile = s.mode === "file" && s.state === "running" && s.total_ms > 0;
     seekbar.hidden = !isFile;
     pauseOverlay.hidden = !(isFile && s.paused && !s.loading);
-    videoFrame.classList.toggle("is-file", isFile);
     if (isFile) {
       playback.pos = s.pos_ms;
       playback.total = s.total_ms;
@@ -125,24 +119,29 @@
     $("pos-text").textContent = fmtTime(pos);
   }
 
-  // True after a status poll failed, e.g. while the server restarts
+  // True after the status stream dropped, e.g. while the server restarts
   let serverLost = false;
 
-  async function pollStatus() {
-    if (document.hidden) return;   // a hidden tab does not keep detection on (see engine.IDLE_STOP_S)
-    try {
-      const s = await api("/api/status/");
-      // The browser gives no event when the server closes the video stream: the picture just freezes
-      // on its last frame. So reopen the stream once the server answers again
-      if (serverLost) {
-        serverLost = false;
-        reloadStream();
-      }
-      renderStatus(s);
-      window.FpsChart.push(s.state === "running" ? s.fps : null, s.state === "running" && s.paused);
-    } catch (e) {
-      serverLost = true;   // keep last state; next poll retries
+  // The server sends the status every second (views/events.py)
+  function onStatus(ev) {
+    const s = JSON.parse(ev.data);
+    // The browser gives no event when the server closes the video stream: the picture just freezes
+    // on its last frame. So reopen the stream once the server answers again
+    if (serverLost) {
+      serverLost = false;
+      reloadStream();
     }
+    renderStatus(s);
+    window.FpsChart.push(s.state === "running" ? s.fps : null, s.state === "running" && s.paused);
+  }
+
+  // The speed limit of the source shown (its own, or the system's); 0 = speed is not a violation
+  function renderRules(s) {
+    if (s.speed_limit_kmh == null) return;
+    $("rules-speed").hidden = !s.speed_limit_kmh;
+    const limit = $("rules-speed").querySelector("[data-kmh]");
+    limit.dataset.kmh = s.speed_limit_kmh;
+    limit.textContent = units.speedText(s.speed_limit_kmh);
   }
 
   // ---------- vehicle table ----------
@@ -173,7 +172,18 @@
     rowsEl.prepend(frag);
     if (isNew && oldFirst) printRows(oldFirst.offsetTop - rowsEl.firstElementChild.offsetTop);
     lastId = Math.max(lastId, ...rows.map((r) => r.id));
-    while (rowsEl.children.length > MAX_ROWS) rowsEl.lastElementChild.remove();
+    if (rowsEl.children.length > MAX_ROWS) {
+      while (rowsEl.children.length > MAX_ROWS) rowsEl.lastElementChild.remove();
+      loadMoreBtn.hidden = false;   // the rows dropped at the bottom can be loaded again
+    }
+    updateEmpty();
+  }
+
+  // Older rows below the ones shown (Load more)
+  function appendRows(rows) {
+    const frag = document.createDocumentFragment();
+    for (const r of rows) frag.append(buildRow(r));
+    rowsEl.append(frag);
     updateEmpty();
   }
 
@@ -193,13 +203,49 @@
     emptyMsg.textContent = rowsEl.children.length ? gettext("No motorcycles match this filter") : gettext("No motorcycles yet");
   }
 
-  async function pollVehicles() {
-    if (document.hidden) return;   // caught up on return (see visibilitychange)
-    try {
-      const data = await api(`/api/vehicles/?after=${lastId}`);
-      addRows(data.rows, lastId > 0);
-    } catch (e) { /* retry next tick */ }
+  // New rows wait while the pointer is over the table: a row arriving between pressing and releasing the
+  // mouse moved the photo away from under it, and the browser then fires no click (about 1 press in 10 while
+  // a video played). They are added as soon as the pointer leaves. A touch leaves right after each tap.
+  let pointerOverTable = false;
+  let heldRows = [];   // newest first, like the API
+
+  function addNewRows(rows) {
+    if (pointerOverTable) heldRows = rows.concat(heldRows);
+    else addRows(rows, true);
   }
+
+  table.parentElement.addEventListener("pointerenter", () => { pointerOverTable = true; });
+  table.parentElement.addEventListener("pointerleave", () => {
+    pointerOverTable = false;
+    addRows(heldRows, true);
+    heldRows = [];
+  });
+
+  // The latest few rows, then each new one as the server saves it (pushed, see watchRecords in common.js);
+  // older rows only when Load more is pressed
+  async function loadVehicles() {
+    try {
+      const data = await api("/api/vehicles/");
+      addRows(data.rows, false);
+      loadMoreBtn.hidden = !data.more;
+    } catch (e) { /* the stream still brings the newest ones */ }
+    if (page.signal.aborted) return;   // left while the rows were on their way
+    page.onLeave(watchRecords({ after: lastId }, (data) => addNewRows(data.rows)));
+  }
+
+  loadMoreBtn.addEventListener("click", async () => {
+    const oldest = rowsEl.lastElementChild?.dataset.id;
+    loadMoreBtn.disabled = true;
+    try {
+      const data = await api(`/api/vehicles/?before=${oldest}`);
+      appendRows(data.rows);
+      loadMoreBtn.hidden = !data.more;
+    } catch (e) {
+      showMsg(e.message, "error");
+    } finally {
+      loadMoreBtn.disabled = false;
+    }
+  });
 
   function selectFilter(filter) {
     for (const b of document.querySelectorAll(".filters .filter")) {
@@ -219,7 +265,7 @@
   // Evidence snapshot preview
   openSnapshotsFrom(rowsEl);
 
-  // Delete all records (after confirmation); the button is only there with the delete_records permission
+  // Delete all records (after confirmation)
   const clearDialog = $("clear-dialog");
   const clearBtn = $("clear-btn");
   clearBtn?.addEventListener("click", () => {
@@ -232,8 +278,9 @@
     try {
       await api("/api/vehicles/clear/", { method: "POST", body: "{}" });
       rowsEl.replaceChildren();
+      heldRows = [];
+      loadMoreBtn.hidden = true;
       updateEmpty();
-      pollStatus();
     } catch (e) {
       showMsg(e.message, "error");
     } finally {
@@ -241,32 +288,35 @@
     }
   });
 
-  // ---------- source control ----------
+  // ---------- video ----------
 
-  function reloadStream() {
-    if (document.hidden) return;
-    streamImg.src = `/stream/?t=${Date.now()}`;
-  }
+  const reloadStream = () => LiveVideo.reload();
 
-  // Close the stream and stop polling while the tab is hidden, so detection stops and frees the GPU;
-  // reopen and catch up on return
+  // Close the video while the tab is hidden, so it costs no bandwidth (detection goes on: it runs while
+  // staff are logged in, see engine.py), and reopen it on return. The event streams do the same
+  // (watchEvents in common.js)
   document.addEventListener("visibilitychange", () => {
-    if (document.hidden) {
-      streamImg.removeAttribute("src");
-    } else {
-      reloadStream();
-      pollStatus();
-      pollVehicles();
-    }
-  });
+    if (document.hidden) LiveVideo.stop();
+    else reloadStream();
+  }, { signal: page.signal });
 
-  form.addEventListener("change", syncFormState);
+  // ---------- source control ----------
+  // The source menu (menus.js) marks the source chosen; Switch source switches to it
 
   form.addEventListener("submit", async (ev) => {
     ev.preventDefault();
-    const mode = selectedMode();
-    if (mode === "file" && !fileSelect.value) {
+    const source = chosenSource();
+    if (!source) {
       showMsg(gettext("No video file to choose"), "error");
+      return;
+    }
+    const mode = source.dataset.mode;
+    // The playlist item plays the ticked files, in the order listed
+    const playlist = source.dataset.playlist
+      ? [...sourceList.querySelectorAll('input[name="playlist"]:checked')].map((box) => box.value)
+      : [];
+    if (source.dataset.playlist && playlist.length < 2) {
+      showMsg(gettext("Tick at least two files for the playlist"), "error");
       return;
     }
     busy = true;
@@ -277,8 +327,9 @@
         method: "POST",
         body: JSON.stringify({
           mode,
-          file: mode === "file" ? fileSelect.value : "",
-          live: mode === "live" && liveSelect ? liveSelect.value : "",
+          file: mode === "file" ? source.dataset.value : "",
+          live: mode === "live" ? source.dataset.value : "",
+          playlist,
         }),
       });
       renderStatus(s);
@@ -301,18 +352,21 @@
     node.classList.add(cls);
   }
 
-  async function togglePause() {
+  // paused: true / false sets it; left out, it flips
+  async function setPaused(paused) {
     try {
-      const r = await api("/api/pause/", { method: "POST", body: "{}" });
+      const body = JSON.stringify(paused === undefined ? {} : { paused });
+      const r = await api("/api/pause/", { method: "POST", body });
       playBtn.classList.toggle("is-paused", r.paused);
       pauseOverlay.hidden = !r.paused;   // pops in when shown
       if (!r.paused) restartAnimation(playFlash, "is-shown");
       restartAnimation(playBtn, "is-bumped");
-      pollStatus();
     } catch (e) {
       showMsg(e.message, "error");
     }
   }
+
+  const togglePause = () => setPaused();
 
   async function seekTo(posMs) {
     posMs = Math.max(0, Math.min(playback.total, posMs));
@@ -325,7 +379,6 @@
     } catch (e) {
       showMsg(e.message, "error");
     }
-    pollStatus();
   }
 
   // "+10s" / "-10s" shown on the video; repeated presses add up ("+20s") like most video players
@@ -370,65 +423,20 @@
     if (ev.key === " ") { ev.preventDefault(); togglePause(); }
     else if (ev.key === "ArrowLeft") { ev.preventDefault(); skip(-prefs.seek_step_s * 1000); }
     else if (ev.key === "ArrowRight") { ev.preventDefault(); skip(prefs.seek_step_s * 1000); }
-  });
+  }, { signal: page.signal });
 
-  // Leaving the live view pauses a playing video file, so it does not run on while no one watches.
-  // keepalive lets the request finish after the page is gone
-  window.addEventListener("pagehide", () => {
+  // Leaving the live view (to another page, or closing the tab) pauses a playing video file, so it does not
+  // run on while no one watches. keepalive lets the request finish after the page is gone
+  function pauseOnLeave() {
     if (seekbar.hidden || !playback.playing) return;
     api("/api/pause/", { method: "POST", body: JSON.stringify({ paused: true }), keepalive: true })
       .catch(() => {});
-  });
+  }
+  window.addEventListener("pagehide", pauseOnLeave, { signal: page.signal });
+  page.onLeave(pauseOnLeave);
 
   // The MJPEG connection drops if the server restarts; reconnect after a short wait
   streamImg.addEventListener("error", () => setTimeout(reloadStream, 2000));
-
-  // ---------- speed calibration ----------
-  // Yellow button: not calibrated yet; green: calibrated (click to redraw). Reset removes the calibration.
-
-  const calibBtn = $("calib-btn");
-  const calibReset = $("calib-reset");
-  const resetDialog = $("calib-reset-dialog");
-
-  function renderCalibration(s) {
-    calibBtn.disabled = s.state !== "running" || !s.signal;
-    calibBtn.classList.toggle("btn-ok", s.speed_calibrated);
-    calibBtn.classList.toggle("btn-warn", !s.speed_calibrated);
-    calibBtn.textContent = s.speed_calibrated ? gettext("Speed calibrated") : gettext("Calibrate speed");
-    calibBtn.title = calibBtn.disabled ? gettext("Needs a video signal")
-      : s.speed_calibrated ? gettext("Click to redraw the calibration") : gettext("Speed is not measured until calibrated");
-    calibReset.hidden = !s.speed_calibrated || s.state !== "running";
-  }
-
-  calibBtn.addEventListener("click", async () => {
-    try {
-      const c = await api("/api/calibration/");
-      window.CalibrationEditor.open({
-        ...c,
-        frameUrl: "/api/calibration/frame/",
-        save: (body) => api("/api/calibration/save/", { method: "POST", body: JSON.stringify(body) }),
-        onSaved: () => { showMsg(gettext("Speed calibration saved"), "ok"); pollStatus(); },
-      });
-    } catch (e) {
-      showMsg(e.message, "error");
-    }
-  });
-
-  calibReset.addEventListener("click", () => {
-    $("calib-reset-source").textContent = $("source-text").textContent;
-    resetDialog.returnValue = "";
-    resetDialog.showModal();
-  });
-  resetDialog.addEventListener("close", async () => {
-    if (resetDialog.returnValue !== "confirm") return;
-    try {
-      await api("/api/calibration/remove/", { method: "POST", body: "{}" });
-      showMsg(gettext("Speed calibration reset"), "ok");
-      pollStatus();
-    } catch (e) {
-      showMsg(e.message, "error");
-    }
-  });
 
   // ---------- preferences ----------
   // Saved in the Settings pop-up (settings.js): applied at once, as the page would show them after a reload
@@ -469,13 +477,10 @@
       $(id).title = `${label} (${key})`;
       $(id).setAttribute("aria-label", label);
     }
-  });
+  }, { signal: page.signal });
 
   // ---------- start ----------
-  syncFormState();
-  pollStatus();
-  pollVehicles();
-  setInterval(pollStatus, STATUS_EVERY_MS);
-  setInterval(pollVehicles, ROWS_EVERY_MS);
-  setInterval(drawPosition, 250);
-})();
+  page.onLeave(watchEvents(() => "/api/events/status/", { status: onStatus, error: () => { serverLost = true; } }));
+  loadVehicles();
+  page.every(drawPosition, 250);
+});

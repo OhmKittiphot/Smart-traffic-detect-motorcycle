@@ -1,6 +1,7 @@
 {% extends "dashboard/base.html" %}
 {% load i18n static %}
 {% block title %}{% translate "Plate search" %} · CCTV Control{% endblock %}
+{% block head %}{% include "dashboard/_scripts.html" %}{% endblock %}
 {% block body %}
 {% include "dashboard/_topbar.html" %}
 
@@ -9,7 +10,4 @@
   {% include "dashboard/_plate_search.html" with autofocus=True %}
 </main>
 
-<meta name="csrf-token" content="{{ csrf_token }}">
-<script src="{% static 'dashboard/common.js' %}" defer></script>
-<script src="{% static 'dashboard/search.js' %}" defer></script>
 {% endblock %}

@@ -3,7 +3,8 @@
 // Violation statistics at the top of the violations page, with a calendar of one month, from /api/stats/
 // (refreshed every 5 seconds)
 // and /api/stats/repeat/ (every minute, since grouping look-alike plates takes longer), for the chosen dates
-(() => {
+// and video source
+window.Dashboard.onPage("#per-day", (page) => {
   const REFRESH_MS = 5000;
   const REPEAT_REFRESH_MS = 60000;
   const WEEKDAYS = [gettext("Mon"), gettext("Tue"), gettext("Wed"), gettext("Thu"), gettext("Fri"), gettext("Sat"),
@@ -95,7 +96,8 @@
     $("cal-next").disabled = isThisMonth;
     const peak = cal.days.find((d) => max && d.violation === max);
     $("cal-peak").textContent = peak
-      ? interpolate(gettext("Busiest: %s"), [`${peak.date} (${interpolate(ngettext("%s violation", "%s violations", max), [max])})`])
+      ? interpolate(gettext("Busiest: %s"),
+                    [`${peak.date} (${interpolate(ngettext("%s violation", "%s violations", max), [max])})`])
       : gettext("No violations");
   }
 
@@ -129,7 +131,9 @@
     $("st-today").textContent = today;
     const note = $("st-today-note");
     note.dataset.trend = diff > 0 ? "up" : diff < 0 ? "down" : "same";
-    note.textContent = diff ? `${diff > 0 ? "▲" : "▼"} ${interpolate(gettext("%s vs yesterday"), [Math.abs(diff)])}` : gettext("Same as yesterday");
+    note.textContent = diff
+      ? `${diff > 0 ? "▲" : "▼"} ${interpolate(gettext("%s vs yesterday"), [Math.abs(diff)])}`
+      : gettext("Same as yesterday");
   }
 
   // Violations of each of the last 7 days, as small bars
@@ -151,7 +155,9 @@
     $("st-range-label").textContent = rangeText(s);
     $("st-violation").textContent = s.violation;
     $("st-rate-bar").style.width = `${rate}%`;
-    $("st-rate").textContent = s.total ? interpolate(gettext("%(rate)s% of %(total)s motorcycles"), { rate, total: s.total }, true) : gettext("No motorcycles recorded");
+    $("st-rate").textContent = s.total
+      ? interpolate(gettext("%(rate)s% of %(total)s motorcycles"), { rate, total: s.total }, true)
+      : gettext("No motorcycles recorded");
 
     const reviewed = s.violation - s.pending_review;
     $("st-pending").textContent = s.pending_review;
@@ -165,7 +171,8 @@
     renderCalendar(s.calendar);
     if (!startInput.value) startInput.value = s.start;
     if (!endInput.value) endInput.value = s.end;
-    $("stats-meta").textContent = `${rangeText(s)} · ${interpolate(gettext("updated %s"), [new Date().toLocaleTimeString(document.documentElement.lang)])}`;
+    const updated = new Date().toLocaleTimeString(document.documentElement.lang);
+    $("stats-meta").textContent = `${rangeText(s)} · ${interpolate(gettext("updated %s"), [updated])}`;
   }
 
   // ---------- date range ----------
@@ -179,13 +186,21 @@
     return customRange ? `${day(s.start)} – ${day(s.end)}` : interpolate(gettext("Last %s days"), [s.days]);
   }
 
-  function rangeQuery() {
-    return customRange ? `?${new URLSearchParams({ start: startInput.value, end: endInput.value })}` : "";
+  // The range and the video source, unless they are the defaults
+  function filterParams() {
+    const params = new URLSearchParams(customRange ? { start: startInput.value, end: endInput.value } : {});
+    if (source) params.set("source", source);
+    return params;
   }
 
-  // The range plus the month the calendar shows, unless it is the current one
+  function rangeQuery() {
+    const params = filterParams();
+    return params.size ? `?${params}` : "";
+  }
+
+  // The range and source plus the month the calendar shows, unless it is the current one
   function statsQuery() {
-    const params = new URLSearchParams(customRange ? { start: startInput.value, end: endInput.value } : {});
+    const params = filterParams();
     if (calendarMonth) params.set("month", calendarMonth);
     return params.size ? `?${params}` : "";
   }
@@ -207,6 +222,21 @@
     customRange = false;
     startInput.value = endInput.value = "";
     $("st-range-reset").hidden = true;
+    reload();
+  });
+
+  // ---------- video source ----------
+  // "" = all sources. The choice is kept in the URL (?source=), so a reload or a link shows the same source;
+  // the template marks it in the menu (_source_menu.html)
+  let source = new URLSearchParams(location.search).get("source") ?? "";
+
+  $("stats-source-menu").addEventListener("source-chosen", (ev) => {
+    if (source === ev.detail.value) return;
+    source = ev.detail.value;
+    const url = new URL(location.href);
+    if (source) url.searchParams.set("source", source);
+    else url.searchParams.delete("source");
+    history.replaceState(history.state, "", url);   // the same history entry, so Back still leaves the page
     reload();
   });
 
@@ -237,18 +267,9 @@
     $("search-form").scrollIntoView({ behavior: "smooth", block: "start" });
   });
 
-  // No requests while the tab is hidden; refreshed as soon as it is shown again
-  function every(ms, load) {
-    const poll = async () => {
-      if (!document.hidden) await load();
-      setTimeout(poll, ms);
-    };
-    poll();
-  }
-  document.addEventListener("visibilitychange", () => { if (!document.hidden) refresh(); });
-
   // Records deleted on this page (search.js): show the new numbers now rather than at the next poll
-  document.addEventListener("records-changed", reload);
-  every(REFRESH_MS, refresh);
-  every(REPEAT_REFRESH_MS, refreshRepeat);
-})();
+  document.addEventListener("records-changed", reload, { signal: page.signal });
+  // No requests while the tab is hidden; refreshed as soon as it is shown again
+  page.every(refresh, REFRESH_MS);
+  page.every(refreshRepeat, REPEAT_REFRESH_MS);
+});

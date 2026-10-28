@@ -1,9 +1,10 @@
-"""Runs the detection pipeline (src/) inside the web server process, while staff have the live view open.
+"""Runs the detection pipeline (src/) inside the web server process, while staff are logged in.
 
 One DetectionService per process: models and the OCR process load once, and switching between the live
 camera and a video file only replaces the video stream. Its parts live in their own modules: which sources
 exist (sources.py), the pictures the live view shows (live_frames.py), saving each motorcycle reported
-(recorder.py) and the speed calibration of each source (calibrations.py).
+(recorder.py), and the speed calibration (calibrations.py) and other settings (source_settings.py) of each
+source.
 """
 import gc
 import logging
@@ -16,9 +17,10 @@ from django.conf import settings
 from django.db import close_old_connections
 from django.utils.translation import gettext as _
 
-from . import calibrations
+from . import calibrations, source_settings
 from .live_frames import LiveFrames
 from .recorder import ReportRecorder
+from .security import session_allows
 from .sources import VideoSource
 
 log = logging.getLogger("dashboard")
@@ -40,8 +42,9 @@ class DetectionService:
         self.source = VideoSource()
         self.app = None      # src DetectionApp, once the models are loaded
         self.config = None   # AppConfig with the violation rules from the settings page
+        self.settings = None   # SourceSettings of the source shown
         self.frames = LiveFrames(self)
-        self._recorder = ReportRecorder(lambda: self.config, lambda: self.source)
+        self._recorder = ReportRecorder(lambda: self.config, lambda: self.source, lambda: self.settings)
         self._lock = threading.Lock()
         self._started = False
 
@@ -59,16 +62,16 @@ class DetectionService:
         from .models import CameraSettings, SystemSettings
 
         try:
-            from app_config import AppConfig, configure_torch_runtime
-            from detection_app import DetectionApp
-            from report import add_report_listener
+            from src.app_config import AppConfig, configure_torch_runtime
+            from src.detection_app import DetectionApp
+            from src.report import add_report_listener
 
             rules = SystemSettings.load()
             self.config = replace(AppConfig.from_env(), max_riders=rules.max_riders,
                                   speed_limit_kmh=float(rules.speed_limit_kmh))
             saved = CameraSettings.load()
-            source = VideoSource(saved.mode, saved.video_file if saved.mode == "file" else "",
-                                 saved.live_source if saved.mode == "live" else "")
+            source = (VideoSource("file", saved.video_file, playlist=tuple(saved.playlist))
+                      if saved.mode == "file" else VideoSource("live", live_key=saved.live_source))
             url = source.capture_url(self.config.rtsp_url)
             if url is None:
                 # Saved file or add-on camera no longer exists: fall back to the IP camera
@@ -80,9 +83,12 @@ class DetectionService:
             device, use_half = configure_torch_runtime()
             if device == "cpu":
                 log.warning("CUDA is not available: detection runs on the CPU and will be slow.")
-            self.app = DetectionApp(self.config, url or _UNCONFIGURED_CAMERA, device, use_half)
+            # A video file plays only when staff press play on the live view
+            self.app = DetectionApp(self.config, url or _UNCONFIGURED_CAMERA, device, use_half, start_paused=True,
+                                    on_file_end=self._play_next_file)
             add_report_listener(self._recorder)
             self._apply_calibration()
+            self._apply_settings()
             self.app.start_workers()
             self.state = self.RUNNING
             log.info("Detection running on %s (%s).", device, self.source.describe())
@@ -94,7 +100,7 @@ class DetectionService:
 
     def stop(self):
         """Stop the workers (motorcycles still in view are reported first) and stop listening for reports."""
-        from report import remove_report_listener
+        from src.report import remove_report_listener
 
         if self.app is not None:
             self.app.stop()
@@ -109,6 +115,11 @@ class DetectionService:
         self.config = replace(self.config, max_riders=max_riders, speed_limit_kmh=speed_limit_kmh)
         if self.app is not None:
             self.app.config = self.config
+
+    def failed(self) -> bool:
+        """It cannot recover by itself: loading failed, or the OCR process exited. The next staff login
+        replaces it (staff_logged_in)."""
+        return self.state == self.ERROR or (self.state == self.RUNNING and self.app.ocr.problem() is not None)
 
     def health(self) -> dict:
         """Quick check for the system status page; nothing is started or changed."""
@@ -133,8 +144,9 @@ class DetectionService:
 
     # ----- source control -----
 
-    def switch(self, source: VideoSource) -> None:
-        """Raises ValueError for an invalid choice, RuntimeError while the pipeline is not ready."""
+    def switch(self, source: VideoSource, paused: Optional[bool] = None) -> None:
+        """paused: whether a video file opens paused (None: paused, until staff press play).
+        Raises ValueError for an invalid choice, RuntimeError while the pipeline is not ready."""
         if self.state != self.RUNNING:
             raise RuntimeError(_("Detection is not ready yet"))
         url = source.capture_url(self.config.rtsp_url)
@@ -142,10 +154,32 @@ class DetectionService:
             raise ValueError(_("The selected video file was not found") if source.is_file
                              else _("The selected camera is not available"))
         with self._lock:
-            self.app.switch_source(url or _UNCONFIGURED_CAMERA)
+            self.app.switch_source(url or _UNCONFIGURED_CAMERA, paused)
             self.source = source
             self._apply_calibration()
+            self._apply_settings()
+            self._recorder.new_pass()
         log.info("Source switched to %s.", source.describe())
+
+    def _play_next_file(self) -> None:
+        """A video file played to its end: a playlist goes on with its next file, playing, and after its last
+        file opens its first one, paused. Switched in a thread of its own, since the switch stops the capture
+        thread this is called from."""
+        self._recorder.new_pass()   # it starts over (or goes on with the next file)
+        ended = self.source
+        following = ended.next_in_playlist()
+        if following is None:
+            return
+
+        def play():
+            if self.source is not ended:
+                return   # staff chose another source meanwhile
+            try:
+                self.switch(following, paused=following.video_file == following.playlist[0])
+            except (ValueError, RuntimeError) as e:
+                log.warning("The playlist stops: %s", e)
+
+        threading.Thread(target=play, daemon=True, name="PlaylistNext").start()
 
     def _file_playback(self, error: str):
         if self.state != self.RUNNING or not self.source.is_file:
@@ -157,6 +191,7 @@ class DetectionService:
 
     def seek(self, pos_ms: float) -> None:
         self._file_playback(_("Only a video file can be seeked")).seek(pos_ms)
+        self._recorder.new_pass()
 
     def camera_configured(self) -> bool:
         return self.source.is_configured(self.config.rtsp_url if self.config else "")
@@ -170,29 +205,38 @@ class DetectionService:
         with self.app.det_lock:
             if calib is None:
                 estimator.clear_calibration()
-                return
-            try:
-                estimator.set_calibration(*calib)
-            except ValueError as e:
-                log.warning("Saved speed calibration for %s is invalid (%s).", self.source.key, e)
-                estimator.clear_calibration()
+            else:
+                try:
+                    estimator.set_calibration(*calib)
+                except ValueError as e:
+                    log.warning("Saved speed calibration for %s is invalid (%s).", self.source.key, e)
+                    estimator.clear_calibration()
+        # In a video file the camera may move: the points follow it from the frame they were clicked on
+        reference = calibrations.reference_frame(self.source.key) if estimator.calibrated else None
+        self.app.follow_camera(reference)
 
     def calibration(self) -> dict:
         """Current source's calibration for the editor (points in frame pixels)."""
         running = self.state == self.RUNNING
         saved = calibrations.to_dict(calibrations.saved(self.source.key))
+        if saved and running and self.app.camera_motion is not None:
+            # Where the points are now, on the frame the editor shows, since the camera has moved
+            with self.app.det_lock:
+                saved["points"] = self.app.speed_estimator.image_points() or saved["points"]
         return {"calibrated": bool(running and self.app.speed_estimator.calibrated),
                 "source": self.source.describe(),
                 **(saved or {"points": None, "width_m": None, "length_m": None})}
 
-    def save_calibration(self, points, width_m: float, length_m: float, user) -> None:
-        """Raises ValueError when the points do not form a usable rectangle on the road."""
+    def save_calibration(self, points, width_m: float, length_m: float, user, reference_jpeg=None) -> None:
+        """reference_jpeg: the frame the points were clicked on (followed when the camera of a video file
+        moves). Raises ValueError when the points do not form a usable rectangle on the road."""
         if self.state != self.RUNNING:
             raise RuntimeError(_("Detection is not ready yet"))
         with self.app.det_lock:
             # Validates the shape (convex, in order, not tiny) before anything is stored
             self.app.speed_estimator.set_calibration([tuple(p) for p in points], (width_m, length_m))
-        calibrations.save(self.source.key, points, width_m, length_m, user)
+        calibrations.save(self.source.key, points, width_m, length_m, user, reference_jpeg)
+        self.app.follow_camera(calibrations.reference_frame(self.source.key))
 
     def remove_calibration(self, user) -> None:
         if self.state != self.RUNNING:
@@ -200,11 +244,29 @@ class DetectionService:
         calibrations.remove(self.source.key, user)
         with self.app.det_lock:
             self.app.speed_estimator.clear_calibration()
+        self.app.follow_camera(None)
 
     def reload_calibration(self, source_key: str) -> None:
         """Apply a calibration changed on the system status page, if it is the current source's."""
         if self.state == self.RUNNING and source_key == self.source.key:
             self._apply_calibration()
+
+    # ----- the other settings of each source (see source_settings.py) -----
+
+    def _apply_settings(self) -> None:
+        """Load the current source's settings and give detection its detection zone."""
+        self.settings = source_settings.load(self.source.key)
+        self.app.detection_zone.set_points(self.settings.detection_zone)
+
+    def reload_settings(self, source_key: str) -> None:
+        """Apply settings changed in the video settings menu, if they are the current source's."""
+        if self.state == self.RUNNING and source_key == self.source.key:
+            self._apply_settings()
+
+    def speed_limit_kmh(self) -> float:
+        """Speeds over this are violations on the current source: its own limit, else the system's."""
+        own = self.settings.speed_limit_kmh if self.settings else None
+        return float(own) if own is not None else self.config.speed_limit_kmh
 
     # ----- status -----
 
@@ -237,13 +299,19 @@ class DetectionService:
             "error": self.error,
             "mode": self.source.mode,
             "source": self.source.describe(),
+            # The file playing now (also in a playlist): the live view shows and sets when it was recorded
+            "video_file": self.source.video_file if self.source.is_file else "",
             "signal": self.has_signal(),
             "paused": bool(playback and playback.is_paused()),
             "fps": round(self.app.stats.fps(), 1) if running else 0.0,
             "speed_calibrated": bool(running and self.app.speed_estimator.calibrated),
+            # The current source's (the live view's rules line shows it)
+            "speed_limit_kmh": self.speed_limit_kmh() if running else None,
             "camera_configured": self.camera_configured(),
             "pos_ms": round(pos_ms),
             "total_ms": round(total_ms),
+            # A video file's own frame rate: the most the live view's fps menu offers
+            "source_fps": round(stream.source_fps) if playback else 0,
             "loading": loading,
         }
 
@@ -252,86 +320,123 @@ _service: Optional[DetectionService] = None
 _service_lock = threading.Lock()
 
 
-# Detection runs only while staff have the live view open: the page polls /api/status/ every second and
-# keeps /stream/ open, and stops both when it is left or its tab is hidden. Once neither has been seen
-# for this long, detection stops and the GPU is freed.
-IDLE_STOP_S = 60
-_IDLE_CHECK_EVERY_S = 5
-# A live view page polls every second; one not heard from for this long is no longer open
-_VIEWER_GONE_S = 5
-_last_viewer_t = 0.0
-# Session key -> when that session's live view was last seen, so one account logging out does not stop
-# detection for the others still watching
-_viewers: dict = {}
-_idle_watch: Optional[threading.Thread] = None
+# Detection runs (and holds the GPU) only while staff are logged in: the models load when the first of them
+# logs in and are freed when the last logs out or their session expires. While it runs:
+# - a live camera is detected all the time
+# - a video file only while it plays: it opens paused, staff start and stop it with play / pause, and it
+#   pauses itself at the end
+# Staff already logged in when the server starts are counted too (resume_logged_in_staff, run.py).
+_staff: set = set()   # session keys of the staff logged in
+# Sessions that end without logging out (the browser was closed and the session expired) are noticed this often
+_SESSION_CHECK_S = 30
+_session_watch: Optional[threading.Thread] = None
 
 
-def get_service(viewer: Optional[str] = None) -> DetectionService:
-    """The process-wide service for the live view, started if it is off. Only live-view requests call
-    this: each call counts as staff being on the live view (see IDLE_STOP_S). viewer: the session key
-    of the page asking, if known."""
-    global _service, _last_viewer_t, _idle_watch
+def staff_logged_in(session_key: Optional[str]) -> None:
+    """Staff logged in: start detection if it is off, and keep it on until they log out. The only way it
+    starts; requests of the pages never start it, so one still running while its user logs out cannot
+    start it again. A service that failed is stopped and started again."""
+    global _service
     with _service_lock:
-        _last_viewer_t = time.time()
-        if viewer:
-            _viewers[viewer] = _last_viewer_t
-        if _service is None:
-            _service = DetectionService()
-            _service.start()
-        if _idle_watch is None:
-            _idle_watch = threading.Thread(target=_stop_when_idle, daemon=True, name="DetectionIdle")
-            _idle_watch.start()
-        return _service
+        if session_key:
+            _staff.add(session_key)
+        if _service is not None and _service.failed():
+            log.warning("Detection had failed: starting it again.")
+            # Stopped before the new one loads its models, so the GPU memory is free again
+            _stop_and_free(_service)
+            _service = None
+        _start_service()
+
+
+def _start_service() -> DetectionService:
+    """The service, started if it is off (called holding _service_lock)."""
+    global _service, _session_watch
+    if _service is None:
+        _service = DetectionService()
+        _service.start()
+    if _session_watch is None:
+        _session_watch = threading.Thread(target=_watch_sessions, daemon=True, name="DetectionSessions")
+        _session_watch.start()
+    return _service
 
 
 def current_service() -> Optional[DetectionService]:
-    """The service while detection is on, else None. Never starts it (system status page)."""
+    """The service while detection is on, else None. Never starts it."""
     return _service
+
+
+def stopped_status() -> dict:
+    """DetectionService.status() for while detection is off."""
+    return {"state": DetectionService.STOPPED, "error": "", "mode": "", "source": "", "video_file": "",
+            "signal": False, "paused": False, "fps": 0.0, "speed_calibrated": False, "speed_limit_kmh": None,
+            "camera_configured": False, "pos_ms": 0, "total_ms": 0, "loading": ""}
 
 
 def engine_health() -> dict:
     """State of detection for the system status page, checked without starting it."""
     service = _service
     if service is None:
-        return _health("standby", _("Standby"), _("Starts when staff open the live view"))
+        return _health("standby", _("Standby"), _("Starts when staff log in"))
     return service.health()
 
 
-def _stop_when_idle() -> None:
+def staff_logged_out(session_key: Optional[str]) -> None:
+    """Staff logged out: stop detection at once when no other staff are logged in. A service still loading
+    its models is left to finish, then stopped by the session check."""
+    with _service_lock:
+        _staff.discard(session_key)
+        service = _take_unneeded_service()
+    if service:
+        log.info("Last staff logged out: stopping detection.")
+        _stop_and_free(service)
+
+
+def _take_unneeded_service() -> Optional[DetectionService]:
+    """The service, cleared, when no staff are left and it has finished loading; else None (called
+    holding _service_lock)."""
     global _service
+    service = _service
+    if _staff or service is None or service.state == service.STARTING:
+        return None
+    _service = None
+    return service
+
+
+def _live_sessions(keys) -> set:
+    """The keys among `keys` whose login is still valid and may use the live view (not expired, account
+    still active, password unchanged, permission kept)."""
+    try:
+        return {key for key in keys if session_allows(key, "dashboard.use_dashboard")}
+    finally:
+        close_old_connections()
+
+
+def _watch_sessions() -> None:
+    """Forget staff whose session ended without logging out, and stop detection when none are left."""
     while True:
-        time.sleep(_IDLE_CHECK_EVERY_S)
+        time.sleep(_SESSION_CHECK_S)
         with _service_lock:
-            for key in [k for k, t in _viewers.items() if time.time() - t > IDLE_STOP_S]:
-                del _viewers[key]
-            service = _service
-            # A service still loading its models is left to finish, then stopped on a later check
-            idle = (service is not None and service.state != service.STARTING
-                    and time.time() - _last_viewer_t > IDLE_STOP_S)
-            if idle:
-                _service = None
-        if idle:
-            log.info("No one on the live view for %d s: stopping detection.", IDLE_STOP_S)
+            keys = set(_staff)
+        live = _live_sessions(keys)
+        with _service_lock:
+            _staff.difference_update(keys - live)
+            service = _take_unneeded_service()
+        if service:
+            log.info("No staff logged in: stopping detection.")
             _stop_and_free(service)
 
 
-def stop_on_logout(session_key: Optional[str] = None) -> None:
-    """Stop detection right away when the last staff on the live view log out, instead of waiting
-    IDLE_STOP_S. A service still loading its models is marked idle, so the idle check stops it as soon
-    as it has loaded."""
-    global _service, _last_viewer_t
-    with _service_lock:
-        _viewers.pop(session_key, None)
-        now = time.time()
-        if any(now - t < _VIEWER_GONE_S for t in _viewers.values()):
-            return   # someone else still has the live view open
-        _last_viewer_t = 0.0
-        service = _service
-        if service is None or service.state == service.STARTING:
-            return
-        _service = None
-    log.info("Logged out: stopping detection.")
-    _stop_and_free(service)
+def resume_logged_in_staff() -> None:
+    """On server start: staff whose session is still valid are logged in, so detection starts for them."""
+    from django.contrib.sessions.models import Session
+    from django.utils import timezone
+
+    sessions = Session.objects.filter(expire_date__gt=timezone.now()).values_list("session_key", flat=True)
+    keys = [key for key in sessions if session_allows(key, "dashboard.use_dashboard")]
+    if keys:
+        log.info("%d staff still logged in: starting detection.", len(keys))
+        for key in keys:
+            staff_logged_in(key)
 
 
 def _stop_and_free(service: DetectionService) -> None:

@@ -1,12 +1,13 @@
 import cv2
-from render import draw_text_on_cv_img
+from .render import draw_text_on_cv_img
 
 
 class CalibrationController:
     """Manages interactive ground-plane speed calibration via mouse clicks and keyboard."""
 
-    def __init__(self, speed_estimator, on_pause=None, on_resume=None):
+    def __init__(self, speed_estimator, lock, on_pause=None, on_resume=None):
         self.speed_estimator = speed_estimator
+        self.lock = lock   # DetectionApp.det_lock: the processing thread uses the estimator meanwhile
         self.on_pause = on_pause
         self.on_resume = on_resume
 
@@ -73,7 +74,8 @@ class CalibrationController:
     def _apply_calibration(self, w: float, l: float):
         pts = list(self.pts)
         try:
-            self.speed_estimator.set_calibration(pts, (w, l))
+            with self.lock:
+                self.speed_estimator.set_calibration(pts, (w, l))
         except Exception as e:
             # Let the user re-click instead of leaving the window stuck
             self.pts = []
@@ -91,7 +93,8 @@ class CalibrationController:
         pts = self.pts or []
         for i, p in enumerate(pts):
             cv2.circle(frame, p, 6, (0, 0, 255), -1)
-            cv2.putText(frame, str(i + 1), (p[0] + 8, p[1] - 8), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 0, 255), 2, cv2.LINE_AA)
+            cv2.putText(frame, str(i + 1), (p[0] + 8, p[1] - 8), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 0, 255), 2,
+                        cv2.LINE_AA)
             if i > 0:
                 cv2.line(frame, pts[i - 1], p, (0, 255, 255), 2, cv2.LINE_AA)
         if len(pts) == 4:

@@ -1,10 +1,12 @@
 {% extends "dashboard/base.html" %}
 {% load i18n static dashboard_tags %}
 {% block title %}{% translate "System status" %} · CCTV Control{% endblock %}
+{% block head %}{% include "dashboard/_scripts.html" %}{% endblock %}
 {% block body %}
 {% include "dashboard/_topbar.html" %}
 
-{# data-can-calibrate: the calibration Calibrate / Edit / Remove buttons are shown (the API checks the permission too) #}
+{# data-can-calibrate: the calibration buttons are shown #}
+{# (the API checks the permissions too) #}
 {# inert: nothing on the page can be clicked or focused until system.js has loaded the status (the top bar can) #}
 <main class="search-page system-page" id="system-page" inert aria-busy="true"
       data-can-calibrate="{% if perms.dashboard.manage_calibration %}true{% endif %}">
@@ -71,10 +73,10 @@
     <div class="table-wrap">
       <table class="vehicles">
         <thead>
-          <tr><th>{% translate "File" %}</th><th class="num">{% translate "Size" %}</th><th>{% translate "Last changed" %}</th><th>{% translate "Speed calibration" %}</th></tr>
+          <tr><th>{% translate "File" %}</th><th class="num">{% translate "Size" %}</th><th>{% translate "Last changed" %}</th><th>{% translate "Recorded" %}</th><th>{% translate "Speed calibration" %}</th></tr>
         </thead>
         <tbody id="file-rows" aria-busy="true">
-          {% skeleton_rows 2 4 %}
+          {% skeleton_rows 2 5 %}
         </tbody>
       </table>
       <p class="empty muted" id="no-files" hidden>{% translate "No video files in the input folder" %}</p>
@@ -115,8 +117,4 @@
 
 {% if perms.dashboard.manage_calibration %}{% include "dashboard/_calibration_dialog.html" %}{% endif %}
 
-<meta name="csrf-token" content="{{ csrf_token }}">
-<script src="{% static 'dashboard/common.js' %}" defer></script>
-{% if perms.dashboard.manage_calibration %}<script src="{% static 'dashboard/calibration.js' %}" defer></script>{% endif %}
-<script src="{% static 'dashboard/system.js' %}" defer></script>
 {% endblock %}

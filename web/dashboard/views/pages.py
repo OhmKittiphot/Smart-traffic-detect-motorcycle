@@ -7,8 +7,7 @@ from django.shortcuts import render
 from django.utils.translation import gettext as _
 from django.views.decorators.http import require_GET
 
-from ..engine import get_service
-from ..models import CameraSettings, SystemSettings, UserPreferences, VehicleRecord
+from ..models import STREAM_FPS_CHOICES, CameraSettings, SystemSettings, UserPreferences, VehicleRecord
 from ..serializers import PreferencesSerializer
 from ..sources import list_live_sources, list_video_files
 
@@ -29,7 +28,6 @@ def lockout(request, original_response=None, credentials=None):
 @require_GET
 def dashboard(request):
     """The live view."""
-    get_service(request.session.session_key)   # start detection if it is not running yet
     prefs = UserPreferences.load(request.user)
     return render(request, "dashboard/dashboard.html", {
         "video_files": list_video_files(),
@@ -38,17 +36,21 @@ def dashboard(request):
         "rules": SystemSettings.load(),
         "prefs": prefs,
         "prefs_data": PreferencesSerializer(prefs).data,
+        "stream_fps_choices": STREAM_FPS_CHOICES,
     })
 
 
 def _source_options():
-    """{"live": [...], "file": [...]} of (value, label) for the source dropdown: the IP camera and the add-on
-    cameras, the files in the input folder, and any other source records were saved from (e.g. a file
-    since removed). The value is "<source_mode>:<source_name>", as the records store it and as
-    PlateSearchSerializer.source takes it (add-on cameras are saved under their label, the IP camera as "")."""
+    """{"live": [...], "file": [...], "location": [...]} of (value, label) for the source dropdown: the IP camera
+    and the add-on cameras, the files in the input folder, and any other source records were saved from (e.g.
+    a file since removed), then the locations video files were filmed at. The value is "<source_mode>:<source_name>",
+    as the records store it and as PlateSearchSerializer.source takes it (add-on cameras are saved under their
+    label, the IP camera as ""), or "location:<name>"."""
     names = {"live": {"", *(label for label, _url in list_live_sources().values())}, "file": set(list_video_files())}
     for mode, name in VehicleRecord.objects.order_by().values_list("source_mode", "source_name").distinct():
         names.setdefault(mode, set()).add(name)
+    names["location"] = set(VehicleRecord.objects.exclude(location="").order_by().values_list("location", flat=True)
+                         .distinct())
     label = lambda mode, name: name or (_("IP camera (RTSP)") if mode == "live" else _("Video file"))
     return {mode: [(f"{mode}:{name}", label(mode, name)) for name in sorted(found, key=lambda n: (n != "", n.lower()))]
             for mode, found in names.items()}
@@ -57,7 +59,7 @@ def _source_options():
 def _province_names():
     """(Thai name, English name) of every province for the dropdown: Bangkok first, then the others in
     Thai alphabetical order, as PROVINCE_NAMES_EN lists them (Python cannot sort Thai text correctly)."""
-    from province import PROVINCE_NAMES_EN
+    from src.province import PROVINCE_NAMES_EN
 
     bangkok = "กรุงเทพมหานคร"
     return [(bangkok, PROVINCE_NAMES_EN[bangkok])] + [item for item in PROVINCE_NAMES_EN.items() if item[0] != bangkok]
@@ -97,7 +99,7 @@ def _detection_models(config):
 @require_GET
 def system_status(request):
     """Admin: camera and system health (it only checks detection, it never starts it)."""
-    from app_config import AppConfig
+    from src.app_config import AppConfig
 
     models = _detection_models(AppConfig.from_env())
     return render(request, "dashboard/system.html",
