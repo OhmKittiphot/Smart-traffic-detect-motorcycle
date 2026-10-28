@@ -18,7 +18,7 @@ def _settings_data(service) -> dict:
         "source_key": source.key,
         "source": source.describe(),
         "is_file": source.is_file,
-        "speed_calibrated": service.app.speed_estimator.calibrated,
+        "speed_calibrated": service.app.speed_calibrated,
         "speed_limit_kmh": settings.speed_limit_kmh,   # None: the system's
         "system_speed_limit_kmh": service.config.speed_limit_kmh,
         "detection_zone": settings.detection_zone,

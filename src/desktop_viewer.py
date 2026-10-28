@@ -15,8 +15,7 @@ class DesktopViewer:
     def __init__(self, app):
         self.app = app
         self.calibration = CalibrationController(
-            speed_estimator=app.speed_estimator,
-            lock=app.det_lock,
+            set_calibration=app.set_calibration,
             on_pause=lambda: self._set_paused(True),
             on_resume=lambda: self._set_paused(False),
         )

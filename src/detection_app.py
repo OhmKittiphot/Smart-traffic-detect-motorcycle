@@ -138,6 +138,30 @@ class DetectionApp:
         with self.det_lock:
             self._reset_media_session()
 
+    # ----- speed calibration -----
+
+    @property
+    def speed_calibrated(self) -> bool:
+        return self.speed_estimator.calibrated
+
+    def set_calibration(self, points, world_size) -> None:
+        """Measure speeds on the ground rectangle of these 4 image points and its real (width, length) in
+        meters (see SpeedEstimator.set_calibration). Raises ValueError when they do not form a usable one."""
+        with self.det_lock:
+            self.speed_estimator.set_calibration([tuple(p) for p in points], world_size)
+
+    def clear_calibration(self) -> None:
+        with self.det_lock:
+            self.speed_estimator.clear_calibration()
+
+    def calibration_points(self):
+        """Where the calibration points are on the current frame while the camera is followed (they move with
+        it); None for a fixed camera, where they stay where they were clicked."""
+        if self.camera_motion is None:
+            return None
+        with self.det_lock:
+            return self.speed_estimator.image_points()
+
     # ----- moving camera -----
 
     def follow_camera(self, reference_frame) -> None:

@@ -201,29 +201,26 @@ class DetectionService:
     def _apply_calibration(self) -> None:
         """Give the speed estimator the saved calibration of the current source (or none)."""
         calib = calibrations.for_estimator(self.source.key, self.config)
-        estimator = self.app.speed_estimator
-        with self.app.det_lock:
-            if calib is None:
-                estimator.clear_calibration()
-            else:
-                try:
-                    estimator.set_calibration(*calib)
-                except ValueError as e:
-                    log.warning("Saved speed calibration for %s is invalid (%s).", self.source.key, e)
-                    estimator.clear_calibration()
+        if calib is None:
+            self.app.clear_calibration()
+        else:
+            try:
+                self.app.set_calibration(*calib)
+            except ValueError as e:
+                log.warning("Saved speed calibration for %s is invalid (%s).", self.source.key, e)
+                self.app.clear_calibration()
         # In a video file the camera may move: the points follow it from the frame they were clicked on
-        reference = calibrations.reference_frame(self.source.key) if estimator.calibrated else None
+        reference = calibrations.reference_frame(self.source.key) if self.app.speed_calibrated else None
         self.app.follow_camera(reference)
 
     def calibration(self) -> dict:
         """Current source's calibration for the editor (points in frame pixels)."""
         running = self.state == self.RUNNING
         saved = calibrations.to_dict(calibrations.saved(self.source.key))
-        if saved and running and self.app.camera_motion is not None:
-            # Where the points are now, on the frame the editor shows, since the camera has moved
-            with self.app.det_lock:
-                saved["points"] = self.app.speed_estimator.image_points() or saved["points"]
-        return {"calibrated": bool(running and self.app.speed_estimator.calibrated),
+        if saved and running:
+            # Where the points are now, on the frame the editor shows, when the camera has moved
+            saved["points"] = self.app.calibration_points() or saved["points"]
+        return {"calibrated": bool(running and self.app.speed_calibrated),
                 "source": self.source.describe(),
                 **(saved or {"points": None, "width_m": None, "length_m": None})}
 
@@ -232,9 +229,8 @@ class DetectionService:
         moves). Raises ValueError when the points do not form a usable rectangle on the road."""
         if self.state != self.RUNNING:
             raise RuntimeError(_("Detection is not ready yet"))
-        with self.app.det_lock:
-            # Validates the shape (convex, in order, not tiny) before anything is stored
-            self.app.speed_estimator.set_calibration([tuple(p) for p in points], (width_m, length_m))
+        # Validates the shape (convex, in order, not tiny) before anything is stored
+        self.app.set_calibration(points, (width_m, length_m))
         calibrations.save(self.source.key, points, width_m, length_m, user, reference_jpeg)
         self.app.follow_camera(calibrations.reference_frame(self.source.key))
 
@@ -242,8 +238,7 @@ class DetectionService:
         if self.state != self.RUNNING:
             raise RuntimeError(_("Detection is not ready yet"))
         calibrations.remove(self.source.key, user)
-        with self.app.det_lock:
-            self.app.speed_estimator.clear_calibration()
+        self.app.clear_calibration()
         self.app.follow_camera(None)
 
     def reload_calibration(self, source_key: str) -> None:
@@ -304,7 +299,7 @@ class DetectionService:
             "signal": self.has_signal(),
             "paused": bool(playback and playback.is_paused()),
             "fps": round(self.app.stats.fps(), 1) if running else 0.0,
-            "speed_calibrated": bool(running and self.app.speed_estimator.calibrated),
+            "speed_calibrated": bool(running and self.app.speed_calibrated),
             # The current source's (the live view's rules line shows it)
             "speed_limit_kmh": self.speed_limit_kmh() if running else None,
             "camera_configured": self.camera_configured(),
