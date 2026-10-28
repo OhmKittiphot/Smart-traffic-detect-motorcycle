@@ -9,17 +9,19 @@ from rest_framework.views import APIView
 from .. import calibrations, storage, system_health
 from ..engine import current_service, engine_health
 from ..models import Review, SpeedCalibration, VehicleRecord
-from ..source_settings import recording_start
+from .. import source_settings
 
 
 def _local_time(timestamp: float) -> datetime:
     return datetime.fromtimestamp(timestamp, tz=timezone.get_current_timezone())
 
 
-def _recording_time(name: str) -> dict:
-    """When a video file started recording, and whether staff "set" it or it was read from the "file"."""
-    recorded_at, recorded_from = recording_start(name)
-    return {"recorded_at": recorded_at, "recorded_from": recorded_from}
+def _file_settings(name: str) -> dict:
+    """When a video file started recording, whether staff "set" it or it was read from the "file", and
+    where it was filmed."""
+    settings = source_settings.load(f"file:{name}")
+    recorded_at, recorded_from = source_settings.recording_start(name, settings)
+    return {"recorded_at": recorded_at, "recorded_from": recorded_from, "location": settings.location}
 
 
 class CameraStatusView(APIView):
@@ -56,7 +58,7 @@ class SystemStatusView(APIView):
 
         cameras, checked_at = system_health.cameras(config.rtsp_url)
         cameras = [{**c, **source_info(f"live:{c['key'] or 'ip'}")} for c in cameras]
-        files = [{**f, **source_info(f"file:{f['name']}"), **_recording_time(f["name"]),
+        files = [{**f, **source_info(f"file:{f['name']}"), **_file_settings(f["name"]),
                   "modified": _local_time(f["modified"])}
                  for f in system_health.video_files()]
 

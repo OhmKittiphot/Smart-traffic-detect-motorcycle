@@ -3,7 +3,7 @@
 // Admin system status page: polls /api/system/ (cameras are re-checked by the server every 30 s)
 window.Dashboard.onPage("#system-page", (page) => {
   const POLL_MS = 5000;
-  const { api, el } = window.Dashboard;
+  const { api, el, locationCell } = window.Dashboard;
   const $ = (id) => document.getElementById(id);
 
   const CAMERA_STATES = {
@@ -114,6 +114,7 @@ window.Dashboard.onPage("#system-page", (page) => {
       el("td", { class: "num" }, bytes(f.size)),
       el("td", {}, time(f.modified)),
       recordingCell(f),
+      el("td", {}, locationCell(f)),
       calibrationCell(f, f.name))));
   }
 

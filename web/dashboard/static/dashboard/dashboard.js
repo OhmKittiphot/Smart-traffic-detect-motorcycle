@@ -7,7 +7,7 @@ window.Dashboard.onPage("#stream", (page) => {
   const prefs = JSON.parse(document.getElementById("prefs").textContent);
   const MAX_ROWS = 300;
   const {
-    api, el, units, thumbCell, plateCell, helmetCell, statusCell, watchEvents, watchRecords, openSnapshotsFrom,
+    api, el, units, thumbCell, plateCell, helmetCell, statusCell, locationCell, watchEvents, watchRecords, openSnapshotsFrom,
   } = window.Dashboard;
 
   const $ = (id) => document.getElementById(id);
@@ -153,12 +153,12 @@ window.Dashboard.onPage("#stream", (page) => {
     tr.append(
       el("td", { class: "time-cell" }, r.time, el("small", {}, r.date)),
       el("td", {}, thumbCell(r)),
-      el("td", { class: "plate" }, plateCell(r)),
-      el("td", {}, r.province || "—"),
+      el("td", { class: "plate" }, plateCell(r)),   // with the province: one column less, so the table fits
       el("td", { class: "num" }, r.riders ?? "—"),
-      el("td", {}, helmetCell(r)),
+      el("td", { class: "helmet-cell" }, helmetCell(r)),
       el("td", { class: "num" }, units.speed(r.speed) ?? "—"),
-      el("td", {}, statusCell(r)),
+      el("td", { class: "status-cell" }, statusCell(r)),
+      el("td", {}, locationCell(r)),
     );
     return tr;
   }

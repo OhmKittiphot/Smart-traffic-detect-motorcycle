@@ -1,4 +1,4 @@
-{% load i18n %}
+{% load i18n dashboard_tags %}
 {# The rows of the records list (views.records.vehicle_rows), put into #result-rows by htmx. The parts around #}
 {# the table are sent with them and replace their old copies (hx-swap-oob) #}
 {# A row opens its details on "open-detail", which search.js sends when the row is clicked #}
@@ -27,6 +27,7 @@
   <td>{% include "dashboard/_status_tags.html" %}</td>
   <td>{% include "dashboard/_review_tag.html" %}</td>
   <td class="muted">{{ record.source_name|default:record.get_source_mode_display }}</td>
+  <td>{% if record.location %}<span class="location-cell" title="{{ record.location }}">{{ record.location|first_part }}</span>{% else %}<span class="muted">—</span>{% endif %}</td>
 </tr>
 {% endfor %}
 

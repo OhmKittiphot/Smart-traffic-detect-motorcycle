@@ -35,6 +35,12 @@ def nav_link(context, view_name, label):
     return format_html('<a class="plate-link" href="{}"{}>{}</a>', reverse(view_name), current, label)
 
 
+@register.filter
+def first_part(text):
+    """The part of a comma-separated name before the first comma: a location short enough for a table."""
+    return text.split(",")[0]
+
+
 @register.simple_tag
 def skeleton_rows(rows, cols):
     """Grey placeholder rows shown in a table body until its data loads."""

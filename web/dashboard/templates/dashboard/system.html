@@ -73,10 +73,10 @@
     <div class="table-wrap">
       <table class="vehicles">
         <thead>
-          <tr><th>{% translate "File" %}</th><th class="num">{% translate "Size" %}</th><th>{% translate "Last changed" %}</th><th>{% translate "Recorded" %}</th><th>{% translate "Speed calibration" %}</th></tr>
+          <tr><th>{% translate "File" %}</th><th class="num">{% translate "Size" %}</th><th>{% translate "Last changed" %}</th><th>{% translate "Recorded" %}</th><th>{% translate "Location" %}</th><th>{% translate "Speed calibration" %}</th></tr>
         </thead>
         <tbody id="file-rows" aria-busy="true">
-          {% skeleton_rows 2 5 %}
+          {% skeleton_rows 2 6 %}
         </tbody>
       </table>
       <p class="empty muted" id="no-files" hidden>{% translate "No video files in the input folder" %}</p>

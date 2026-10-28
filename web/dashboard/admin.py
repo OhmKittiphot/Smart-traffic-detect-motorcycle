@@ -8,9 +8,9 @@ from .models import AuditLog, CameraSettings, SpeedCalibration, VehicleRecord
 @admin.register(VehicleRecord)
 class VehicleRecordAdmin(admin.ModelAdmin):
     list_display = ("detected_at", "track_id", "plate_text", "province_text", "riders", "speed_kmh",
-                    "is_violation", "violations", "review", "reviewed_by", "source_name")
-    list_filter = ("is_violation", "review", "source_mode", "detected_at")
-    search_fields = ("plate_text", "province_text")
+                    "is_violation", "violations", "review", "reviewed_by", "source_name", "location")
+    list_filter = ("is_violation", "review", "source_mode", "location", "detected_at")
+    search_fields = ("plate_text", "province_text", "location")
     date_hierarchy = "detected_at"
 
     # Detection results are evidence: viewable and deletable, but not editable

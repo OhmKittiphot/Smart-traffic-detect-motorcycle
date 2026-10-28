@@ -33,6 +33,7 @@
   --bad-text: #ffa0a4;
   --chip-bg: #222b3a;
   --row-flash: rgba(77, 141, 255, .26);
+  --card-shadow: 0 4px 14px rgba(255, 255, 255, .09);   /* a light glow: a dark one would not show on the dark page */
   --radius: 10px;
   --font: "Noto Sans Thai", "Segoe UI", Tahoma, "Leelawadee UI", system-ui, sans-serif;
   --font-small: "Noto Sans Thai Looped", "Segoe UI", Tahoma, "Leelawadee UI", system-ui, sans-serif;
@@ -59,6 +60,7 @@
     --bad-text: #b91c1c;
     --chip-bg: #e4e7ec;
     --row-flash: rgba(37, 99, 235, .16);
+    --card-shadow: 0 4px 12px rgba(0, 0, 0, .12);
     color-scheme: light;
   }
 
@@ -211,7 +213,7 @@ button.plate-link { cursor: pointer; font: inherit; font-size: 13px; font-weight
 /* ---------- layout ---------- */
 /* Video (left) and table (right) sit flat on the page, split by divider lines instead of cards */
 .layout { display: grid; row-gap: 16px; column-gap: 0; padding: 16px 20px 24px;
-  grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr);
   grid-template-areas: "video table" "stats table"; align-items: start; }
 /* The video panel is a container: the seek bar wraps by the panel's width, not the window's */
 .video-panel { grid-area: video; padding-right: 20px; border-bottom: 1px solid var(--border);
@@ -219,7 +221,7 @@ button.plate-link { cursor: pointer; font: inherit; font-size: 13px; font-weight
 .stats { grid-area: stats; padding-right: 20px; }
 .table-panel { grid-area: table; align-self: stretch; padding-left: 20px; border-left: 1px solid var(--border); }
 
-@media (max-width: 1100px) {
+@media (max-width: 1360px) {   /* below this the vehicle table would not fit beside the video */
   .layout { grid-template-columns: minmax(0, 1fr); grid-template-areas: "video" "stats" "table"; }
   .video-panel, .stats { padding-right: 0; }
   .table-panel { padding-left: 0; padding-top: 4px; border-left: 0; border-top: 1px solid var(--border); }
@@ -389,7 +391,7 @@ button.plate-link { cursor: pointer; font: inherit; font-size: 13px; font-weight
 /* ---------- stats ---------- */
 .stats { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
 .stat {
-  background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius); padding: 14px;
+  background: var(--panel); border: 1px solid var(--border); padding: 14px; box-shadow: var(--card-shadow);
   display: grid; gap: 2px;
 }
 .stat-label { font-size: 13px; color: var(--muted); }
@@ -400,7 +402,7 @@ button.plate-link { cursor: pointer; font: inherit; font-size: 13px; font-weight
 
 /* Processing speed chart (fps-chart.js), full width under the violation rules */
 .fps-chart { grid-column: 1 / -1; position: relative; background: var(--panel); border: 1px solid var(--border);
-  border-radius: var(--radius); padding: 10px 14px 6px; }
+  border-radius: var(--radius); padding: 10px 14px 6px; box-shadow: var(--card-shadow); }
 .fps-head {
   display: flex; justify-content: space-between; align-items: baseline; gap: 12px; font-size: 13px;
   & b { font-variant-numeric: tabular-nums; }
@@ -432,7 +434,6 @@ button.plate-link { cursor: pointer; font: inherit; font-size: 13px; font-weight
   background: var(--bad); border-color: var(--bad); color: #fff;
   &:hover { background: #cf3a3f; }
 }
-/* Speed calibration button on the live view: yellow = not calibrated yet, green = calibrated */
 .btn-warn {
   background: var(--warn); border-color: var(--warn); color: #1b1300;
   &:hover:not(:disabled) { filter: brightness(1.08); border-color: var(--warn); }
@@ -452,7 +453,7 @@ button.plate-link { cursor: pointer; font: inherit; font-size: 13px; font-weight
 .dot-bad { background: var(--bad); }
 
 .table-wrap { max-height: calc(100vh - 150px); overflow: auto; border-top: 1px solid var(--border); }
-@media (max-width: 1100px) { .table-wrap { max-height: 70vh; } }
+@media (max-width: 1360px) { .table-wrap { max-height: 70vh; } }
 /* Separate (not collapsed) borders: each line belongs to its cell, so it moves with the rows when new ones
    slide in (dashboard.js printRows); collapsed borders are drawn for the whole table and would stay put */
 .vehicles {
@@ -476,6 +477,23 @@ button.plate-link { cursor: pointer; font: inherit; font-size: 13px; font-weight
 }
 .time-cell small { display: block; color: var(--muted); font-size: 11px; }
 .plate { font-weight: 600; letter-spacing: .02em; white-space: nowrap; }
+.plate-text { display: inline-block; }
+.plate-province { display: block; color: var(--muted); font-size: 11px; font-weight: 400; letter-spacing: 0; }
+/* The live view's table fits its panel without scrolling sideways: cells and tags wrap, the plate photo sits
+   above the plate and the cells are packed closer */
+#vehicles {
+  & :is(th, td) { padding: 6px 5px; white-space: normal; }
+  & td.num, & .helmet-cell .tag { white-space: nowrap; }
+  & .tag { white-space: normal; line-height: 1.4; }
+  /* One helmet count and one status per line, with a gap between them */
+  & :is(.helmet-cell, .status-cell) .tag { display: table; margin: 0; }
+  & :is(.helmet-cell, .status-cell) .tag + .tag { margin-top: 4px; }
+  & .thumb { width: 48px; height: 36px; }
+  & .plate-thumb { max-width: 56px; height: 24px; }
+  & .plate-text { white-space: nowrap; & .muted { white-space: normal; } }   /* a plate number stays whole */
+  & .plate-province { white-space: normal; overflow-wrap: anywhere; }   /* a one-word province ("กรุงเทพมหานคร") would widen the column */
+  & .location-cell { max-width: 5em; }
+}
 .thumb { width: 56px; height: 42px; object-fit: cover; border-radius: 4px; display: block; cursor: zoom-in;
   border: 1px solid var(--border); background: #000; }
 .thumb-btn { padding: 0; border: 0; background: none; cursor: zoom-in; }
@@ -528,6 +546,8 @@ button.plate-link { cursor: pointer; font: inherit; font-size: 13px; font-weight
 .setting-label { flex: 0 0 150px; font-size: 13px; font-weight: 600; }
 .setting-value { font-size: 13px; }
 .location-name { flex: 1; min-width: 0; }
+/* A location in a table: one line, cut short (the whole name in its tooltip) */
+.location-cell { display: inline-block; max-width: 10em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; vertical-align: bottom; }
 .setting-actions { display: flex; gap: 6px; flex-wrap: wrap; }
 .setting-hint { flex: 1 0 100%; padding-left: 162px; font-size: 12px; }
 .setting-check { display: flex; align-items: center; gap: 8px; font-size: 13px; }

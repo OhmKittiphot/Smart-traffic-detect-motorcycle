@@ -332,6 +332,7 @@ class VehicleRecordSerializer(serializers.Serializer):
     violation = serializers.BooleanField(source="is_violation")
     violations = serializers.ListField(child=serializers.CharField(), source="violation_labels")
     source = serializers.SerializerMethodField()
+    location = serializers.CharField()   # where a video file was filmed, "" when not set
     snapshot = serializers.SerializerMethodField()   # True when an evidence photo can be opened
     plate_snapshot = serializers.SerializerMethodField()   # True when a photo of the plate can be opened
     review = serializers.CharField()

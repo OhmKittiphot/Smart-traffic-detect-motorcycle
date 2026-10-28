@@ -285,7 +285,7 @@ msgid "Helmet"
 msgstr "หมวกนิรภัย"
 
 msgid "Helmet %s"
-msgstr "สวมหมวกนิรภัย %s"
+msgstr "สวม %s"
 
 msgid "In use"
 msgstr "กำลังใช้งาน"
@@ -327,7 +327,7 @@ msgid "Needs a video signal"
 msgstr "ต้องมีสัญญาณวิดีโอ"
 
 msgid "No helmet %s"
-msgstr "ไม่สวมหมวกนิรภัย %s"
+msgstr "ไม่สวม %s"
 
 msgid "No motorcycles match this filter"
 msgstr "ไม่มีรถจักรยานยนต์ที่ตรงกับตัวกรองนี้"

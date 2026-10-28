@@ -147,8 +147,8 @@
       <table class="vehicles" id="vehicles" data-filter="{{ prefs.table_filter }}">
         <thead>
           <tr>
-            <th>{% translate "Time" %}</th><th>{% translate "Photo" %}</th><th>{% translate "Plate" %}</th><th>{% translate "Province" %}</th><th class="num">{% translate "Riders" %}</th>
-            <th>{% translate "Helmet" %}</th><th class="num">{% translate "Speed" %}</th><th>{% translate "Status" %}</th>
+            <th>{% translate "Time" %}</th><th>{% translate "Photo" %}</th><th>{% translate "Plate" %}</th><th class="num">{% translate "Riders" %}</th>
+            <th>{% translate "Helmet" %}</th><th class="num">{% translate "Speed" %}</th><th>{% translate "Status" %}</th><th>{% translate "Location" %}</th>
           </tr>
         </thead>
         <tbody id="vehicle-rows"></tbody>
@@ -222,7 +222,7 @@
       <span class="setting-value location-name" id="location-name"></span>
       <button type="button" class="btn btn-sm" id="location-map-btn"><svg class="bi" xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="currentColor" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 16s6-5.686 6-10A6 6 0 0 0 2 6c0 4.314 6 10 6 10m0-7a3 3 0 1 1 0-6 3 3 0 0 1 0 6"/></svg><span>{% translate "Pick on the map" %}</span></button>
       <button type="button" class="btn btn-sm" id="location-clear">{% translate "Remove" %}</button>
-      <small class="setting-hint muted">{% translate "Saved with each motorcycle; the statistics and search can show one location." %}</small>
+      <small class="setting-hint muted">{% translate "Saved with every motorcycle of this file, those saved before too; the statistics and search can show one location." %}</small>
     </div>
     <div class="setting-row" data-file-only>
       <span class="setting-label">{% translate "Played again" %}</span>

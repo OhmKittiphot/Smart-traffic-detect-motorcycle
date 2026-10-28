@@ -183,9 +183,12 @@ window.Dashboard = (() => {
       : el("span", { class: "muted" }, "—");
   }
 
-  // Plate text, with the plate photo beside it when one was saved (opens larger like the evidence photo)
+  // The plate photo when one was saved (opens larger like the evidence photo), and beside it the plate's
+  // letters and numbers with the province under them, as on the plate itself
   function plateCell(r) {
-    const text = r.plate || el("span", { class: "muted" }, gettext("Unreadable"));
+    const text = el("span", { class: "plate-text" },
+      r.plate || el("span", { class: "muted" }, gettext("Unreadable")),
+      r.province ? el("small", { class: "plate-province" }, r.province) : null);
     if (!r.plate_snapshot) return text;
     const src = `/snapshot/${r.id}/plate/`;
     return el("span", { class: "plate-with-photo" },
@@ -205,6 +208,14 @@ window.Dashboard = (() => {
   function statusCell(r) {
     if (!r.violation) return el("span", { class: "tag tag-ok" }, gettext("Normal"));
     return el("span", {}, ...r.violations.map((v) => el("span", { class: "tag tag-bad" }, v)));
+  }
+
+  // Where a video file was filmed: in a table only its first part ("Chalong Krung Road" of
+  // "Chalong Krung Road, Lat Krabang"), the whole name in its tooltip
+  function locationCell(r) {
+    return r.location
+      ? el("span", { class: "location-cell", title: r.location }, r.location.split(",")[0])
+      : el("span", { class: "muted" }, "—");
   }
 
   // ---------- htmx (the records list of the search pages) ----------
@@ -281,6 +292,6 @@ window.Dashboard = (() => {
     });
   }
 
-  return { api, el, units, onPage, thumbCell, plateCell, helmetCell, statusCell, watchEvents, watchRecords,
+  return { api, el, units, onPage, thumbCell, plateCell, helmetCell, statusCell, locationCell, watchEvents, watchRecords,
            openSnapshotsFrom };
 })();

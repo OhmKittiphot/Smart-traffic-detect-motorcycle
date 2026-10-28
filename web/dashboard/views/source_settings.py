@@ -6,7 +6,7 @@ from django.utils.translation import gettext as _
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from ..models import SourceSettings
+from ..models import SourceSettings, VehicleRecord
 from ..serializers import DetectionZoneSerializer, SourceSettingsSerializer
 from ..source_settings import recording_start
 from .common import audit, conflict, running_service
@@ -69,6 +69,10 @@ class SourceSettingsView(APIView):
         serializer.is_valid(raise_exception=True)
         fields = serializer.validated_data
         _save(service, request.user, **fields)
+        if "location" in fields:
+            # Where a file was filmed does not change: its motorcycles saved before get the location too
+            VehicleRecord.objects.filter(source_mode="file", source_name=service.source.video_file) \
+                .update(location=fields["location"])
         audit(request, "source_settings",
               f"{service.source.describe()}: " + ", ".join(f"{name}={value}" for name, value in fields.items()))
         return Response(_settings_data(service))

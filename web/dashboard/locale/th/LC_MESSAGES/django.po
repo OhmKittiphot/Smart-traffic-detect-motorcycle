@@ -249,6 +249,9 @@ msgstr "บันทึกไปกับรถทุกคัน หน้า�
 msgid "Saved with each motorcycle; the statistics and search can show one place."
 msgstr "บันทึกไปกับรถทุกคัน หน้าสถิติและค้นหาเลือกดูทีละสถานที่ได้"
 
+msgid "Saved with every motorcycle of this file, those saved before too; the statistics and search can show one location."
+msgstr "บันทึกไปกับรถทุกคันของไฟล์นี้ รวมคันที่บันทึกไว้ก่อนแล้วด้วย หน้าสถิติและค้นหาเลือกดูทีละสถานที่ได้"
+
 msgid "Saved: %(review)s"
 msgstr "บันทึกแล้ว: %(review)s"
 
