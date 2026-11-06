@@ -1,4 +1,4 @@
-"""Saves each motorcycle the detection pipeline reports as a VehicleRecord, with its evidence photos."""
+# Saves each motorcycle the detection pipeline reports as a VehicleRecord, with its evidence photos.
 import uuid
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -14,8 +14,8 @@ REPEAT_TOLERANCE_S = 1.0
 
 
 class ReportRecorder:
-    """A report listener (src/report.py). It asks the service for the rules, the source and its settings at
-    each report, since they can change while detection runs."""
+    # A report listener (src/report.py). It asks the service for the rules, the source and its settings at
+    # each report, since they can change while detection runs.
 
     def __init__(self, get_config, get_source, get_settings):
         self._get_config = get_config       # -> AppConfig with the current violation rules
@@ -27,11 +27,11 @@ class ReportRecorder:
         self._pass_after_id = None
 
     def new_pass(self) -> None:
-        """The file was opened, seeked, or played to its end: what comes next may be a part played before."""
+        # The file was opened, seeked, or played to its end: what comes next may be a part played before.
         self._pass_after_id = None
 
     def __call__(self, meta: dict, speed_calibrated: bool) -> None:
-        """Called from the processing thread for each motorcycle that left the scene."""
+        # Called from the processing thread for each motorcycle that left the scene.
         from src.report import find_violations, median_speed
 
         from .models import VehicleRecord
@@ -73,9 +73,9 @@ class ReportRecorder:
             close_old_connections()
 
     def _saved_before(self, source, meta: dict) -> bool:
-        """Whether an earlier pass of the file saved this motorcycle: one that left view at about the same
-        time into the clip, and came into view no later (this pass may have started part-way through its
-        time in view, after a seek)."""
+        # Whether an earlier pass of the file saved this motorcycle: one that left view at about the same
+        # time into the clip, and came into view no later (this pass may have started part-way through its
+        # time in view, after a seek).
         from .models import VehicleRecord
 
         start, end = meta["first_seen"], meta["last_seen"]
@@ -86,10 +86,8 @@ class ReportRecorder:
 
 
 def detected_at(source, meta: dict, settings=None) -> datetime:
-    """When the motorcycle passed the camera. In a video file it is the time the file started recording plus
-    the time into the clip it was last seen (its frame times are positions in the clip, in seconds), so the
-    statistics count it on the day and hour it was filmed; without a known recording time, and live, now.
-    settings: the source's SourceSettings, when already loaded."""
+    # When the motorcycle passed: for a video file, the file's recording start + its time in the clip;
+    # otherwise now. settings: the source's SourceSettings, if already loaded.
     from .source_settings import recording_start
 
     if source.is_file:
@@ -100,8 +98,8 @@ def detected_at(source, meta: dict, settings=None) -> datetime:
 
 
 def save_snapshot(crop) -> str:
-    """Save an evidence photo, scaled down to SNAPSHOT_MAX_SIDE to save disk space; returns its path
-    relative to MEDIA_ROOT ('' when there is none)."""
+    # Save an evidence photo, scaled down to SNAPSHOT_MAX_SIDE to save disk space; returns its path
+    # relative to MEDIA_ROOT ('' when there is none).
     if crop is None or not getattr(crop, "size", 0):
         return ""
     h, w = crop.shape[:2]

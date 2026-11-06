@@ -1,7 +1,5 @@
-"""Recorded vehicles: plate search, reviewing and deleting records, violation statistics and evidence photos.
-
-The records list and its details pop-up are answered as HTML that htmx puts into the page (the
-_vehicle_*.html templates); the rest is the JSON API the page's JavaScript reads."""
+# Recorded vehicles: plate search, review, delete, statistics and photos.
+# The records list and details are HTML for htmx; the rest is JSON for the page's JavaScript.
 import calendar
 from datetime import datetime, time, timedelta
 from pathlib import Path
@@ -38,7 +36,7 @@ _REPEAT_ROWS = 8
 # ---------- finding records ----------
 
 def _from_source(records, source):
-    """records saved from `source` (validated, see serializers._known_source); "" keeps them all."""
+    # records saved from `source` (validated, see serializers._known_source); "" keeps them all.
     if source.startswith("location"):
         _location, one_location, name = source.partition(":")
         return records.filter(location=name) if one_location else records.exclude(location="")
@@ -51,7 +49,7 @@ def _from_source(records, source):
 
 
 def _filtered(records, filters):
-    """records narrowed by the list's filters (validated PlateSearchSerializer data)."""
+    # records narrowed by the list's filters (validated PlateSearchSerializer data).
     if filters["violations_only"]:
         records = records.filter(is_violation=True)
     if filters["province"]:
@@ -60,7 +58,7 @@ def _filtered(records, filters):
 
 
 def _plate_matches(q, filters) -> list:
-    """Records whose plate looks like q, best match first (see plate_search.py)."""
+    # Records whose plate looks like q, best match first (see plate_search.py).
     records = _filtered(VehicleRecord.objects.exclude(plate_text="").select_related("reviewed_by"), filters)
     # Score each distinct plate once; a plate seen many times is still one comparison
     plates = records.order_by().values_list("plate_text", flat=True).distinct()
@@ -75,20 +73,20 @@ def _plate_matches(q, filters) -> list:
 
 
 def _all_records(filters):
-    """Every record (unreadable plates too), newest first: the list shown before a plate is typed."""
+    # Every record (unreadable plates too), newest first: the list shown before a plate is typed.
     return _filtered(VehicleRecord.objects.select_related("reviewed_by"), filters)
 
 
 def _first_error(errors) -> str:
-    """The first message of a serializer's errors ({"<field>": ["..."]})."""
+    # The first message of a serializer's errors ({"<field>": ["..."]}).
     return str(next(iter(errors.values()))[0])
 
 
 @require_GET
 def vehicle_rows(request):
-    """The rows of the records list (htmx): vehicles whose plate looks like the query, best match first.
-    With no query, the violations page (browse) lists every record, newest first, a page at a time; the
-    plate search page lists nothing until a plate is typed."""
+    # The rows of the records list (htmx): vehicles whose plate looks like the query, best match first.
+    # With no query, the violations page (browse) lists every record, newest first, a page at a time; the
+    # plate search page lists nothing until a plate is typed.
     query = PlateSearchSerializer(data=request.GET)
     if not query.is_valid():
         # Answered with 200 so that htmx shows the message; HX-Reswap keeps the rows already listed
@@ -123,7 +121,7 @@ def vehicle_rows(request):
 
 @require_GET
 def vehicle_detail(request, pk: int):
-    """The details pop-up of one record (htmx), with the review buttons for staff."""
+    # The details pop-up of one record (htmx), with the review buttons for staff.
     record = get_object_or_404(VehicleRecord.objects.select_related("reviewed_by"), pk=pk)
     return render(request, "dashboard/_vehicle_detail.html", {"record": record})
 
@@ -132,8 +130,8 @@ def vehicle_detail(request, pk: int):
 
 @require_POST
 def review_vehicle(request, pk: int):
-    """Confirm or reject one recorded event (or undo the review), with an optional note (htmx). Answers
-    with the details pop-up again, and the record's new review tag for its row in the list."""
+    # Confirm or reject one recorded event (or undo the review), with an optional note (htmx). Answers
+    # with the details pop-up again, and the record's new review tag for its row in the list.
     record = get_object_or_404(VehicleRecord.objects.select_related("reviewed_by"), pk=pk)
     serializer = ReviewSerializer(data=request.POST)
     if not serializer.is_valid():
@@ -151,8 +149,8 @@ def review_vehicle(request, pk: int):
 
 class VehicleDeleteView(APIView):
     def post(self, request):
-        """Admin: delete the selected records, or every record of the list as filtered on the
-        violations page (all matches of a plate search, not only the rows shown)."""
+        # Admin: delete the selected records, or every record of the list as filtered on the
+        # violations page (all matches of a plate search, not only the rows shown).
         serializer = VehicleDeleteSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         data = serializer.validated_data
@@ -171,7 +169,7 @@ class VehicleDeleteView(APIView):
 # ---------- statistics and photos ----------
 
 def _in_days(first, last, source=""):
-    """Records of `source` detected from the start of local day `first` to the end of local day `last`."""
+    # Records of `source` detected from the start of local day `first` to the end of local day `last`.
     def midnight(day):
         return timezone.make_aware(datetime.combine(day, time.min))
     return _from_source(VehicleRecord.objects, source).filter(detected_at__gte=midnight(first),
@@ -179,7 +177,7 @@ def _in_days(first, last, source=""):
 
 
 def _per_day(first, last, source="") -> list:
-    """Motorcycles and violations of each day from first to last, days without any included."""
+    # Motorcycles and violations of each day from first to last, days without any included.
     counts = {row["day"]: row for row in _in_days(first, last, source)
               .annotate(day=TruncDate("detected_at", tzinfo=timezone.get_current_timezone()))
               .values("day")
@@ -191,7 +189,7 @@ def _per_day(first, last, source="") -> list:
 
 
 def _calendar(month, source="") -> dict:
-    """The calendar of `month` (its first day): motorcycles and violations of each of its days up to today."""
+    # The calendar of `month` (its first day): motorcycles and violations of each of its days up to today.
     today = timezone.localdate()
     last = min(month.replace(day=calendar.monthrange(month.year, month.month)[1]), today)
     return {"month": month.strftime("%Y-%m"), "this_month": today.strftime("%Y-%m"),
@@ -206,9 +204,9 @@ def _stats_query(request) -> dict:
 
 class StatsView(APIView):
     def get(self, request):
-        """Violation statistics for the violations page. The last 7 days always end today; the rest covers
-        the chosen date range: totals, violations by type and per day. The calendar shows the chosen month.
-        All of it counts only the records of the chosen video source, if one is chosen."""
+        # Violation statistics for the violations page. The last 7 days always end today; the rest covers
+        # the chosen date range: totals, violations by type and per day. The calendar shows the chosen month.
+        # All of it counts only the records of the chosen video source, if one is chosen.
         query = _stats_query(request)
         first, last, source = query["start"], query["end"], query["source"]
         today = timezone.localdate()
@@ -238,9 +236,9 @@ class StatsView(APIView):
 
 class RepeatOffendersView(APIView):
     def get(self, request):
-        """Plates with more than one violation in the chosen date range and source, most violations first.
-        Plates OCR read slightly differently count as one motorcycle (plate_search.group_plates); rejected
-        events are left out."""
+        # Plates with more than one violation in the chosen date range and source, most violations first.
+        # Plates OCR read slightly differently count as one motorcycle (plate_search.group_plates); rejected
+        # events are left out.
         query = _stats_query(request)
         violations = (_in_days(query["start"], query["end"], query["source"]).filter(is_violation=True)
                       .exclude(review=Review.REJECTED).exclude(plate_text=""))
@@ -268,7 +266,7 @@ class RepeatOffendersView(APIView):
 
 @require_GET
 def snapshot(request, pk: int, field: str = "snapshot"):
-    """An evidence photo: the motorcycle (field "snapshot") or its licence plate ("plate_snapshot")."""
+    # An evidence photo: the motorcycle (field "snapshot") or its licence plate ("plate_snapshot").
     record = VehicleRecord.objects.filter(pk=pk).only(field).first()
     photo = getattr(record, field) if record is not None else ""
     if not photo:

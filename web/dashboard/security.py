@@ -9,9 +9,9 @@ _SessionStore = import_module(settings.SESSION_ENGINE).SessionStore
 
 
 def session_allows(session_key, perm: str) -> bool:
-    """Whether the login of this session is still valid and has perm. Asked by what outlives its request
-    (the video and event streams, the detection engine): the session may have been logged out or have
-    expired since, its account disabled, its password changed, or the permission taken away."""
+    # Whether the login of this session is still valid and has perm. Asked by what outlives its request
+    # (the video and event streams, the detection engine): the session may have been logged out or have
+    # expired since, its account disabled, its password changed, or the permission taken away.
     if not session_key:
         return False
     # Read again from the database: the request's copy does not see any of those changes. Expired sessions
@@ -21,9 +21,9 @@ def session_allows(session_key, perm: str) -> bool:
 
 
 def client_ip(request):
-    """The browser's IP address, for the audit log and django-axes (AXES_CLIENT_IP_CALLABLE). Behind a
-    reverse proxy (DJANGO_BEHIND_PROXY=1) REMOTE_ADDR is the proxy's own; the proxy adds the browser's address
-    last to X-Forwarded-For (anything before it was sent by the browser itself, so it is not trusted)."""
+    # The browser's IP address, for the audit log and django-axes (AXES_CLIENT_IP_CALLABLE). Behind a
+    # reverse proxy (DJANGO_BEHIND_PROXY=1) REMOTE_ADDR is the proxy's own; the proxy adds the browser's address
+    # last to X-Forwarded-For (anything before it was sent by the browser itself, so it is not trusted).
     if settings.BEHIND_PROXY:
         forwarded = request.META.get("HTTP_X_FORWARDED_FOR", "").split(",")[-1].strip()
         try:

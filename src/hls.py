@@ -13,9 +13,9 @@ def is_hls_url(url: str) -> bool:
 
 
 def playlist_age_s(url: str, timeout: float = 5.0) -> Optional[float]:
-    """Seconds since a live HLS playlist last changed, from the server's own Date and Last-Modified headers
-    (no clock skew with this machine). None when it can't be told: no headers, request failed, or not a
-    media playlist."""
+    # Seconds since a live HLS playlist last changed, from the server's own Date and Last-Modified headers
+    # (no clock skew with this machine). None when it can't be told: no headers, request failed, or not a
+    # media playlist.
     try:
         req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
         with urllib.request.urlopen(req, timeout=timeout) as resp:

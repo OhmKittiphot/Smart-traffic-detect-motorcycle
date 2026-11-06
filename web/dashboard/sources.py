@@ -1,9 +1,5 @@
-"""The video sources detection can show: video files in VIDEO_INPUT_DIR, the IP camera (RTSP_URL in .env)
-and the live cameras of optional add-ons (itic_cameras.py).
-
-Requests only ever name a source (a file name or a camera key); capture URLs come from .env and the add-ons,
-so a request can never make the server open a path or URL of its choice.
-"""
+# Video sources: files in VIDEO_INPUT_DIR, the IP camera (RTSP_URL) and add-on cameras.
+# Requests only name a source; URLs come from .env and add-ons, so a request cannot open any path or URL.
 from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Optional
@@ -17,7 +13,7 @@ IP_CAMERA = "ip"
 
 
 def list_video_files() -> list:
-    """Video file names directly inside VIDEO_INPUT_DIR (no sub-folders, no paths)."""
+    # Video file names directly inside VIDEO_INPUT_DIR (no sub-folders, no paths).
     folder = Path(settings.VIDEO_INPUT_DIR)
     if not folder.is_dir():
         return []
@@ -26,16 +22,16 @@ def list_video_files() -> list:
 
 
 def resolve_video_file(name: str) -> Optional[Path]:
-    """Path of an allowed video file, or None. Only names returned by list_video_files() are accepted,
-    so a crafted name (../, absolute path, other drive) can never reach the file system."""
+    # Path of an allowed video file, or None. Only names returned by list_video_files() are accepted,
+    # so a crafted name (../, absolute path, other drive) can never reach the file system.
     if not name or name not in list_video_files():
         return None
     return Path(settings.VIDEO_INPUT_DIR) / name
 
 
 def list_live_sources() -> dict:
-    """key -> (label, url) of live sources besides the IP camera, from optional add-ons (itic_cameras.py).
-    The IP camera itself is key ''."""
+    # key -> (label, url) of live sources besides the IP camera, from optional add-ons (itic_cameras.py).
+    # The IP camera itself is key ''.
     try:
         from . import itic_cameras
     except ImportError:
@@ -44,7 +40,7 @@ def list_live_sources() -> dict:
 
 
 def rtsp_url() -> str:
-    """The IP camera's URL from .env ('' when not configured)."""
+    # The IP camera's URL from .env ('' when not configured).
     from src.app_config import AppConfig
 
     return AppConfig.from_env().rtsp_url
@@ -52,7 +48,7 @@ def rtsp_url() -> str:
 
 @dataclass(frozen=True)
 class VideoSource:
-    """One video source, as the dashboard chooses it."""
+    # One video source, as the dashboard chooses it.
     mode: str = "live"      # "live" or "file" (SourceMode)
     video_file: str = ""    # mode "file": a name from list_video_files(), the one playing
     live_key: str = ""      # mode "live": '' = IP camera, else a key of list_live_sources()
@@ -61,7 +57,7 @@ class VideoSource:
 
     @classmethod
     def from_key(cls, source_key: str) -> "VideoSource":
-        """The source of a key from .key: "file:<name>", "live:ip" or "live:<add-on key>"."""
+        # The source of a key from .key: "file:<name>", "live:ip" or "live:<add-on key>".
         kind, _, name = source_key.partition(":")
         if kind == "file":
             return cls("file", video_file=name)
@@ -73,22 +69,22 @@ class VideoSource:
 
     @property
     def key(self) -> str:
-        """Identifies the source's camera view, e.g. for its speed calibration."""
+        # Identifies the source's camera view, e.g. for its speed calibration.
         return f"file:{self.video_file}" if self.is_file else f"live:{self.live_key or IP_CAMERA}"
 
     @property
     def live_label(self) -> str:
-        """Label of an add-on camera; '' for the IP camera and files."""
+        # Label of an add-on camera; '' for the IP camera and files.
         extra = list_live_sources().get(self.live_key) if self.live_key else None
         return extra[0] if extra else ""
 
     @property
     def record_name(self) -> str:
-        """Saved as VehicleRecord.source_name: the file name, the add-on camera's label, '' for the IP camera."""
+        # Saved as VehicleRecord.source_name: the file name, the add-on camera's label, '' for the IP camera.
         return self.video_file if self.is_file else self.live_label
 
     def next_in_playlist(self) -> Optional["VideoSource"]:
-        """The same playlist on its file after this one (the first after the last), or None without one."""
+        # The same playlist on its file after this one (the first after the last), or None without one.
         if self.video_file not in self.playlist:
             return None
         following = (self.playlist.index(self.video_file) + 1) % len(self.playlist)
@@ -103,8 +99,8 @@ class VideoSource:
         return f"Live: {self.live_label}" if self.live_key else "Live camera (RTSP)"
 
     def capture_url(self, ip_camera_url: str) -> Optional[str]:
-        """URL or file path to open; '' for the IP camera when it is not configured, None when the file or
-        add-on camera does not exist (any more)."""
+        # URL or file path to open; '' for the IP camera when it is not configured, None when the file or
+        # add-on camera does not exist (any more).
         if self.is_file:
             path = resolve_video_file(self.video_file)
             return str(path) if path else None
@@ -114,19 +110,19 @@ class VideoSource:
         return ip_camera_url or ""
 
     def is_configured(self, ip_camera_url: str) -> bool:
-        """False only for the IP camera without RTSP_URL."""
+        # False only for the IP camera without RTSP_URL.
         return self.is_file or bool(self.live_key or ip_camera_url)
 
 
 def source_keys() -> set:
-    """Keys of every video source that can have a speed calibration (see VideoSource.key)."""
+    # Keys of every video source that can have a speed calibration (see VideoSource.key).
     return ({f"live:{IP_CAMERA}"} | {f"live:{key}" for key in list_live_sources()}
             | {f"file:{name}" for name in list_video_files()})
 
 
 def grab_frame(source_key: str) -> np.ndarray:
-    """One raw frame of a source, opened on its own, so a calibration can be drawn while detection is off.
-    It is the same full-size frame detection reads. Raises RuntimeError when the source sends nothing."""
+    # One raw frame of a source, opened on its own, so a calibration can be drawn while detection is off.
+    # It is the same full-size frame detection reads. Raises RuntimeError when the source sends nothing.
     from src.utils import open_capture
 
     url = VideoSource.from_key(source_key).capture_url(rtsp_url())

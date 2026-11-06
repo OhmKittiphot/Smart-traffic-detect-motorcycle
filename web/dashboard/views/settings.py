@@ -1,4 +1,4 @@
-"""The Settings pop-up of the top bar: violation rules and retention (Admin), preferences and password (everyone)."""
+# The Settings pop-up of the top bar: violation rules and retention (Admin), preferences and password (everyone).
 from django.contrib.auth import update_session_auth_hash
 from rest_framework.response import Response
 from rest_framework.throttling import ScopedRateThrottle
@@ -15,8 +15,8 @@ from .common import audit
 
 class SystemSettingsView(APIView):
     def post(self, request):
-        """Admin: change the violation rules and the retention limits. New rules apply at once when
-        detection is on; new limits apply at the next clean-up."""
+        # Admin: change the violation rules and the retention limits. New rules apply at once when
+        # detection is on; new limits apply at the next clean-up.
         system = SystemSettings.load()
         serializer = SystemSettingsSerializer(system, data=request.data)
         serializer.is_valid(raise_exception=True)
@@ -33,7 +33,7 @@ class SystemSettingsView(APIView):
 
 class SettingsCleanupView(APIView):
     def post(self, request):
-        """Admin: apply the retention limits now instead of waiting for the next scheduled clean-up."""
+        # Admin: apply the retention limits now instead of waiting for the next scheduled clean-up.
         result = storage.clean_up()
         audit(request, "storage_cleanup",
               f"{result['records_deleted']} records, photos of {result['photos_removed']} records")
@@ -42,8 +42,8 @@ class SettingsCleanupView(APIView):
 
 class PreferencesView(APIView):
     def post(self, request):
-        """Save this account's preferences; the Settings pop-up (and the live view's fps menu) send only the
-        fields they show. A new frame rate applies to this account's open live views too."""
+        # Save this account's preferences; the Settings pop-up (and the live view's fps menu) send only the
+        # fields they show. A new frame rate applies to this account's open live views too.
         serializer = PreferencesSerializer(UserPreferences.load(request.user), data=request.data, partial=True)
         serializer.is_valid(raise_exception=True)
         prefs = serializer.save()
@@ -58,7 +58,7 @@ class PasswordView(APIView):
     throttle_scope = "password"
 
     def post(self, request):
-        """Change the password of the logged-in account; this session stays logged in, others end."""
+        # Change the password of the logged-in account; this session stays logged in, others end.
         serializer = PasswordChangeSerializer(data=request.data, context={"user": request.user})
         serializer.is_valid(raise_exception=True)
         request.user.set_password(serializer.validated_data["new_password"])

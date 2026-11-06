@@ -33,8 +33,8 @@ NUMBER_LOOKALIKES = str.maketrans("OoDQIilSsBZz" + _THAI_DIGITS, "000011155822" 
 
 
 def normalize_line(text, lookalikes, valid_char):
-    """Map look-alike characters, drop what a plate never has (vowels, tone marks, punctuation)
-    and mark any other invalid character as UNKNOWN."""
+    # Map look-alike characters, drop what a plate never has (vowels, tone marks, punctuation)
+    # and mark any other invalid character as UNKNOWN.
     text = re.sub(r"[ะ-๏]|[^\w]|_", "", str(text).translate(lookalikes))
     return "".join(ch if re.fullmatch(valid_char, ch) else UNKNOWN for ch in text)
 
@@ -61,16 +61,16 @@ def is_valid_number(text):
 
 
 def plate_sharpness(crop_bgr):
-    """How much detail the plate shows: variance of the Laplacian at a fixed size, so a small,
-    upscaled or motion-blurred plate scores low. Used to weight reads of one plate against each other."""
+    # How much detail the plate shows: variance of the Laplacian at a fixed size, so a small,
+    # upscaled or motion-blurred plate scores low. Used to weight reads of one plate against each other.
     gray = cv2.cvtColor(crop_bgr, cv2.COLOR_BGR2GRAY)
     gray = cv2.resize(gray, (96, 64), interpolation=cv2.INTER_AREA if gray.shape[0] > 64 else cv2.INTER_CUBIC)
     return float(cv2.Laplacian(gray, cv2.CV_64F).var())
 
 
 def cut_line(crop_bgr, band, side_trim=0.0, height=96):
-    """The band of the plate holding one line, enlarged (the recognizer read these small lines
-    better from 96 px than from its own 48 px input height)."""
+    # The band of the plate holding one line, enlarged (the recognizer read these small lines
+    # better from 96 px than from its own 48 px input height).
     h, w = crop_bgr.shape[:2]
     top, bottom = int(h * band[0]), max(int(h * band[1]), int(h * band[0]) + 1)
     left, right = int(w * side_trim), max(int(w * (1 - side_trim)), int(w * side_trim) + 1)
@@ -80,8 +80,8 @@ def cut_line(crop_bgr, band, side_trim=0.0, height=96):
 
 
 def read_plate(rec, crop_bgr):
-    """Read the three lines of one plate crop with a PaddleOCR TextRecognition model.
-    Returns {line: (text, score)}; series and number are normalized and may hold UNKNOWN."""
+    # Read the three lines of one plate crop with a PaddleOCR TextRecognition model.
+    # Returns {line: (text, score)}; series and number are normalized and may hold UNKNOWN.
     lines = [cut_line(crop_bgr, band, 0.0 if name == "province" else LINE_SIDE_TRIM)
              for name, band in LINE_BANDS.items()]
     outputs = rec.predict(lines, batch_size=len(lines))
@@ -99,7 +99,7 @@ def read_plate(rec, crop_bgr):
 
 
 def load_recognizer(model_dir=None, device="gpu"):
-    """The plate recognizer: the fine-tuned model in model_dir when it exists, else PaddleOCR's stock one."""
+    # The plate recognizer: the fine-tuned model in model_dir when it exists, else PaddleOCR's stock one.
     from paddleocr import TextRecognition
 
     if model_dir and os.path.isdir(model_dir):
@@ -110,7 +110,7 @@ def load_recognizer(model_dir=None, device="gpu"):
 
 
 def _configure_paddle() -> None:
-    """Quiet Paddle's logs, and let it share the GPU (set before Paddle is imported)."""
+    # Quiet Paddle's logs, and let it share the GPU (set before Paddle is imported).
     import warnings
 
     os.environ["PADDLE_PDX_ENABLE_MKLDNN_BYDEFAULT"] = "0"
@@ -123,7 +123,7 @@ def _configure_paddle() -> None:
 
 
 def _read_batch(rec, item) -> list:
-    """The reads of the plate crops of one request from the YOLO process (crops too small are skipped)."""
+    # The reads of the plate crops of one request from the YOLO process (crops too small are skipped).
     results = []
     for bbox, crop_bytes, shape, dtype_str, track_id in item["items"]:
         try:
@@ -139,7 +139,7 @@ def _read_batch(rec, item) -> list:
 
 
 def ocr_worker(in_q: mp.Queue, out_q: mp.Queue, model_dir: str = ""):
-    """The OCR process: reads the plate crops sent on in_q and answers on out_q, until it gets None."""
+    # The OCR process: reads the plate crops sent on in_q and answers on out_q, until it gets None.
     _configure_paddle()
     # A process of its own: the main process's logging set-up is not inherited
     setup_console_logging()

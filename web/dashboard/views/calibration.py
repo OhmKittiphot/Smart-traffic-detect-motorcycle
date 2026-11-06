@@ -1,8 +1,5 @@
-"""Speed calibration: 4 points of a rectangle on the road and its real size, saved per video source.
-
-Staff set it on the source the live view is showing (Calibration*View); Admins change or redraw the saved
-calibration of any source from the system status page (SourceCalibration*View), with detection on or off.
-"""
+# Speed calibration: staff calibrate the source the live view shows; admins edit any source's
+# from the system page.
 from django.core.cache import cache
 from django.utils import timezone
 from django.utils.translation import gettext as _, gettext_lazy
@@ -25,13 +22,13 @@ _REDRAW_FRAME_KEEP_S = 60 * 60
 # Cached per user and source, so two people editing one source each save the frame they clicked on
 
 def _frame_size_key(request, source_key) -> str:
-    """Size of the last frame sent for redrawing a source's points, so the points saved for it can be checked."""
+    # Size of the last frame sent for redrawing a source's points, so the points saved for it can be checked.
     return f"calibration-frame-size:{request.user.pk}:{source_key}"
 
 
 def _clicked_frame_key(request, source_key) -> str:
-    """The last frame sent to click a source's points on (JPEG): a video file keeps it with its calibration,
-    so the points can follow a moving camera."""
+    # The last frame sent to click a source's points on (JPEG): a video file keeps it with its calibration,
+    # so the points can follow a moving camera.
     return f"calibration-frame:{request.user.pk}:{source_key}"
 
 
@@ -39,13 +36,13 @@ def _clicked_frame_key(request, source_key) -> str:
 
 class CalibrationView(APIView):
     def get(self, request):
-        """Speed calibration of the current source (points in frame pixels)."""
+        # Speed calibration of the current source (points in frame pixels).
         return Response(running_service().calibration())
 
 
 class CalibrationFrameView(APIView):
     def get(self, request):
-        """The current frame without overlays, as JPEG, for clicking the calibration points on."""
+        # The current frame without overlays, as JPEG, for clicking the calibration points on.
         service = running_service()
         try:
             jpeg = service.frames.raw_jpeg()
@@ -57,7 +54,7 @@ class CalibrationFrameView(APIView):
 
 class CalibrationSaveView(APIView):
     def post(self, request):
-        """Save the 4 points and real size clicked on the current source's frame."""
+        # Save the 4 points and real size clicked on the current source's frame.
         service = running_service()
         frame_size = service.frames.size()
         if frame_size is None:
@@ -80,7 +77,7 @@ class CalibrationSaveView(APIView):
 
 class CalibrationRemoveView(APIView):
     def post(self, request):
-        """Remove the speed calibration of the current source (speeds are no longer measured)."""
+        # Remove the speed calibration of the current source (speeds are no longer measured).
         service = running_service()
         try:
             service.remove_calibration(request.user)
@@ -93,7 +90,7 @@ class CalibrationRemoveView(APIView):
 # ---------- any source (system status page) ----------
 
 def _reload_calibration(source_key):
-    """Apply a calibration changed on the system status page, when detection is on (it loads it on start)."""
+    # Apply a calibration changed on the system status page, when detection is on (it loads it on start).
     service = current_service()
     if service is not None:
         service.reload_calibration(source_key)
@@ -101,7 +98,7 @@ def _reload_calibration(source_key):
 
 class SourceCalibrationView(APIView):
     def post(self, request):
-        """Admin: change the real width and length of a source's saved calibration (not its points)."""
+        # Admin: change the real width and length of a source's saved calibration (not its points).
         serializer = SourceDistancesSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         key, width_m, length_m = (serializer.validated_data[f] for f in ("source_key", "width_m", "length_m"))
@@ -116,8 +113,8 @@ class SourceCalibrationView(APIView):
 
 class SourceCalibrationFrameView(APIView):
     def get(self, request):
-        """Admin: a current frame of a source to redraw its points on. Detection need not be on: the
-        source is opened on its own unless detection is already showing it."""
+        # Admin: a current frame of a source to redraw its points on. Detection need not be on: the
+        # source is opened on its own unless detection is already showing it.
         serializer = SourceKeySerializer(data=request.query_params)
         serializer.is_valid(raise_exception=True)
         key = serializer.validated_data["source_key"]
@@ -140,7 +137,7 @@ class SourceCalibrationFrameView(APIView):
 
 class SourceCalibrationPointsView(APIView):
     def post(self, request):
-        """Admin: save the 4 points (and real size) redrawn on the frame from SourceCalibrationFrameView."""
+        # Admin: save the 4 points (and real size) redrawn on the frame from SourceCalibrationFrameView.
         from src.speed import SpeedEstimator
 
         source = SourceKeySerializer(data=request.data)
@@ -166,7 +163,7 @@ class SourceCalibrationPointsView(APIView):
 
 class SourceCalibrationRemoveView(APIView):
     def post(self, request):
-        """Admin: remove a source's speed calibration (speeds are no longer measured on it)."""
+        # Admin: remove a source's speed calibration (speeds are no longer measured on it).
         serializer = SourceKeySerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         key = serializer.validated_data["source_key"]

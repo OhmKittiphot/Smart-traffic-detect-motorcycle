@@ -1,8 +1,5 @@
-"""Django settings for the CCTV admin dashboard.
-
-Secrets and deployment options come from the project's .env (see web/README.md); safe defaults are used
-when a value is missing: DEBUG off, only localhost allowed, strict cookies.
-"""
+# Django settings. Secrets and options come from .env (see web/README.md); safe defaults when missing:
+# DEBUG off, only localhost allowed, strict cookies.
 import os
 import secrets
 import sys
@@ -35,7 +32,7 @@ def _env_list(name: str, default: str = "") -> list:
 
 
 def _load_secret_key() -> str:
-    """DJANGO_SECRET_KEY from .env, or a random key generated once and kept in web/.secret_key."""
+    # DJANGO_SECRET_KEY from .env, or a random key generated once and kept in web/.secret_key.
     key = os.getenv("DJANGO_SECRET_KEY", "").strip()
     if key:
         return key

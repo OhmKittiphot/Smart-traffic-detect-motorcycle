@@ -10,8 +10,8 @@ OCR_STARTUP_TIMEOUT_S = 120.0
 
 
 class OcrProcess:
-    """The plate OCR worker, run in its own process so PaddleOCR does not share the GIL with detection.
-    Plate crops go in through in_q; reads come back through out_q (see ocr.ocr_worker)."""
+    # The plate OCR worker, run in its own process so PaddleOCR does not share the GIL with detection.
+    # Plate crops go in through in_q; reads come back through out_q (see ocr.ocr_worker).
 
     def __init__(self, model_path: str):
         self.in_q = mp.Queue(maxsize=2)
@@ -20,7 +20,7 @@ class OcrProcess:
         self._started = False
 
     def start(self) -> None:
-        """Start the process and block until it reports ready; raise if it failed or died."""
+        # Start the process and block until it reports ready; raise if it failed or died.
         self._proc.start()
         self._started = True
         log.info("Waiting for OCR Process...")
@@ -40,14 +40,14 @@ class OcrProcess:
         log.warning("[OCR] Not ready after %.0fs; continuing while it loads.", OCR_STARTUP_TIMEOUT_S)
 
     def problem(self):
-        """Why OCR stopped working, or None while it is fine (or not started yet)."""
+        # Why OCR stopped working, or None while it is fine (or not started yet).
         if self._started and not self._proc.is_alive():
             return f"OCR process exited (code {self._proc.exitcode})"
         return None
 
     def release_queues(self) -> None:
-        """Ctrl+C also kills the OCR process; without this, exit waits forever to flush queued crops
-        into its closed pipe and the program never ends."""
+        # Ctrl+C also kills the OCR process; without this, exit waits forever to flush queued crops
+        # into its closed pipe and the program never ends.
         for q in (self.in_q, self.out_q):
             q.cancel_join_thread()
 

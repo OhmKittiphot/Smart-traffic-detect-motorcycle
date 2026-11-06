@@ -1,10 +1,5 @@
-"""The live view's video over WebRTC: the annotated picture (live_frames.py) as a video track that aiortc
-encodes and sends to the browser, instead of one JPEG after another over /stream/. It needs less bandwidth
-and has less delay; /stream/ stays as the fallback where WebRTC cannot connect (live-video.js).
-
-The browser sends an offer (views/webrtc.py) and the server answers it. aiortc runs on asyncio, so one event
-loop runs in a background thread and the views hand their work to it. A connection ends when the browser
-closes it or the viewer's login is no longer valid (security.session_allows)."""
+# Live view video over WebRTC (aiortc): less bandwidth and delay than /stream/, which stays as fallback.
+# aiortc runs in one asyncio loop in a background thread; a connection ends when closed or the login is invalid.
 import asyncio
 import fractions
 import threading
@@ -37,7 +32,7 @@ _peers: dict = {}
 
 
 def _event_loop() -> asyncio.AbstractEventLoop:
-    """The background event loop aiortc runs on, started on first use."""
+    # The background event loop aiortc runs on, started on first use.
     global _loop
     with _loop_lock:
         if _loop is None:
@@ -47,7 +42,7 @@ def _event_loop() -> asyncio.AbstractEventLoop:
 
 
 def _login_ended(session_key) -> bool:
-    """Run in a worker thread: Django's database calls are not allowed on the event loop."""
+    # Run in a worker thread: Django's database calls are not allowed on the event loop.
     try:
         return not session_allows(session_key, "dashboard.use_dashboard")
     finally:
@@ -60,7 +55,7 @@ def _stream_fps(user_id) -> float:
 
 
 class LiveTrack(VideoStreamTrack):
-    """The live view's picture, at the viewer's frame rate (LiveFrames.stream_fps), for as long as the viewer's login is valid."""
+    # The live view's picture, at the viewer's frame rate (LiveFrames.stream_fps), for as long as the viewer's login is valid.
 
     def __init__(self, session_key, user_id, on_end):
         super().__init__()
@@ -73,8 +68,8 @@ class LiveTrack(VideoStreamTrack):
         self._card = None   # shown while detection is off
 
     async def _wait_for_next_frame(self) -> int:
-        """Sleep until the next frame is due; returns its timestamp on the RTP clock. The rate is read every
-        frame, so a new choice in the fps menu applies to open connections."""
+        # Sleep until the next frame is due; returns its timestamp on the RTP clock. The rate is read every
+        # frame, so a new choice in the fps menu applies to open connections.
         now = time.time()
         if self._start is None:
             self._start = self._next = now
@@ -140,8 +135,8 @@ async def _answer(offer_sdp: str, session_key: str, user_id: int) -> dict:
 
 
 def answer(offer_sdp: str, session_key: str, user_id: int) -> dict:
-    """The answer ({"sdp", "type"}) to a browser's offer of a connection that receives the live video.
-    Raises TimeoutError when it takes longer than _ANSWER_TIMEOUT_S (the half-made connection is closed)."""
+    # The answer ({"sdp", "type"}) to a browser's offer of a connection that receives the live video.
+    # Raises TimeoutError when it takes longer than _ANSWER_TIMEOUT_S (the half-made connection is closed).
     future = asyncio.run_coroutine_threadsafe(_answer(offer_sdp, session_key, user_id), _event_loop())
     try:
         return future.result(_ANSWER_TIMEOUT_S)

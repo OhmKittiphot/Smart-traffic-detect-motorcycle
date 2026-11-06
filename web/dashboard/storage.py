@@ -1,18 +1,8 @@
-"""Keeps vehicle records and evidence photos within the disk space the dashboard may use.
-
-run.py runs clean_up() at start and then every CLEANUP_EVERY_H hours; `manage.py cleanup` and the
-settings page run it by hand. Admins set the limits on the settings page (SystemSettings); they start
-from .env (see settings.py):
-
-- RECORD_RETENTION_DAYS: records older than this are deleted with their photos. Confirmed violations are
-  kept: they are evidence, and stay until an admin deletes them.
-- PHOTO_RETENTION_DAYS: normal motorcycles and rejected events lose their photos after this. The record
-  itself (time, plate, counts) stays, so the statistics do not change.
-- MEDIA_MAX_MB: if the photos still take more than this, the oldest photos of records that are not
-  confirmed violations are removed until they fit in 90% of it.
-
-Photo files no record refers to (e.g. after a record was deleted in Django admin) are removed too.
-"""
+# Keeps records and photos within the disk limits (at start, every CLEANUP_EVERY_H hours, or by hand):
+# - RECORD_RETENTION_DAYS: older records are deleted, except confirmed violations
+# - PHOTO_RETENTION_DAYS: normal and rejected records lose their photos (the record stays)
+# - MEDIA_MAX_MB: oldest non-violation photos are removed until they fit in 90% of it
+# Photos no record refers to are removed too.
 import logging
 import shutil
 import threading
@@ -40,13 +30,13 @@ def _media_root() -> Path:
 
 
 def _photo_path(rel: str):
-    """Absolute path of a stored photo, or None for anything outside MEDIA_ROOT."""
+    # Absolute path of a stored photo, or None for anything outside MEDIA_ROOT.
     path = (_media_root() / rel).resolve()
     return path if _media_root() in path.parents else None
 
 
 def delete_photo_files(rel_paths) -> int:
-    """Delete these photos (paths relative to MEDIA_ROOT); returns the bytes freed."""
+    # Delete these photos (paths relative to MEDIA_ROOT); returns the bytes freed.
     freed = 0
     for rel in filter(None, rel_paths):
         path = _photo_path(rel)
@@ -65,8 +55,8 @@ def remove_empty_day_folders() -> None:
 
 
 def delete_records(ids) -> int:
-    """Delete these vehicle records and their photos; returns how many records were deleted.
-    Exactly the given rows go, so records saved meanwhile (and their photos) stay."""
+    # Delete these vehicle records and their photos; returns how many records were deleted.
+    # Exactly the given rows go, so records saved meanwhile (and their photos) stay.
     from .models import VehicleRecord
 
     ids = list(ids)
@@ -81,7 +71,7 @@ def delete_records(ids) -> int:
 
 
 def _drop_photos(records) -> tuple:
-    """Delete the photos of these records but keep the records; returns (records changed, bytes freed)."""
+    # Delete the photos of these records but keep the records; returns (records changed, bytes freed).
     changed = freed = 0
     for record in records:
         freed += delete_photo_files(getattr(record, f) for f in PHOTO_FIELDS)
@@ -92,7 +82,7 @@ def _drop_photos(records) -> tuple:
 
 
 def _remove_orphan_photos() -> int:
-    """Delete photo files no record refers to; returns the bytes freed."""
+    # Delete photo files no record refers to; returns the bytes freed.
     from .models import VehicleRecord
 
     root = _media_root() / "snapshots"
@@ -109,7 +99,7 @@ def _remove_orphan_photos() -> int:
 
 
 def photos_bytes() -> int:
-    """Total size of the stored photos (measured at most once a minute)."""
+    # Total size of the stored photos (measured at most once a minute).
     global _usage_cache
     measured_at, size = _usage_cache
     if size is None or time.time() - measured_at > _USAGE_CACHE_S:
@@ -120,7 +110,7 @@ def photos_bytes() -> int:
 
 
 def usage() -> dict:
-    """Disk space for the system status page, in bytes."""
+    # Disk space for the system status page, in bytes.
     from .models import SystemSettings
 
     db_path = Path(settings.DATABASES["default"]["NAME"])
@@ -133,7 +123,7 @@ def usage() -> dict:
 
 
 def clean_up() -> dict:
-    """Apply the retention rules and the size limit once; returns what was removed."""
+    # Apply the retention rules and the size limit once; returns what was removed.
     global _usage_cache
     from .models import Review, SystemSettings, VehicleRecord
 
@@ -182,7 +172,7 @@ def clean_up() -> dict:
 
 
 def start_cleanup_thread() -> None:
-    """Run clean_up() now and then every CLEANUP_EVERY_H hours, in the background."""
+    # Run clean_up() now and then every CLEANUP_EVERY_H hours, in the background.
     def loop():
         while True:
             try:

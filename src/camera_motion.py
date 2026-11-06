@@ -5,12 +5,9 @@ import numpy as np
 
 
 class CameraMotion:
-    """Follows a moving camera in a video file, so the speed calibration's 4 points stay on the road.
-
-    Each frame is matched to the reference frame the points were clicked on (ORB features + RANSAC
-    homography). When the view has moved too far to match it, the frame is matched to the previous one and
-    the motion is chained on. Returns the homography reference frame -> current frame.
-    """
+    # Keeps the speed calibration's 4 points on the road when the camera moves in a video file.
+    # Each frame is matched to the reference frame (ORB + RANSAC homography); if the view moved too far,
+    # to the previous frame, chaining the motion. Returns the homography reference frame -> current frame.
 
     WORK_WIDTH = 960      # frames are matched at this width (full size is slower and no more accurate)
     MIN_INLIERS = 25      # fewer agreeing matches than this: the match is not trusted
@@ -22,7 +19,7 @@ class CameraMotion:
         self._prev = None   # (features, homography) of the last frame matched, for chaining
 
     def _features(self, frame: np.ndarray):
-        """(keypoints in full-frame pixels as an Nx2 array, descriptors) of a BGR frame."""
+        # (keypoints in full-frame pixels as an Nx2 array, descriptors) of a BGR frame.
         scale = min(1.0, self.WORK_WIDTH / frame.shape[1])
         gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
         if scale < 1.0:
@@ -32,7 +29,7 @@ class CameraMotion:
         return points, descriptors
 
     def _match(self, src, dst) -> Optional[np.ndarray]:
-        """Homography mapping src's features onto dst's, or None when too few of them agree."""
+        # Homography mapping src's features onto dst's, or None when too few of them agree.
         if src[1] is None or dst[1] is None or len(src[1]) < 2 or len(dst[1]) < 2:
             return None
         pairs = self._matcher.knnMatch(src[1], dst[1], k=2)
@@ -49,7 +46,7 @@ class CameraMotion:
         return H
 
     def update(self, frame: np.ndarray) -> Optional[np.ndarray]:
-        """Homography reference frame -> this frame, or None when the frame could not be matched."""
+        # Homography reference frame -> this frame, or None when the frame could not be matched.
         current = self._features(frame)
         H = self._match(self._ref, current)
         if H is None and self._prev is not None:
@@ -60,5 +57,5 @@ class CameraMotion:
         return H
 
     def restart(self) -> None:
-        """Forget the previous frame (after a seek it no longer comes right before the next one)."""
+        # Forget the previous frame (after a seek it no longer comes right before the next one).
         self._prev = None

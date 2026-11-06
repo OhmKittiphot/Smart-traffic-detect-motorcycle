@@ -20,7 +20,7 @@ _MEASURE = ImageDraw.Draw(Image.new("L", (1, 1)))
 
 def draw_text_on_cv_img(img_cv, text, pos, font_size=24, text_color=(255, 255, 255), bg_color=(0, 180, 0),
                         bg_alpha=1.0):
-    """Draw a label in place and return img_cv. Only a small ROI goes through PIL, not the whole frame."""
+    # Draw a label in place and return img_cv. Only a small ROI goes through PIL, not the whole frame.
     x, y = int(pos[0]), int(pos[1])
     font = _load_font(font_size)
 
@@ -58,8 +58,8 @@ def draw_text_on_cv_img(img_cv, text, pos, font_size=24, text_color=(255, 255, 2
 
 def draw_video_overlay(frame, pos_ms: float, total_ms: float, proc_fps: float, paused: bool,
                        show_progress: bool = True):
-    """Draw an overlay showing timestamp, progress bar, and FPS on the frame.
-    The web dashboard has its own seek bar, so it turns the progress bar off."""
+    # Draw an overlay showing timestamp, progress bar, and FPS on the frame.
+    # The web dashboard has its own seek bar, so it turns the progress bar off.
     h, w = frame.shape[:2]
 
     # --- Timestamp & FPS (top-left corner) ---
@@ -93,7 +93,7 @@ def draw_video_overlay(frame, pos_ms: float, total_ms: float, proc_fps: float, p
 
 
 def draw_calibration(frame, points):
-    """Outline the speed calibration rectangle (4 points), where it is on this frame."""
+    # Outline the speed calibration rectangle (4 points), where it is on this frame.
     pts = np.round(np.array(points)).astype(np.int32)
     cv2.polylines(frame, [pts], isClosed=True, color=(21, 204, 250), thickness=2, lineType=cv2.LINE_AA)
     for i, (x, y) in enumerate(pts):
@@ -105,14 +105,14 @@ def draw_calibration(frame, points):
 
 
 def draw_zone(frame, points):
-    """Outline the area motorcycles are detected in."""
+    # Outline the area motorcycles are detected in.
     pts = np.round(np.array(points)).astype(np.int32)
     cv2.polylines(frame, [pts], isClosed=True, color=(246, 130, 59), thickness=2, lineType=cv2.LINE_AA)
     return frame
 
 
 def draw_detections(frame, dets, mc_dets, mc_ids, speeds, helmets, riders=None, max_riders=2):
-    """Draw motorcycle bounding boxes, speed, rider count, helmet status, and license plate detections."""
+    # Draw motorcycle bounding boxes, speed, rider count, helmet status, and license plate detections.
     riders = riders or {}
     for (mx1, my1, mx2, my2), m_conf in mc_dets:
         tid = mc_ids.get((mx1, my1, mx2, my2))

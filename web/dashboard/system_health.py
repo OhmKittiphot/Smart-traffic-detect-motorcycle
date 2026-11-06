@@ -1,4 +1,4 @@
-"""Camera and video file status for the Admin's system status page."""
+# Camera and video file status for the Admin's system status page.
 import socket
 import threading
 import time
@@ -22,7 +22,7 @@ _cache_lock = threading.Lock()
 
 
 def _probe_hls(url: str) -> tuple:
-    """(online, detail) of an HLS stream: its playlist must download and be a playlist."""
+    # (online, detail) of an HLS stream: its playlist must download and be a playlist.
     try:
         request = urllib.request.Request(url, headers=_HEADERS)
         with urllib.request.urlopen(request, timeout=_PROBE_TIMEOUT_S) as response:
@@ -35,7 +35,7 @@ def _probe_hls(url: str) -> tuple:
 
 
 def _probe_rtsp(url: str) -> tuple:
-    """(online, detail) of an RTSP camera: its port must accept a connection."""
+    # (online, detail) of an RTSP camera: its port must accept a connection.
     parts = urlsplit(url)
     try:
         with socket.create_connection((parts.hostname, parts.port or 554), timeout=_PROBE_TIMEOUT_S):
@@ -63,7 +63,7 @@ def _check_cameras(rtsp_url: str) -> list:
 
 
 def cameras(rtsp_url: str) -> tuple:
-    """(results, checked_at) of every camera, re-checked at most every _CAMERA_CHECK_EVERY_S seconds."""
+    # (results, checked_at) of every camera, re-checked at most every _CAMERA_CHECK_EVERY_S seconds.
     with _cache_lock:
         if time.time() - _cache["at"] > _CAMERA_CHECK_EVERY_S:
             _cache["cameras"] = _check_cameras(rtsp_url)
@@ -72,7 +72,7 @@ def cameras(rtsp_url: str) -> tuple:
 
 
 def video_files() -> list:
-    """Name, size and last change of each video file the staff can choose (see engine.list_video_files)."""
+    # Name, size and last change of each video file the staff can choose (see engine.list_video_files).
     folder = Path(settings.VIDEO_INPUT_DIR)
     files = []
     for name in list_video_files():

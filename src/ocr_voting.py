@@ -6,14 +6,8 @@ UNKNOWN = "?"
 
 
 def vote_line(reads):
-    """Vote one plate line over several reads of the same plate.
-
-    reads: (text, score, weight) per read, where text may hold UNKNOWN characters. The length with the
-    most total weight wins first, so a read that lost or gained a character cannot shift the others;
-    then each position takes the character with the most weight among the reads of that length.
-    Returns (text, confidence): confidence is how much those reads agree, averaged over the
-    positions, times the best score among them. The text holds UNKNOWN where no read was valid.
-    """
+    # Votes one plate line over (text, score, weight) reads: the length with the most weight wins, then each
+    # position takes its most-weighted character. Returns (text, confidence); UNKNOWN where no read was valid.
     reads = [(text, score, weight) for text, score, weight in reads if text and weight > 0]
     if not reads:
         return "", 0.0
@@ -43,7 +37,7 @@ def vote_line(reads):
 
 
 def vote_temporal_strings(candidates):
-    """Pick the whole string read most often over time (ties go to the higher total confidence)."""
+    # Pick the whole string read most often over time (ties go to the higher total confidence).
     counts = Counter()
     confidence = Counter()
     for text, score in candidates:

@@ -1,4 +1,4 @@
-"""The HTML pages. Their data comes from the API views; these only render the page around it."""
+# The HTML pages. Their data comes from the API views; these only render the page around it.
 from pathlib import Path
 
 from django.conf import settings
@@ -18,7 +18,7 @@ class LoginView(auth_views.LoginView):
 
 
 def lockout(request, original_response=None, credentials=None):
-    """django-axes: too many failed logins for this username + IP."""
+    # django-axes: too many failed logins for this username + IP.
     return render(request, "dashboard/login.html", {
         "locked_out": True,
         "cooloff_minutes": int(settings.AXES_COOLOFF_TIME.total_seconds() // 60),
@@ -27,7 +27,7 @@ def lockout(request, original_response=None, credentials=None):
 
 @require_GET
 def dashboard(request):
-    """The live view."""
+    # The live view.
     prefs = UserPreferences.load(request.user)
     return render(request, "dashboard/dashboard.html", {
         "video_files": list_video_files(),
@@ -41,11 +41,8 @@ def dashboard(request):
 
 
 def _source_options():
-    """{"live": [...], "file": [...], "location": [...]} of (value, label) for the source dropdown: the IP camera
-    and the add-on cameras, the files in the input folder, and any other source records were saved from (e.g.
-    a file since removed), then the locations video files were filmed at. The value is "<source_mode>:<source_name>",
-    as the records store it and as PlateSearchSerializer.source takes it (add-on cameras are saved under their
-    label, the IP camera as ""), or "location:<name>"."""
+    # Source dropdown options: {"live": [...], "file": [...], "location": [...]} of (value, label).
+    # value is "<source_mode>:<source_name>" as records store it, or "location:<name>".
     names = {"live": {"", *(label for label, _url in list_live_sources().values())}, "file": set(list_video_files())}
     for mode, name in VehicleRecord.objects.order_by().values_list("source_mode", "source_name").distinct():
         names.setdefault(mode, set()).add(name)
@@ -57,8 +54,8 @@ def _source_options():
 
 
 def _province_names():
-    """(Thai name, English name) of every province for the dropdown: Bangkok first, then the others in
-    Thai alphabetical order, as PROVINCE_NAMES_EN lists them (Python cannot sort Thai text correctly)."""
+    # (Thai name, English name) of every province for the dropdown: Bangkok first, then the others in
+    # Thai alphabetical order, as PROVINCE_NAMES_EN lists them (Python cannot sort Thai text correctly).
     from src.province import PROVINCE_NAMES_EN
 
     bangkok = "กรุงเทพมหานคร"
@@ -67,19 +64,19 @@ def _province_names():
 
 @require_GET
 def plate_search(request):
-    """Plate search on its own."""
+    # Plate search on its own.
     return render(request, "dashboard/search.html", {"provinces": _province_names(), "sources": _source_options()})
 
 
 @require_GET
 def violations(request):
-    """Violation statistics, with the plate search under them."""
+    # Violation statistics, with the plate search under them.
     return render(request, "dashboard/violations.html",
                   {"provinces": _province_names(), "sources": _source_options()})
 
 
 def _detection_models(config):
-    """The models detection loads (AppConfig paths) and what each one is for, for the system status page."""
+    # The models detection loads (AppConfig paths) and what each one is for, for the system status page.
     def found(path):   # AppConfig paths are relative to the project root
         return (Path(settings.PROJECT_DIR) / path).exists()
 
@@ -98,7 +95,7 @@ def _detection_models(config):
 
 @require_GET
 def system_status(request):
-    """Admin: camera and system health (it only checks detection, it never starts it)."""
+    # Admin: camera and system health (it only checks detection, it never starts it).
     from src.app_config import AppConfig
 
     models = _detection_models(AppConfig.from_env())

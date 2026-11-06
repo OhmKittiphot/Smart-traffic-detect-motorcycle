@@ -1,14 +1,6 @@
-"""Fuzzy licence plate search: finds a plate even where OCR misread or missed some of it.
-
-A plate is split into its series ('6ขน') and its number ('690'), and each part is compared on its own with
-an edit distance in which swapping two characters that look alike on a plate (บ/ป, ด/ต, 3/8 ...) costs
-less than swapping two different ones; a '?' stored in a plate (a character OCR could not read) matches
-anything at a small cost. A part only one side has is left out, because OCR often reads the number line
-alone: '6มก65' finds '65', and '690' finds '6ขน 690'.
-
-Several plates can be searched at once, separated by commas ('1กข987, 2847'); a stored plate then scores
-its best match against any of them.
-"""
+# Fuzzy plate search that tolerates OCR mistakes.
+# Series and number are compared separately by edit distance; look-alike characters (บ/ป, 3/8) cost less and '?'
+# matches anything. A part only one side has is skipped. Several plates can be searched, comma-separated.
 import re
 from functools import lru_cache
 
@@ -35,8 +27,8 @@ _THAI_DIGITS = str.maketrans("๐๑๒๓๔๕๖๗๘๙", "0123456789")
 
 
 def _pair_costs() -> dict:
-    """{(a, b): cost} of every pair of plate characters costing less than 1 (see normalize()); a table, so
-    the edit distance below looks a pair up instead of calling a function for each one."""
+    # {(a, b): cost} of every pair of plate characters costing less than 1 (see normalize()); a table, so
+    # the edit distance below looks a pair up instead of calling a function for each one.
     chars = "0123456789" + "".join(map(chr, range(ord("ก"), ord("ฮ") + 1)))
     costs = {(c, c): 0.0 for c in chars + UNKNOWN}
     for c in chars:
@@ -50,25 +42,25 @@ _PAIR_COSTS = _pair_costs()
 
 
 def normalize(text: str) -> str:
-    """Plate characters only: Thai consonants, digits and '?' (spaces, dashes and vowels dropped)."""
+    # Plate characters only: Thai consonants, digits and '?' (spaces, dashes and vowels dropped).
     return re.sub(r"[^0-9ก-ฮ?]", "", str(text).translate(_THAI_DIGITS))
 
 
 def normalize_query(text: str) -> str:
-    """What the user typed, as plate characters; '?' is not a wildcard there, so it is dropped too."""
+    # What the user typed, as plate characters; '?' is not a wildcard there, so it is dropped too.
     return normalize(text).replace(UNKNOWN, "")
 
 
 def split_queries(text: str) -> list:
-    """The plates in a search, split at commas, without blanks or repeats: '1กข987, 2847,' -> ['1กข987', '2847']."""
+    # The plates in a search, split at commas, without blanks or repeats: '1กข987, 2847,' -> ['1กข987', '2847'].
     return list(dict.fromkeys(part.strip() for part in str(text).split(",") if part.strip()))
 
 
 @lru_cache(maxsize=200_000)
 def split_plate(text: str) -> tuple:
-    """(series, number), normalized: '6ขน 690' -> ('6ขน', '690'), '6มก65' -> ('6มก', '65'),
-    '7793' -> ('', '7793'). Stored plates are 'series number'; typed ones may lack the space.
-    Cached: the same stored plates are split again on every search."""
+    # (series, number), normalized: '6ขน 690' -> ('6ขน', '690'), '6มก65' -> ('6มก', '65'),
+    # '7793' -> ('', '7793'). Stored plates are 'series number'; typed ones may lack the space.
+    # Cached: the same stored plates are split again on every search.
     parts = str(text).split()
     if len(parts) == 2:
         return normalize(parts[0]), normalize(parts[1])
@@ -77,8 +69,8 @@ def split_plate(text: str) -> tuple:
 
 
 def _distance(query: str, plate: str, partial: bool) -> float:
-    """Weighted edit distance. partial: the query may start and end anywhere in the plate.
-    The cost of a character pair is symmetric, so the two may be passed either way round."""
+    # Weighted edit distance. partial: the query may start and end anywhere in the plate.
+    # The cost of a character pair is symmetric, so the two may be passed either way round.
     cost = _PAIR_COSTS.get
     prev = [0.0] * (len(plate) + 1) if partial else [float(j) for j in range(len(plate) + 1)]
     for i, q in enumerate(query, 1):
@@ -93,8 +85,8 @@ def _distance(query: str, plate: str, partial: bool) -> float:
 
 @lru_cache(maxsize=200_000)
 def _part_similarity(a: str, b: str, partial: bool) -> float:
-    """0..1 for one part of a plate. partial: the shorter one may match anywhere inside the longer one.
-    Cached: many plates share their series or their number, so each pair is compared once."""
+    # 0..1 for one part of a plate. partial: the shorter one may match anywhere inside the longer one.
+    # Cached: many plates share their series or their number, so each pair is compared once.
     score = 1.0 - _distance(a, b, partial=False) / max(len(a), len(b))
     if partial and len(a) != len(b):
         short, long = sorted((a, b), key=len)
@@ -103,8 +95,8 @@ def _part_similarity(a: str, b: str, partial: bool) -> float:
 
 
 def similarity(query: tuple, plate: tuple) -> float:
-    """0..1, how likely `plate` is the plate the user typed; both are (series, number) from split_plate().
-    The series may be typed in part ('ขน' for '6ขน'); the number must match as a whole ('65' is not '650')."""
+    # 0..1, how likely `plate` is the plate the user typed; both are (series, number) from split_plate().
+    # The series may be typed in part ('ขน' for '6ขน'); the number must match as a whole ('65' is not '650').
     (q_series, q_number), (series, number) = query, plate
     total = weight = 0.0
     if q_series and series:
@@ -122,10 +114,8 @@ def similarity(query: tuple, plate: tuple) -> float:
 
 
 def group_plates(counts: dict, min_score: float) -> list:
-    """Plates that are most likely one motorcycle read slightly differently by OCR, as lists headed by the
-    most frequent spelling; counts is {plate: times seen}. Only whole plates (series and number) are grouped,
-    since a number alone could be any of many motorcycles, and a plate with an unread '?' only joins a group.
-    A plate is compared with the head of each group, not with every other plate."""
+    # Groups whole plates that are likely one motorcycle read differently by OCR, each group headed by its
+    # most seen spelling. counts is {plate: times seen}; a plate with '?' only joins a group.
     heads, groups = [], []
     for plate in sorted(counts, key=lambda p: (-counts[p], p)):
         parts = split_plate(plate)
@@ -141,8 +131,8 @@ def group_plates(counts: dict, min_score: float) -> list:
 
 
 def rank_plates(query: str, plates, min_score: float) -> dict:
-    """{plate: score} of the plates scoring at least min_score. query may hold several plates separated by
-    commas; each plate scores its best match against any of them."""
+    # {plate: score} of the plates scoring at least min_score. query may hold several plates separated by
+    # commas; each plate scores its best match against any of them.
     queries = [tuple(part.replace(UNKNOWN, "") for part in split_plate(q)) for q in split_queries(query)]
     scores = {}
     for plate in plates:

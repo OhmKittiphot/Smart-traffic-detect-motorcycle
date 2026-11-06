@@ -16,7 +16,6 @@ from .utils import setup_console_logging
 
 
 def select_source(config: AppConfig) -> str:
-    #Show a menu for the user to select the video source
     print("\n" + "=" * 50)
     print("Motorcycle Rider, Helmet & License Plate Detection")
     print("=" * 50)
@@ -56,7 +55,7 @@ def select_source(config: AppConfig) -> str:
             sys.exit(0)
         else:
             print("Please enter 1 or 2")
-    
+
 
 if __name__ == "__main__":
     mp.freeze_support()

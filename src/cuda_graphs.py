@@ -1,15 +1,6 @@
-"""Running a model's forward pass as a CUDA graph.
-
-On this project's GPU (RTX 3050 Laptop) the models are held back by the CPU, not the GPU: launching their
-hundreds of small kernels one at a time takes longer than running them. Measured: YOLO26n at 640 takes 18 ms
-for one frame and about the same for four; EfficientNet-B0 takes 13 ms for any batch of 1 to 8 crops. A CUDA
-graph records those launches once and replays them all with a single call: 4.8 ms for the same YOLO frame,
-with the same boxes.
-
-A graph only works for the input shape it was recorded with, so one is recorded for each shape the model
-gets often enough (record_after calls), up to max_graphs per model; other shapes run as before. Batches of
-crops are padded up to one of a few sizes (split_batch) to keep the shapes few.
-"""
+# Runs a model's forward pass as a CUDA graph. On this GPU the models wait on the CPU launching many
+# small kernels one by one; a graph replays them in one call (one YOLO frame: 18 ms -> 4.8 ms).
+# A graph fits one input shape, so only common shapes get one and crop batches are padded to a few sizes.
 import torch
 
 from .utils import log
@@ -19,15 +10,15 @@ BATCH_SIZES = (1, 2, 4, 8)
 
 
 def split_batch(items):
-    """items (a list or a tensor) in parts of at most BATCH_SIZES[-1], each with the size from BATCH_SIZES
-    it is to be padded up to: 11 items -> (8 items, 8), (3 items, 4)."""
+    # items (a list or a tensor) in parts of at most BATCH_SIZES[-1], each with the size from BATCH_SIZES
+    # it is to be padded up to: 11 items -> (8 items, 8), (3 items, 4).
     for start in range(0, len(items), BATCH_SIZES[-1]):
         part = items[start:start + BATCH_SIZES[-1]]
         yield part, next(size for size in BATCH_SIZES if size >= len(part))
 
 
 def _clone(value):
-    """A copy of a model output (tensors, possibly nested in tuples, lists and dicts)."""
+    # A copy of a model output (tensors, possibly nested in tuples, lists and dicts).
     if torch.is_tensor(value):
         return value.clone()
     if isinstance(value, (list, tuple)):
@@ -38,14 +29,8 @@ def _clone(value):
 
 
 class GraphedForward:
-    """Calls forward(x) through CUDA graphs, one per shape and dtype of x.
-
-    Each call copies x into the graph's own input tensor, replays the graph and returns a copy of its output
-    (the next replay overwrites it). after(output), if given, runs on that copy: the part of a model that a
-    graph cannot hold. The graphs of one model share their memory, which is safe since they run one at a time.
-    keep(), if given, returns tensors that the model keeps outside its forward pass and a graph reads; each
-    graph holds on to the ones it was recorded with, so they are not freed while it may still be replayed.
-    """
+    # Calls forward(x) through one CUDA graph per shape and dtype of x and returns a copy of the output.
+    # after(output) runs the part a graph cannot hold; keep() returns outside tensors a graph reads (kept alive with it).
 
     def __init__(self, forward, after=None, keep=None, record_after: int = 2, max_graphs: int = 8):
         self.forward = forward
@@ -101,7 +86,7 @@ class GraphedForward:
 
 
 def graph_yolo(yolo) -> None:
-    """Run an ultralytics YOLO model, loaded on a CUDA device, through CUDA graphs (see GraphedForward)."""
+    # Run an ultralytics YOLO model, loaded on a CUDA device, through CUDA graphs (see GraphedForward).
     net = yolo.model   # the DetectionModel that ultralytics' predict() calls
     head = net.model[-1]
     # The head keeps its anchor grid in an attribute and replaces it whenever the input shape (batch size

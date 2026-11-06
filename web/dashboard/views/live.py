@@ -1,4 +1,4 @@
-"""The live view: its video stream, the source it shows and playback, and the table of vehicles passing."""
+# The live view: its video stream, the source it shows and playback, and the table of vehicles passing.
 import time
 
 from django.http import StreamingHttpResponse
@@ -22,8 +22,8 @@ _PAGE_ROWS = 10
 
 class VehicleListView(APIView):
     def get(self, request):
-        """The latest rows, newest first, that the table starts with; with ?before=<id>, the rows older
-        than that one (Load more). "more" says whether older rows are left."""
+        # The latest rows, newest first, that the table starts with; with ?before=<id>, the rows older
+        # than that one (Load more). "more" says whether older rows are left.
         records = VehicleRecord.objects.select_related("reviewed_by")
         before = request.query_params.get("before", "")
         if before:
@@ -37,7 +37,7 @@ class VehicleListView(APIView):
 
 class VehicleClearView(APIView):
     def post(self, request):
-        """Delete every vehicle record and its evidence snapshot (Delete all of the live view, for staff)."""
+        # Delete every vehicle record and its evidence snapshot (Delete all of the live view, for staff).
         deleted = storage.delete_records(VehicleRecord.objects.values_list("id", flat=True))
         audit(request, "clear_vehicles", f"{deleted} records")
         return Response({"deleted": deleted})
@@ -45,7 +45,7 @@ class VehicleClearView(APIView):
 
 class SourceView(APIView):
     def post(self, request):
-        """Switch to a video file or a live camera, and remember the choice for the next start."""
+        # Switch to a video file or a live camera, and remember the choice for the next start.
         serializer = SourceSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         data = serializer.validated_data
@@ -70,7 +70,7 @@ class SourceView(APIView):
 
 class PauseView(APIView):
     def post(self, request):
-        """Pause or resume the video file: {"paused": true/false} sets it, {} flips it."""
+        # Pause or resume the video file: {"paused": true/false} sets it, {} flips it.
         serializer = PauseSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         service = running_service()
@@ -84,7 +84,7 @@ class PauseView(APIView):
 
 class SeekView(APIView):
     def post(self, request):
-        """Jump to a position in the video file."""
+        # Jump to a position in the video file.
         serializer = SeekSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         try:
@@ -96,7 +96,7 @@ class SeekView(APIView):
 
 @require_GET
 def stream(request):
-    """MJPEG stream of the annotated video (or the No Signal card)."""
+    # MJPEG stream of the annotated video (or the No Signal card).
     session_key = request.session.session_key
     user_id = request.user.pk
 

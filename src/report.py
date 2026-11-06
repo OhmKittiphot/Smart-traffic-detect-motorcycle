@@ -17,14 +17,14 @@ def remove_report_listener(fn: Callable[[Dict[str, Any], bool], None]) -> None:
 
 
 def median_speed(meta: Dict[str, Any]) -> Optional[float]:
-    """Median of the smoothed readings; robust to a few bad frames at the edges of the view."""
+    # Median of the smoothed readings; robust to a few bad frames at the edges of the view.
     speeds = meta.get("speeds") or []
     return sorted(speeds)[len(speeds) // 2] if speeds else None
 
 
 def find_violations(meta: Dict[str, Any], speed_calibrated: bool, max_riders: int,
                     speed_limit_kmh: float) -> List[str]:
-    """Violation codes for a finished motorcycle: NO_HELMET, OVERLOAD, SPEEDING."""
+    # Violation codes for a finished motorcycle: NO_HELMET, OVERLOAD, SPEEDING.
     violations = []
     helmet = meta.get("helmet")
     if helmet is not None and helmet[1] > 0:
@@ -38,7 +38,7 @@ def find_violations(meta: Dict[str, Any], speed_calibrated: bool, max_riders: in
 
 
 def format_motorcycle_report(meta: Dict[str, Any], speed_calibrated: bool) -> str:
-    """Summary printed once a motorcycle has passed (its track ended)."""
+    # Summary printed once a motorcycle has passed (its track ended).
     if meta.get("plate_text"):
         plate_str = f"{meta['plate_text']} {meta.get('province_text') or 'Province not found'}"
     else:

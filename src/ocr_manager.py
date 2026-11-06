@@ -6,7 +6,7 @@ from .ocr_voting import vote_line, vote_temporal_strings
 
 
 class OCRManager:
-    """Manages OCR caching, history, and voting for license plates, bound to track_id."""
+    # Manages OCR caching, history, and voting for license plates, bound to track_id.
 
     def __init__(
         self,
@@ -31,7 +31,7 @@ class OCRManager:
         self.bbox_last_request_time: Dict[Tuple[int, int, int, int], float] = {}
 
     def reset(self) -> None:
-        """Clear caches and vote history so a new video loop starts clean."""
+        # Clear caches and vote history so a new video loop starts clean.
         self.track_cache.clear()
         self.track_vote_history.clear()
         self.track_last_request_time.clear()
@@ -45,7 +45,7 @@ class OCRManager:
         now: float,
         track_id: Optional[int] = None,
     ) -> Tuple[str, float]:
-        """Retrieve cached OCR result by track_id if available, otherwise by bbox distance."""
+        # Retrieve cached OCR result by track_id if available, otherwise by bbox distance.
         # 1. Primary lookup: track_id
         if track_id is not None and track_id in self.track_cache:
             cached = self.track_cache[track_id]
@@ -86,7 +86,7 @@ class OCRManager:
         bbox: Tuple[int, int, int, int],
         now: float,
     ) -> bool:
-        """Determine whether OCR is needed for this track or bbox."""
+        # Determine whether OCR is needed for this track or bbox.
         if track_id is not None:
             cached = self.track_cache.get(track_id)
             if cached is not None:
@@ -117,7 +117,7 @@ class OCRManager:
         bbox: Tuple[int, int, int, int],
         now: float,
     ) -> None:
-        """Record the timestamp of an OCR request to enforce interval throttling."""
+        # Record the timestamp of an OCR request to enforce interval throttling.
         if track_id is not None:
             self.track_last_request_time[track_id] = now
         else:
@@ -134,7 +134,7 @@ class OCRManager:
         province_text: str = "",
         complete: bool = False,
     ) -> None:
-        """Update the cache with a new voted OCR result; complete = both the series and the number are known."""
+        # Update the cache with a new voted OCR result; complete = both the series and the number are known.
         # Always maintain bbox fallback cache
         for k in [k for k, v in self.bbox_cache.items() if k != bbox and now - v[2] > self.cache_ttl_s]:
             del self.bbox_cache[k]
@@ -181,13 +181,8 @@ class OCRManager:
         now: float,
         track_id: Optional[int] = None,
     ) -> Tuple[str, str, float, str, float]:
-        """Vote the plate over the recent reads of this track (or of this bbox when there is no track_id).
-
-        read is one OCR worker result. Each read counts with its recognition score times the square
-        root of the plate's sharpness, so close, sharp frames outweigh small or blurred ones.
-        Returns (series, number, plate_conf, province, province_conf); a line that did not vote out
-        valid is "" (plate_conf then covers only the valid one).
-        """
+        # Votes the plate over recent reads of this track (or bbox), each weighted by score * sqrt(sharpness).
+        # Returns (series, number, plate_conf, province, province_conf); a line with no valid vote is "".
         cutoff = now - self.cache_ttl_s
         histories, key = (self.track_vote_history, track_id) if track_id is not None else (self.bbox_vote_history, bbox)
         history = [entry for entry in histories.get(key, []) if entry[1] >= cutoff]
@@ -210,7 +205,7 @@ class OCRManager:
         return series, number, plate_conf, province, province_conf
 
     def prune_inactive_tracks(self, active_track_ids: set, now: float) -> None:
-        """Prune track cache and vote history for tracks that are no longer active and have exceeded TTL."""
+        # Prune track cache and vote history for tracks that are no longer active and have exceeded TTL.
         cutoff = now - self.cache_ttl_s
         for tid in list(self.track_cache.keys()):
             if tid not in active_track_ids:

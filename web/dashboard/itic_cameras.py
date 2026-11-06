@@ -1,8 +1,5 @@
-"""Add-on: public road CCTV of the iTIC Foundation (Chachoengsao) as extra live sources.
-
-The dashboard lists these next to the IP camera (RTSP_URL) under "Live camera". To remove the add-on, delete
-this file: the dropdown then offers only the IP camera, and a saved iTIC choice falls back to it on restart.
-"""
+# Add-on: iTIC Foundation (Chachoengsao) road CCTV as extra live sources.
+# Delete this file to remove it; a saved iTIC choice then falls back to the IP camera.
 
 # Cameras that served video when checked (ccs04, ccs10, ccs11 and ccs15 did not). Closest motorcycle views:
 # ccs01, ccs05 (traffic light queue), ccs13, ccs14

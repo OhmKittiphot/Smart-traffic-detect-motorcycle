@@ -21,7 +21,7 @@ _STD = np.array([0.229, 0.224, 0.225], dtype=np.float32)
 
 
 def build_model(pretrained: bool = False) -> nn.Module:
-    """EfficientNet-B0 backbone with one 3-way head per rider position."""
+    # EfficientNet-B0 backbone with one 3-way head per rider position.
     weights = torchvision.models.EfficientNet_B0_Weights.IMAGENET1K_V1 if pretrained else None
     model = torchvision.models.efficientnet_b0(weights=weights)
     in_features = model.classifier[1].in_features
@@ -33,7 +33,7 @@ def build_model(pretrained: bool = False) -> nn.Module:
 
 
 def letterbox(img_bgr: np.ndarray, size: int = INPUT_SIZE) -> np.ndarray:
-    """Resize keeping aspect ratio and pad to a square (rider layout depends on geometry)."""
+    # Resize keeping aspect ratio and pad to a square (rider layout depends on geometry).
     h, w = img_bgr.shape[:2]
     scale = size / max(h, w)
     nw, nh = max(1, int(round(w * scale))), max(1, int(round(h * scale)))
@@ -45,14 +45,14 @@ def letterbox(img_bgr: np.ndarray, size: int = INPUT_SIZE) -> np.ndarray:
 
 
 def to_tensor(img_bgr: np.ndarray) -> torch.Tensor:
-    """One letterboxed crop as the model's input (training); RiderClassifier does the same for a whole batch
-    on the GPU."""
+    # One letterboxed crop as the model's input (training); RiderClassifier does the same for a whole batch
+    # on the GPU.
     rgb = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2RGB).astype(np.float32) / 255.0
     return torch.from_numpy(((rgb - _MEAN) / _STD).transpose(2, 0, 1).copy())
 
 
 def decode_logits(logits: torch.Tensor) -> torch.Tensor:
-    """(N, 15) logits -> (N, 5, 3) probabilities. The driver is always present."""
+    # (N, 15) logits -> (N, 5, 3) probabilities. The driver is always present.
     probs = logits.view(-1, len(POSITIONS), NUM_STATES).float().softmax(-1)
     driver = probs[:, 0].clone()
     driver[:, EMPTY] = 0.0
@@ -71,7 +71,7 @@ def summarize(states: List[int]) -> Dict:
 
 
 class RiderClassifier:
-    """Predicts rider count and helmet use per position from motorcycle crops."""
+    # Predicts rider count and helmet use per position from motorcycle crops.
 
     def __init__(self, weights_path: str, device: str = "cpu", use_half: bool = False):
         self.device = torch.device(device)
@@ -86,13 +86,13 @@ class RiderClassifier:
         self.forward = GraphedForward(self.model) if self.on_gpu else self.model
 
     def _to_batch(self, crops_bgr: List[np.ndarray]) -> torch.Tensor:
-        """The crops letterboxed (on the CPU) and normalized as RGB (on the device), like to_tensor()."""
+        # The crops letterboxed (on the CPU) and normalized as RGB (on the device), like to_tensor().
         pixels = torch.from_numpy(np.stack([letterbox(c) for c in crops_bgr])).to(self.device)
         rgb = pixels.flip(-1).permute(0, 3, 1, 2).to(self.dtype) / 255.0   # (N, H, W, BGR) -> (N, RGB, H, W)
         return (rgb - self.mean) / self.std
 
     def _logits(self, batch: torch.Tensor) -> torch.Tensor:
-        """The model's output for a batch; on a GPU in padded parts, for its CUDA graphs (split_batch)."""
+        # The model's output for a batch; on a GPU in padded parts, for its CUDA graphs (split_batch).
         if not self.on_gpu:
             return self.forward(batch)
         parts = []
@@ -103,7 +103,7 @@ class RiderClassifier:
 
     @torch.inference_mode()
     def predict_probs(self, crops_bgr: List[np.ndarray]) -> np.ndarray:
-        """Return (N, 5, 3) per-position state probabilities."""
+        # Return (N, 5, 3) per-position state probabilities.
         if not crops_bgr:
             return np.zeros((0, len(POSITIONS), NUM_STATES), dtype=np.float32)
         return decode_logits(self._logits(self._to_batch(crops_bgr))).cpu().numpy()

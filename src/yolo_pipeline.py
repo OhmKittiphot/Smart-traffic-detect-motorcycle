@@ -10,8 +10,8 @@ from .utils import log, log_error, merge_related_boxes
 
 
 class YoloPipeline:
-    """What happens to each frame: detect motorcycles, plates and riders (detectors.py), track the
-    motorcycles, count riders, measure speeds, report the motorcycles that left, and send new plates to OCR."""
+    # What happens to each frame: detect motorcycles, plates and riders (detectors.py), track the
+    # motorcycles, count riders, measure speeds, report the motorcycles that left, and send new plates to OCR.
 
     def __init__(self, config, device, use_half, tracker, speed_estimator, ocr_manager, ocr_in_q, det_lock,
                  zone):
@@ -32,19 +32,19 @@ class YoloPipeline:
         self.heads = HeadDetector(config, device, use_half)
 
     def warmup(self, frame_shape=(1080, 1920, 3)):
-        """Run every model once on a blank frame so CUDA kernels load before playback starts
-        (the first real inference otherwise takes several seconds)."""
+        # Run every model once on a blank frame so CUDA kernels load before playback starts
+        # (the first real inference otherwise takes several seconds).
         frame = np.zeros(frame_shape, dtype=np.uint8)
         for model in (self.plates, self.motorcycles, self.heads, self.rider_classification):
             model.warmup(frame)
 
     def reset(self):
-        """Drop per-track rider votes (track IDs restart with the media session)."""
+        # Drop per-track rider votes (track IDs restart with the media session).
         self.rider_classification.reset()
 
     def process_frame(self, frame, frame_t: float, frame_gen: int, current_media_gen: int):
-        """Runs the detection pipeline for a single frame; returns the plates found with their cached OCR
-        text, [(box, text, conf)]."""
+        # Runs the detection pipeline for a single frame; returns the plates found with their cached OCR
+        # text, [(box, text, conf)].
         with torch.inference_mode():
             mc_bboxes = self.zone.keep(self.motorcycles.detect(frame))
             # Needs the motorcycles first: in "roi" mode plates are only searched inside them
@@ -86,7 +86,7 @@ class YoloPipeline:
 
     @staticmethod
     def _plate_crops(frame, plate_boxes) -> list:
-        """[(box, crop)] of each plate, nearby fragments merged and with 10% padding around the crop."""
+        # [(box, crop)] of each plate, nearby fragments merged and with 10% padding around the crop.
         h, w = frame.shape[:2]
         boxes = [b for b in plate_boxes if (b[2] - b[0]) < w * 0.4 and (b[3] - b[1]) < h * 0.4]
         crops = []
@@ -98,8 +98,8 @@ class YoloPipeline:
         return crops
 
     def _read_plates(self, frame, frame_t: float, frame_gen: int, plate_boxes) -> list:
-        """Attach each plate to its motorcycle, keep its photo, and send the plates that need a (new) read
-        to the OCR process. Returns [(box, cached text, cached conf)] for drawing."""
+        # Attach each plate to its motorcycle, keep its photo, and send the plates that need a (new) read
+        # to the OCR process. Returns [(box, cached text, cached conf)] for drawing.
         current_dets, ocr_needed = [], []
         with self.det_lock:
             for bb, crop in self._plate_crops(frame, plate_boxes):

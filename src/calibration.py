@@ -3,7 +3,7 @@ from .render import draw_text_on_cv_img
 
 
 class CalibrationController:
-    """Manages interactive ground-plane speed calibration via mouse clicks and keyboard."""
+    # Manages interactive ground-plane speed calibration via mouse clicks and keyboard.
 
     def __init__(self, set_calibration, on_pause=None, on_resume=None):
         self.set_calibration = set_calibration   # DetectionApp.set_calibration(points, (width_m, length_m))
@@ -87,7 +87,7 @@ class CalibrationController:
         self.end()
 
     def draw(self, frame):
-        """Draw calibration points, lines, and instructions on the frame."""
+        # Draw calibration points, lines, and instructions on the frame.
         pts = self.pts or []
         for i, p in enumerate(pts):
             cv2.circle(frame, p, 6, (0, 0, 255), -1)

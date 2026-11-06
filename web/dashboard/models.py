@@ -10,7 +10,7 @@ class SourceMode(models.TextChoices):
 
 
 class CameraSettings(models.Model):
-    """The selected video source (a single row, pk=1); restored when the server restarts."""
+    # The selected video source (a single row, pk=1); restored when the server restarts.
 
     mode = models.CharField(max_length=8, choices=SourceMode.choices, default=SourceMode.LIVE)
     # File name inside VIDEO_INPUT_DIR, never a path
@@ -32,9 +32,8 @@ class CameraSettings(models.Model):
 
 
 class SystemSettings(models.Model):
-    """Settings Admins change on the settings page (a single row, pk=1).
-
-    The retention limits start from .env (settings.py); the violation rules start from src/app_config.py."""
+    # Settings Admins change on the settings page (a single row, pk=1).
+    # The retention limits start from .env (settings.py); the violation rules start from src/app_config.py.
 
     speed_limit_kmh = models.PositiveSmallIntegerField(default=80)   # 0 = speed is not a violation
     max_riders = models.PositiveSmallIntegerField(default=2)
@@ -64,13 +63,13 @@ class TableFilter(models.TextChoices):
 
 
 class Units(models.TextChoices):
-    """How speeds and distances are shown. They are always stored in metric; the page converts them."""
+    # How speeds and distances are shown. They are always stored in metric; the page converts them.
     METRIC = "metric", _("Metric (km/h, m)")
     IMPERIAL = "imperial", _("Imperial (mph, ft)")
 
 
 class Language(models.TextChoices):
-    """Language of the dashboard pages; each name is written in its own language."""
+    # Language of the dashboard pages; each name is written in its own language.
     EN = "en", "English"
     TH = "th", "ไทย"
 
@@ -83,7 +82,7 @@ STREAM_FPS_CHOICES = (10, 15, 25, 30, 60)
 
 
 class UserPreferences(models.Model):
-    """How the live view looks and behaves for one staff account."""
+    # How the live view looks and behaves for one staff account.
 
     user = models.OneToOneField(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="preferences")
     table_filter = models.CharField(max_length=10, choices=TableFilter.choices, default=TableFilter.ALL)
@@ -108,13 +107,9 @@ class UserPreferences(models.Model):
 
 
 class SpeedCalibration(models.Model):
-    """Ground-plane speed calibration of one video source (each camera view needs its own).
-
-    points: 4 image points in frame pixels, order far-left, far-right, near-right, near-left.
-    width_m: real distance between points 1-2, length_m: between points 2-3.
-    reference_frame: video files only, the frame (JPEG) the points were clicked on, so they can follow a
-    moving camera (src/camera_motion.py).
-    A row with points = null means the calibration was removed on purpose."""
+    # Speed calibration of one video source.
+    # points: 4 frame-pixel points (far-left, far-right, near-right, near-left); width_m: points 1-2, length_m: 2-3.
+    # reference_frame: video files only, the JPEG the points were clicked on. points = null: removed on purpose.
 
     source_key = models.CharField(max_length=300, unique=True)
     points = models.JSONField(null=True, blank=True)
@@ -129,8 +124,8 @@ class SpeedCalibration(models.Model):
 
 
 class SourceSettings(models.Model):
-    """What staff set for one video source in the live view's video settings menu (source_settings.py).
-    A source without a row uses the defaults below."""
+    # What staff set for one video source in the live view's video settings menu (source_settings.py).
+    # A source without a row uses the defaults below.
 
     source_key = models.CharField(max_length=300, unique=True)   # VideoSource.key, like SpeedCalibration
     # Speeds over this are violations on this source; None = the system's speed limit (SystemSettings)
@@ -163,14 +158,14 @@ class Violation(models.TextChoices):
 
 
 class Review(models.TextChoices):
-    """An admin's verdict on a recorded event, set from the plate search page."""
+    # An admin's verdict on a recorded event, set from the plate search page.
     PENDING = "pending", _("Not reviewed")
     CONFIRMED = "confirmed", _("Confirmed")
     REJECTED = "rejected", _("Rejected")
 
 
 class VehicleRecord(models.Model):
-    """A motorcycle that passed the camera (one row per finished track)."""
+    # A motorcycle that passed the camera (one row per finished track).
 
     detected_at = models.DateTimeField(db_index=True)
     # When the row was written; differs from detected_at for video files recorded earlier, and is what the
@@ -221,7 +216,7 @@ class VehicleRecord(models.Model):
 
 
 class AuditLog(models.Model):
-    """Who changed what from the dashboard, and from where."""
+    # Who changed what from the dashboard, and from where.
 
     created_at = models.DateTimeField(auto_now_add=True, db_index=True)
     user = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, on_delete=models.SET_NULL)
@@ -237,8 +232,8 @@ class AuditLog(models.Model):
 
 
 class Access(models.Model):
-    """No table: only holds the permissions that open the dashboard's own pages.
-    They are given to groups (roles) in Django admin and checked with user.has_perm() in middleware.py."""
+    # No table: only holds the permissions that open the dashboard's own pages.
+    # They are given to groups (roles) in Django admin and checked with user.has_perm() in middleware.py.
 
     class Meta:
         managed = False

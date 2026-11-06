@@ -25,7 +25,7 @@ _STALE_RECHECK_S = 15.0
 
 @dataclass
 class _CaptureLoop:
-    """What the capture loop keeps from one frame to the next."""
+    # What the capture loop keeps from one frame to the next.
     cap: cv2.VideoCapture
     clock: Optional[RealtimeClock]   # video files: plays them in real time
     pacer: Optional[LivePacer]       # HLS: spreads the frames that arrive in bursts
@@ -36,11 +36,8 @@ class _CaptureLoop:
 
 
 class VideoStream:
-    """Reads a video file or a live camera (RTSP / HLS) in a background thread.
-
-    frames hands each frame to processing and display (FrameExchange); playback controls a video file
-    (Playback). This class owns the capture thread: opening, reconnecting, pacing and end of file.
-    """
+    # Reads a video file or live camera (RTSP / HLS) in a background thread: opening, reconnecting,
+    # pacing and end of file. Frames go out through frames (FrameExchange); playback controls a video file.
 
     def __init__(self, video_camera: str, display_fps: float = 30.0, on_end=None, initial_generation: int = 0,
                  on_seek=None, start_paused: bool = False):
@@ -114,8 +111,8 @@ class VideoStream:
             time.sleep(0.2)
 
     def _wait_for_fresh_playlist(self) -> None:
-        """Block while an HLS playlist has stopped updating. Opening it anyway would replay its last few
-        segments (old video, re-detected and re-reported) and then stall, over and over."""
+        # Block while an HLS playlist has stopped updating. Opening it anyway would replay its last few
+        # segments (old video, re-detected and re-reported) and then stall, over and over.
         if not self._is_hls:
             return
         logged = False
@@ -138,7 +135,7 @@ class VideoStream:
         return open_capture(self.video_camera)
 
     def _reopen(self, cap, delay: float):
-        """Release the capture, wait `delay` seconds, and open the source again."""
+        # Release the capture, wait `delay` seconds, and open the source again.
         try:
             cap.release()
         except Exception as e:
@@ -149,8 +146,8 @@ class VideoStream:
     # ----- file playback -----
 
     def _apply_seek(self, cap) -> bool:
-        """Perform a pending seek. Starts a new media generation, so tracks from before the jump are
-        dropped, and holds playback until the first frame after it has been processed."""
+        # Perform a pending seek. Starts a new media generation, so tracks from before the jump are
+        # dropped, and holds playback until the first frame after it has been processed.
         target = self.playback.take_seek()
         if target is None:
             return False
@@ -161,7 +158,7 @@ class VideoStream:
         return True
 
     def _rewind_at_end(self, cap) -> None:
-        """Like a video player: back to the first frame, paused, instead of looping."""
+        # Like a video player: back to the first frame, paused, instead of looping.
         log.info("[Video] End of video. Back to the start, paused.")
         cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
         self.playback.rewind_paused()
@@ -176,7 +173,7 @@ class VideoStream:
                 log_error("Capture", e)
 
     def _hold_for_processing(self, generation: int) -> None:
-        """Block (without advancing the video) until frame generation `generation` was processed."""
+        # Block (without advancing the video) until frame generation `generation` was processed.
         self.playback.holding = True
         deadline = time.time() + _HOLD_TIMEOUT_S
         try:
@@ -214,7 +211,7 @@ class VideoStream:
                     pass
 
     def _make_pacing(self, cap):
-        """(clock, pacer): a real-time clock for files, a pacer for HLS, neither for RTSP."""
+        # (clock, pacer): a real-time clock for files, a pacer for HLS, neither for RTSP.
         if self.is_video_file:
             source_fps = self._read_fps(cap)
             total_ms = cap.get(cv2.CAP_PROP_FRAME_COUNT) / source_fps * 1000.0
@@ -271,7 +268,7 @@ class VideoStream:
                 loop.pacer.wait()
 
     def _reconnect(self, loop, message: str) -> None:
-        """Open the source again after a wait that doubles on each failure (reset by the next good frame)."""
+        # Open the source again after a wait that doubles on each failure (reset by the next good frame).
         log.warning(message, loop.reconnect_delay)
         loop.cap = self._reopen(loop.cap, loop.reconnect_delay)
         loop.reconnect_delay = min(loop.reconnect_delay * 2, _RECONNECT_MAX_S)
@@ -281,8 +278,8 @@ class VideoStream:
             loop.clock.restart()
 
     def _after_failed_grab(self, loop) -> bool:
-        """A frame could not be read: reconnect a live stream, rewind a file that ended. False when capture
-        must stop (a file with no frame at all)."""
+        # A frame could not be read: reconnect a live stream, rewind a file that ended. False when capture
+        # must stop (a file with no frame at all).
         if not loop.clock:
             self._reconnect(loop, "[RTSP] Stream read failed. Reconnecting in %.0fs...")
             return True
@@ -303,7 +300,7 @@ class VideoStream:
         return True
 
     def _publish(self, loop, frame) -> float:
-        """Hand a frame to processing and display. Returns its position in a video file (ms; 0 for live)."""
+        # Hand a frame to processing and display. Returns its position in a video file (ms; 0 for live).
         if loop.reconnect_delay > _RECONNECT_MIN_S:
             log.info("[Capture] Source recovered.")
         loop.reconnect_delay = _RECONNECT_MIN_S

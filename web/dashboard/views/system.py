@@ -1,5 +1,5 @@
-"""The system status page (Admin): detection, cameras, video files, storage and records.
-Detection is only checked from here, never started."""
+# The system status page (Admin): detection, cameras, video files, storage and records.
+# Detection is only checked from here, never started.
 from datetime import datetime
 
 from django.utils import timezone
@@ -17,8 +17,8 @@ def _local_time(timestamp: float) -> datetime:
 
 
 def _file_settings(name: str) -> dict:
-    """When a video file started recording, whether staff "set" it or it was read from the "file", and
-    where it was filmed."""
+    # When a video file started recording, whether staff "set" it or it was read from the "file", and
+    # where it was filmed.
     settings = source_settings.load(f"file:{name}")
     recorded_at, recorded_from = source_settings.recording_start(name, settings)
     return {"recorded_at": recorded_at, "recorded_from": recorded_from, "location": settings.location}
@@ -26,8 +26,8 @@ def _file_settings(name: str) -> dict:
 
 class CameraStatusView(APIView):
     def get(self, request):
-        """Admin: only whether each live camera answers, for the camera notifications (notify.js).
-        Uses the same check as the system status page, so it is cheap to ask often."""
+        # Admin: only whether each live camera answers, for the camera notifications (notify.js).
+        # Uses the same check as the system status page, so it is cheap to ask often.
         from src.app_config import AppConfig
 
         cameras, checked_at = system_health.cameras(AppConfig.from_env().rtsp_url)
@@ -40,7 +40,7 @@ class CameraStatusView(APIView):
 
 class SystemStatusView(APIView):
     def get(self, request):
-        """Admin: detection engine, cameras, video files and stored records (polled every few seconds)."""
+        # Admin: detection engine, cameras, video files and stored records (polled every few seconds).
         from src.app_config import AppConfig
 
         config = AppConfig.from_env()

@@ -1,11 +1,5 @@
-"""Server-Sent Events: the server pushes to the page instead of the page asking every few seconds.
-
-- records: new records as they are saved. The live view's table gets every record; the notifications of
-  other pages only violations.
-- status: the live view's engine state, playback position and today's counts, every second.
-
-Each open stream holds one server thread (run.py), and ends once its login is no longer valid
-(security.session_allows: logged out, expired, account disabled, password changed or permission removed)."""
+# Server-Sent Events: records (new records; pages other than the live view get only violations)
+# and status (engine state every second). Each stream holds one server thread and ends when its login is invalid.
 import json
 import time
 
@@ -33,7 +27,7 @@ _RETRY_MS = 3000
 
 
 def _message(event: str, data, event_id=None) -> str:
-    """One event; its id, if given, is where the browser resumes after reconnecting (Last-Event-ID)."""
+    # One event; its id, if given, is where the browser resumes after reconnecting (Last-Event-ID).
     head = f"id: {event_id}\n" if event_id is not None else ""
     return f"{head}event: {event}\ndata: {json.dumps(data, ensure_ascii=False)}\n\n"
 
@@ -53,9 +47,9 @@ def _latest_id() -> int:
 
 @require_GET
 def record_events(request):
-    """"records" events: the records saved after ?after=<id> (or the browser's Last-Event-ID); without it,
-    from now on. ?violations=true sends only violations, as do accounts that see records but not the
-    live view."""
+    # "records" events: the records saved after ?after=<id> (or the browser's Last-Event-ID); without it,
+    # from now on. ?violations=true sends only violations, as do accounts that see records but not the
+    # live view.
     user = request.user
     violations_only = request.GET.get("violations") == "true" or not user.has_perm("dashboard.use_dashboard")
     perm = "dashboard.view_records" if violations_only else "dashboard.use_dashboard"
@@ -106,8 +100,8 @@ def _today_counts() -> dict:
 
 @require_GET
 def status_events(request):
-    """"status" events for the live view, every second: engine state, playback position and today's
-    vehicle counts."""
+    # "status" events for the live view, every second: engine state, playback position and today's
+    # vehicle counts.
     session_key = request.session.session_key
 
     def events():

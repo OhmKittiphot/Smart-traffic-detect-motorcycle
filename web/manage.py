@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-"""Django's command-line utility (createsuperuser, changepassword, migrate...)."""
+# Django's command-line utility (createsuperuser, changepassword, migrate...).
 import os
 import sys
 

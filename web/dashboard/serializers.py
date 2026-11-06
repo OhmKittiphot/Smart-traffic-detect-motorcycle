@@ -1,8 +1,4 @@
-"""Shapes of the dashboard API's requests and responses.
-
-Request serializers check what the browser sends before the views act on it; their error messages are
-shown to the admin as they are, so they are written for people.
-"""
+# Request and response shapes of the dashboard API. Error messages are shown to the admin as is.
 from datetime import timedelta
 
 from django.contrib.auth.password_validation import validate_password
@@ -26,22 +22,20 @@ MAX_CALIBRATION_M = 500.0
 # ---------- requests ----------
 
 def _known_source(source):
-    """A source filter: "<source_mode>:<source_name>" ("file:clip.mp4", "live:" = IP camera) is one source,
-    "<source_mode>" alone ("live" = every live camera, "file" = every video file) a whole group.
-    "location:<name>" is the video files filmed at one location, "location" alone those with one set."""
+    # A source filter: "<source_mode>:<source_name>" ("file:clip.mp4", "live:" = IP camera) is one source,
+    # "<source_mode>" alone ("live" = every live camera, "file" = every video file) a whole group.
+    # "location:<name>" is the video files filmed at one location, "location" alone those with one set.
     if source and source.partition(":")[0] not in (*SourceMode.values, "location"):
         raise serializers.ValidationError(_("Unknown video source"))
 
 class RecordEventsSerializer(serializers.Serializer):
-    """?after=<id> (or the Last-Event-ID header): records newer than this id; none means from now on."""
+    # ?after=<id> (or the Last-Event-ID header): records newer than this id; none means from now on.
     after = serializers.IntegerField(min_value=0, required=False, allow_null=True, default=None)
 
 
 class StatsQuerySerializer(serializers.Serializer):
-    """?start=<YYYY-MM-DD>&end=<YYYY-MM-DD>: the days the violation statistics cover, both included.
-    Without them, the last DEFAULT_DAYS days, today included.
-    &month=<YYYY-MM>: the month the calendar shows, this month by default (given as its first day).
-    &source=<mode>:<name> or <mode>: only the records of that video source (see _known_source), all by default."""
+    # ?start=&end= (YYYY-MM-DD, both included; default the last DEFAULT_DAYS days),
+    # &month=YYYY-MM for the calendar, &source=<mode>:<name> or <mode> (default all).
     DEFAULT_DAYS = 30
     MAX_DAYS = 366
     start = serializers.DateField(required=False)
@@ -65,10 +59,8 @@ class StatsQuerySerializer(serializers.Serializer):
 
 
 class PlateSearchSerializer(serializers.Serializer):
-    """?q=<plate or part of it, or several separated by commas>&province=<Thai name>&source=<mode>:<name>
-    &violations_only=true
-    An empty q with browse=true (the violations page) lists every record, newest first, a page at a time
-    (&before=<id of the last row shown>); without browse it lists nothing until a plate is typed."""
+    # ?q=<plate(s), comma-separated>&province=&source=<mode>:<name>&violations_only=true
+    # Empty q with browse=true lists all records newest first, paged by &before=<last id>.
     q = serializers.CharField(max_length=300, required=False, allow_blank=True, default="")
     # Thai name, as stored on the records; the page lists them by their English names
     province = serializers.ChoiceField(choices=THAI_PROVINCES, required=False, allow_blank=True, default="",
@@ -93,7 +85,7 @@ class PlateSearchSerializer(serializers.Serializer):
 
 
 class VehicleDeleteSerializer(PlateSearchSerializer):
-    """Delete the records in ids, or (all=true) every record the list with these filters shows."""
+    # Delete the records in ids, or (all=true) every record the list with these filters shows.
     ids = serializers.ListField(child=serializers.IntegerField(min_value=1), required=False, default=list,
                                 max_length=5000)
     all = serializers.BooleanField(default=False)
@@ -105,7 +97,7 @@ class VehicleDeleteSerializer(PlateSearchSerializer):
 
 
 class ReviewSerializer(serializers.Serializer):
-    """Confirm or reject a recorded event; "pending" undoes the review."""
+    # Confirm or reject a recorded event; "pending" undoes the review.
     review = serializers.ChoiceField(choices=Review.choices)
     note = serializers.CharField(max_length=255, required=False, allow_blank=True, default="")
 
@@ -158,7 +150,7 @@ def _size_field(name):
 
 
 def _points_in_frame(points, frame_size):
-    """Points clicked on a frame of frame_size = (width, height), rounded to a tenth of a pixel."""
+    # Points clicked on a frame of frame_size = (width, height), rounded to a tenth of a pixel.
     frame_w, frame_h = frame_size
     for x, y in points:
         if not (0 <= x <= frame_w and 0 <= y <= frame_h):
@@ -167,10 +159,8 @@ def _points_in_frame(points, frame_size):
 
 
 class CalibrationSerializer(serializers.Serializer):
-    """4 corners of a rectangle on the road (frame pixels) and its real width and length.
-
-    The view passes the current frame size as context["frame_size"] = (width, height).
-    """
+    # 4 corners of a road rectangle (frame pixels) and its real width and length.
+    # The view passes context["frame_size"] = (width, height).
     points = serializers.ListField(
         child=serializers.ListField(child=serializers.FloatField(), min_length=2, max_length=2),
         min_length=4, max_length=4,
@@ -184,8 +174,8 @@ class CalibrationSerializer(serializers.Serializer):
 
 
 class DetectionZoneSerializer(serializers.Serializer):
-    """Corners of the area motorcycles are detected in (frame pixels, in order around it); null = the whole
-    frame. The view passes the current frame size as context["frame_size"] = (width, height)."""
+    # Corners of the area motorcycles are detected in (frame pixels, in order around it); null = the whole
+    # frame. The view passes the current frame size as context["frame_size"] = (width, height).
     MAX_POINTS = 12
     points = serializers.ListField(
         child=serializers.ListField(child=serializers.FloatField(), min_length=2, max_length=2),
@@ -199,7 +189,7 @@ class DetectionZoneSerializer(serializers.Serializer):
 
 
 class SourceKeySerializer(serializers.Serializer):
-    """A video source on the system status page, e.g. "live:ip", "live:itic-ccs06", "file:clip.mp4"."""
+    # A video source on the system status page, e.g. "live:ip", "live:itic-ccs06", "file:clip.mp4".
     source_key = serializers.CharField(max_length=300)
 
     def validate_source_key(self, key):
@@ -211,15 +201,15 @@ class SourceKeySerializer(serializers.Serializer):
 
 
 class SourceDistancesSerializer(SourceKeySerializer):
-    """New real width and length of a source's saved calibration rectangle (its points stay)."""
+    # New real width and length of a source's saved calibration rectangle (its points stay).
     width_m = _size_field(_("Width"))
     length_m = _size_field(_("Length"))
 
 
 class SourceSettingsSerializer(serializers.Serializer):
-    """Settings of the source the live view shows (any of them may be left out). A video file also has the
-    rest: a recording time without a zone is local time, null goes back to the time the camera wrote into
-    the file."""
+    # Settings of the source the live view shows (any of them may be left out). A video file also has the
+    # rest: a recording time without a zone is local time, null goes back to the time the camera wrote into
+    # the file.
     speed_limit_kmh = serializers.IntegerField(min_value=0, max_value=300, allow_null=True, required=False,
                                                error_messages={
                                                    "invalid": _("The speed limit must be a whole number"),
@@ -261,7 +251,7 @@ def _whole_field(name, low, high, unit):
 
 
 class SystemSettingsSerializer(serializers.ModelSerializer):
-    """Admin: violation rules and how long records and photos are kept."""
+    # Admin: violation rules and how long records and photos are kept.
     speed_limit_kmh = _whole_field(_("Speed limit"), 0, 300, "km/h")
     max_riders = _whole_field(_("Riders allowed"), 1, 10, _("people"))
     record_retention_days = _whole_field(_("Keep records for"), 1, 3650, _("days"))
@@ -279,7 +269,7 @@ class SystemSettingsSerializer(serializers.ModelSerializer):
 
 
 class PreferencesSerializer(serializers.ModelSerializer):
-    """Staff: how the live view looks and behaves for this account."""
+    # Staff: how the live view looks and behaves for this account.
     table_filter = serializers.ChoiceField(choices=TableFilter.choices)
     seek_step_s = serializers.ChoiceField(choices=SEEK_STEPS_S,
                                           error_messages={"invalid_choice": _("Choose one of the skip lengths")})
@@ -294,7 +284,7 @@ class PreferencesSerializer(serializers.ModelSerializer):
 
 
 class PasswordChangeSerializer(serializers.Serializer):
-    """The view passes the logged-in user as context["user"]."""
+    # The view passes the logged-in user as context["user"].
     old_password = serializers.CharField(error_messages={"blank": _("Type your current password")})
     new_password = serializers.CharField(error_messages={"blank": _("Type a new password")})
     confirm_password = serializers.CharField(error_messages={"blank": _("Type the new password again")})
@@ -317,7 +307,7 @@ class PasswordChangeSerializer(serializers.Serializer):
 # ---------- responses ----------
 
 class VehicleRecordSerializer(serializers.Serializer):
-    """One row of the vehicle table."""
+    # One row of the vehicle table.
     id = serializers.IntegerField()
     time = serializers.SerializerMethodField()
     date = serializers.SerializerMethodField()

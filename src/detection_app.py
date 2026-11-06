@@ -20,10 +20,8 @@ from .zone import DetectionZone
 
 
 class DetectionApp:
-    """Runs detection on one video source in the background: capture (VideoStream), YOLO and tracking
-    (YoloPipeline, in the processing thread), the camera's motion for a calibration that follows it
-    (_camera_fn, in a thread of its own) and plate OCR (OcrProcess). Models and the OCR process stay
-    loaded when the source is switched. Shown in a desktop window by DesktopViewer, or in the web dashboard."""
+    # Runs detection on one video source in background threads: capture, YOLO + tracking, camera motion
+    # and plate OCR. Models stay loaded when the source changes. Shown by DesktopViewer or the web dashboard.
 
     def __init__(self, config, video_camera: str, device, use_half, start_paused: bool = False,
                  on_file_end=None):
@@ -109,13 +107,13 @@ class DetectionApp:
     # ----- media session: tracks, OCR votes and speeds of one stretch of video -----
 
     def _report(self, finished) -> None:
-        """Report motorcycles that left (or were still in view at the end). Called without det_lock: a report
-        listener may write to a database and disk (the web dashboard), which must not hold up detection."""
+        # Report motorcycles that left (or were still in view at the end). Called without det_lock: a report
+        # listener may write to a database and disk (the web dashboard), which must not hold up detection.
         print_motorcycle_reports(finished, self.speed_estimator.calibrated, self.config.report_min_frames)
 
     def _reset_media_session(self) -> list:
-        """Clear tracker / OCR / speed state bound to the playback session (called holding det_lock).
-        Returns the motorcycles still in view, for _report() once the lock is released."""
+        # Clear tracker / OCR / speed state bound to the playback session (called holding det_lock).
+        # Returns the motorcycles still in view, for _report() once the lock is released.
         finished = self.tracker.drain()
         self.tracker.reset()
         self.ocr_manager.reset()
@@ -145,8 +143,8 @@ class DetectionApp:
         return self.speed_estimator.calibrated
 
     def set_calibration(self, points, world_size) -> None:
-        """Measure speeds on the ground rectangle of these 4 image points and its real (width, length) in
-        meters (see SpeedEstimator.set_calibration). Raises ValueError when they do not form a usable one."""
+        # Measure speeds on the ground rectangle of these 4 image points and its real (width, length) in
+        # meters (see SpeedEstimator.set_calibration). Raises ValueError when they do not form a usable one.
         with self.det_lock:
             self.speed_estimator.set_calibration([tuple(p) for p in points], world_size)
 
@@ -155,8 +153,8 @@ class DetectionApp:
             self.speed_estimator.clear_calibration()
 
     def calibration_points(self):
-        """Where the calibration points are on the current frame while the camera is followed (they move with
-        it); None for a fixed camera, where they stay where they were clicked."""
+        # Where the calibration points are on the current frame while the camera is followed (they move with
+        # it); None for a fixed camera, where they stay where they were clicked.
         if self.camera_motion is None:
             return None
         with self.det_lock:
@@ -165,8 +163,8 @@ class DetectionApp:
     # ----- moving camera -----
 
     def follow_camera(self, reference_frame) -> None:
-        """Move the calibration points with the camera, from the frame they were clicked on;
-        None: keep them where they were clicked (a fixed camera)."""
+        # Move the calibration points with the camera, from the frame they were clicked on;
+        # None: keep them where they were clicked (a fixed camera).
         motion = CameraMotion(reference_frame) if reference_frame is not None else None
         with self.det_lock:
             self.camera_motion = motion
@@ -174,8 +172,8 @@ class DetectionApp:
             self.speed_estimator.set_camera_motion(np.eye(3))
 
     def _camera_fn(self):
-        """Matches the newest frame to the frame the calibration points were clicked on. Runs beside the
-        processing thread, which uses the latest match instead of waiting about 20 ms for one every frame."""
+        # Matches the newest frame to the frame the calibration points were clicked on. Runs beside the
+        # processing thread, which uses the latest match instead of waiting about 20 ms for one every frame.
         last_frame, last_gen = None, None
         while not self._stop_event.is_set():
             motion = self.camera_motion
@@ -233,7 +231,7 @@ class DetectionApp:
                 frames.mark_processed(frame_gen)
 
     def start_workers(self):
-        """Start OCR, capture and processing in the background. Returns once OCR is ready."""
+        # Start OCR, capture and processing in the background. Returns once OCR is ready.
         self.ocr.start()
         log.info("Warming up models...")
         self.yolo_pipeline.warmup()
@@ -246,14 +244,14 @@ class DetectionApp:
         self._workers_started = True
 
     def worker_problems(self) -> list:
-        """What has stopped working among the background workers (empty when all are fine)."""
+        # What has stopped working among the background workers (empty when all are fine).
         problems = [f"{t.name} thread stopped" for t in self._worker_threads if not t.is_alive()]
         problems += [p for p in (self.ocr.problem(), self.video_stream.error) if p]
         return problems
 
     def switch_source(self, video_camera: str, paused=None):
-        """Replace the video source while models and the OCR process keep running. paused: whether a video
-        file opens paused (None: as start_paused says)."""
+        # Replace the video source while models and the OCR process keep running. paused: whether a video
+        # file opens paused (None: as start_paused says).
         with self._source_lock:
             old = self.video_stream
             old.stop()
@@ -267,7 +265,7 @@ class DetectionApp:
                 self.video_stream.start()
 
     def stop(self):
-        """Stop all workers and release resources. Safe to call more than once."""
+        # Stop all workers and release resources. Safe to call more than once.
         self._stop_event.set()
         self.ocr.release_queues()
         self.ocr_handler.stop()
@@ -280,8 +278,8 @@ class DetectionApp:
     # ----- drawing -----
 
     def render_frame(self, show_progress: bool = False):
-        """Latest frame with detections drawn on it, or None before the first frame. show_progress adds a
-        video file's progress bar (the desktop window; the web page draws its own)."""
+        # Latest frame with detections drawn on it, or None before the first frame. show_progress adds a
+        # video file's progress bar (the desktop window; the web page draws its own).
         stream = self.video_stream
         raw = stream.frames.latest()
         if raw is None:

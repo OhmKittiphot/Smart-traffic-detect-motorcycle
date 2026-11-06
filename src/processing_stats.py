@@ -4,8 +4,8 @@ from collections import deque
 
 
 class ProcessingStats:
-    """How fast the processing thread keeps up: frames processed per second, and how far behind the frame
-    on screen it is."""
+    # How fast the processing thread keeps up: frames processed per second, and how far behind the frame
+    # on screen it is.
 
     def __init__(self, samples: int = 30):
         self._lock = threading.Lock()
@@ -20,7 +20,7 @@ class ProcessingStats:
             self._last = (generation, frame_t)
 
     def forget_last(self) -> None:
-        """Nothing processed yet in the new media session."""
+        # Nothing processed yet in the new media session.
         with self._lock:
             self._last = None
 
@@ -30,14 +30,14 @@ class ProcessingStats:
             self._last = None
 
     def fps(self) -> float:
-        """Frames processed per second, over the last few."""
+        # Frames processed per second, over the last few.
         with self._lock:
             samples = list(self._done_t)
         span = samples[-1] - samples[0] if len(samples) > 1 else 0.0
         return (len(samples) - 1) / span if span > 0 else 0.0
 
     def lag_s(self, stream) -> float:
-        """How far processing is behind the frame on screen, in seconds (0 when paused or idle)."""
+        # How far processing is behind the frame on screen, in seconds (0 when paused or idle).
         with self._lock:
             last_gen, last_t = self._last or (None, None)
         if last_gen != stream.frames.generation:

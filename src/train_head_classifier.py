@@ -1,9 +1,6 @@
-"""Train the head classifier (head_classifier.py) on the Helmet / No-Helmet head boxes of a YOLO dataset.
-
-    venv\\Scripts\\python -m src.train_head_classifier --data helmet-rider-dataset --out models/head_cls.pt
-
-Each head is cut from its image with extra margin once; every epoch then shifts and scales the head box a
-little (the detector's boxes are never exact) and shrinks or blurs the crop (far heads on CCTV are small)."""
+# Trains the head classifier on the Helmet / No-Helmet head boxes of a YOLO dataset:
+#   venv\Scripts\python -m src.train_head_classifier --data helmet-rider-dataset --out models/head_cls.pt
+# Each epoch jitters the head box and shrinks or blurs the crop, like the detector's boxes and far CCTV heads.
 import argparse
 import os
 import random
@@ -33,7 +30,7 @@ def _class_names(data_dir: str) -> list:
 
 
 def load_heads(data_dir: str, split: str, names: list) -> list:
-    """[(crop with CACHE_PAD margin, head box inside that crop, class)] of every head in one split."""
+    # [(crop with CACHE_PAD margin, head box inside that crop, class)] of every head in one split.
     image_dir, label_dir = os.path.join(data_dir, split, "images"), os.path.join(data_dir, split, "labels")
     heads = []
     for name in sorted(os.listdir(image_dir)):
@@ -64,7 +61,7 @@ class HeadCrops(Dataset):
         return len(self.heads)
 
     def _crop(self, image, box):
-        """The head box with the inference-time CROP_PAD; in training also shifted and scaled up to 15%."""
+        # The head box with the inference-time CROP_PAD; in training also shifted and scaled up to 15%.
         x1, y1, x2, y2 = box
         bw, bh = x2 - x1, y2 - y1
         if self.train:
@@ -80,7 +77,7 @@ class HeadCrops(Dataset):
 
     @staticmethod
     def _degrade(crop):
-        """Look like a CCTV head: flipped, smaller (then enlarged again), blurred, JPEG-compressed, other light."""
+        # Look like a CCTV head: flipped, smaller (then enlarged again), blurred, JPEG-compressed, other light.
         if random.random() < 0.5:
             crop = cv2.flip(crop, 1)
         if random.random() < 0.6:
@@ -108,7 +105,7 @@ class HeadCrops(Dataset):
 
 @torch.no_grad()
 def evaluate(model, loader, device) -> dict:
-    """Recall of each class and their mean (balanced accuracy)."""
+    # Recall of each class and their mean (balanced accuracy).
     model.eval()
     correct, total = np.zeros(2), np.zeros(2)
     for x, y in loader:
@@ -122,7 +119,7 @@ def evaluate(model, loader, device) -> dict:
 
 
 def main():
-    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    parser = argparse.ArgumentParser(description="Train the head classifier on the head boxes of a YOLO dataset")
     parser.add_argument("--data", default="helmet-rider-dataset")
     parser.add_argument("--out", default="models/head_cls.pt")
     parser.add_argument("--epochs", type=int, default=30)

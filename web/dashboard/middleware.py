@@ -16,8 +16,8 @@ def remember_language(request, language):
 
 
 class UserLanguageMiddleware:
-    """Pages, API messages and Django admin in the language the account chose in Settings; English before
-    logging in. The JavaScript gets the same language from /jsi18n/."""
+    # Pages, API messages and Django admin in the language the account chose in Settings; English before
+    # logging in. The JavaScript gets the same language from /jsi18n/.
 
     def __init__(self, get_response):
         self.get_response = get_response

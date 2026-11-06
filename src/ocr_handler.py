@@ -5,7 +5,7 @@ from .utils import format_thai_plate, log, log_error
 
 
 class OCRResultHandler:
-    """Processes OCR worker results, updates track voting caches, and logs plate detections."""
+    # Processes OCR worker results, updates track voting caches, and logs plate detections.
 
     def __init__(self, ocr_out_q, ocr_manager, tracker, det_lock, get_media_gen_fn, ocr_conf_threshold: float):
         self.ocr_out_q = ocr_out_q
@@ -54,7 +54,7 @@ class OCRResultHandler:
                     log_error("OCR-Result", e)
 
     def _handle_item(self, read, result_gen, frame_t: float):
-        """Vote one OCR worker read (see ocr.read_plate) into its track and record the plate."""
+        # Vote one OCR worker read (see ocr.read_plate) into its track and record the plate.
         bbox, track_id = read["bbox"], read["track_id"]
 
         with self.det_lock:

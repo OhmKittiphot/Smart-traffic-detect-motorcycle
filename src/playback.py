@@ -1,4 +1,4 @@
-"""Playback of a video file (pause, seek, position) and the pacing of frames read from a source."""
+# Playback of a video file (pause, seek, position) and the pacing of frames read from a source.
 import threading
 import time
 from typing import Optional
@@ -15,11 +15,8 @@ _PACE_RESYNC_S = 2.0
 
 
 class Playback:
-    """Pause, seek and position of a video file. A live stream keeps the defaults: never paused, position 0.
-
-    Seeks are only requested here; the capture thread applies them (take_seek), also while paused.
-    holding is True while playback waits for the processing thread (start of the video, after a seek).
-    """
+    # Pause, seek and position of a video file (a live stream is never paused, position 0).
+    # Seeks are applied by the capture thread (take_seek); holding is True while waiting for processing.
 
     def __init__(self, paused: bool = False):
         self._lock = threading.Lock()
@@ -34,7 +31,7 @@ class Playback:
             return self._paused
 
     def toggle_pause(self, paused: Optional[bool] = None) -> bool:
-        """Flip pause, or set it when paused is given. Returns the new state."""
+        # Flip pause, or set it when paused is given. Returns the new state.
         with self._lock:
             self._paused = (not self._paused) if paused is None else paused
             paused = self._paused
@@ -42,13 +39,13 @@ class Playback:
         return paused
 
     def rewind_paused(self) -> None:
-        """End of the video: back to the start, paused, like a video player."""
+        # End of the video: back to the start, paused, like a video player.
         with self._lock:
             self._paused = True
             self._position_ms = 0.0
 
     def position(self):
-        """(position_ms, total_ms)."""
+        # (position_ms, total_ms).
         with self._lock:
             return self._position_ms, self._total_ms
 
@@ -61,7 +58,7 @@ class Playback:
             self._total_ms = max(0.0, total_ms)
 
     def seek(self, position_ms: float) -> None:
-        """Ask the capture thread to jump to a position (kept 0.5 s before the end)."""
+        # Ask the capture thread to jump to a position (kept 0.5 s before the end).
         with self._lock:
             total = self._total_ms
             self._seek_request_ms = max(0.0, min(float(position_ms), total - 500.0 if total > 1000 else total))
@@ -71,7 +68,7 @@ class Playback:
         return self._seek_request_ms is not None
 
     def take_seek(self) -> Optional[float]:
-        """The requested position, once (None when no seek is pending); it becomes the current position."""
+        # The requested position, once (None when no seek is pending); it becomes the current position.
         with self._lock:
             target, self._seek_request_ms = self._seek_request_ms, None
             if target is not None:
@@ -80,8 +77,8 @@ class Playback:
 
 
 class RealtimeClock:
-    """Plays a file like a live camera: a wall clock decides which frame is "on air" now. When decoding or
-    processing falls behind, frames are skipped instead of slowing the video down."""
+    # Plays a file like a live camera: a wall clock decides which frame is "on air" now. When decoding or
+    # processing falls behind, frames are skipped instead of slowing the video down.
 
     def __init__(self, frame_interval: float):
         self.frame_interval = frame_interval
@@ -90,11 +87,11 @@ class RealtimeClock:
         self._dropped = 0
 
     def restart(self) -> None:
-        """Anchor again on the next frame (after a seek, pause or wait), so that time is not "caught up"."""
+        # Anchor again on the next frame (after a seek, pause or wait), so that time is not "caught up".
         self._t0 = None
 
     def catch_up(self, cap) -> None:
-        """Skip the frames whose time has already passed before the next one is read."""
+        # Skip the frames whose time has already passed before the next one is read.
         pos_now = cap.get(cv2.CAP_PROP_POS_MSEC)
         if self._t0 is None:
             self._t0, self._ms0 = time.time(), pos_now
@@ -114,7 +111,7 @@ class RealtimeClock:
             self._dropped = 0
 
     def wait_for(self, pos_ms: float) -> None:
-        """Hold the frame at pos_ms until its time on the wall clock (never sleeps to slow down when behind)."""
+        # Hold the frame at pos_ms until its time on the wall clock (never sleeps to slow down when behind).
         if self._t0 is None:
             return
         sleep_time = self._t0 + (pos_ms - self._ms0) / 1000.0 - time.time()
@@ -123,7 +120,7 @@ class RealtimeClock:
 
 
 class LivePacer:
-    """HLS over http(s) delivers whole segments in bursts; frames are handed on at the source fps instead."""
+    # HLS over http(s) delivers whole segments in bursts; frames are handed on at the source fps instead.
 
     def __init__(self, frame_interval: float):
         self.frame_interval = frame_interval

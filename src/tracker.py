@@ -5,8 +5,8 @@ from .utils import bbox_center, bbox_distance, point_in_bbox
 
 
 class MotorcycleTracker:
-    """Tracks motorcycles across frames: greedy matching on velocity-predicted position. Each track keeps
-    what its report needs (photos, speeds, plate); riders and helmets are counted by self.riders."""
+    # Tracks motorcycles across frames: greedy matching on velocity-predicted position. Each track keeps
+    # what its report needs (photos, speeds, plate); riders and helmets are counted by self.riders.
 
     def __init__(self, max_age_s: float, distance_threshold: float):
         self.max_age_s = max_age_s
@@ -19,7 +19,7 @@ class MotorcycleTracker:
         self.riders = RiderCounter()
 
     def reset(self) -> None:
-        """Clear all tracks so a new video loop starts with a clean session."""
+        # Clear all tracks so a new video loop starts with a clean session.
         self.next_mc_id = 1
         self.motorcycle_tracks.clear()
         self.bbox_to_track_id.clear()
@@ -27,7 +27,7 @@ class MotorcycleTracker:
         self.riders.reset()
 
     def _finish_track(self, track_id: int) -> Dict[str, Any]:
-        """Remove a track and return its final summary (helmet/rider status snapshotted first)."""
+        # Remove a track and return its final summary (helmet/rider status snapshotted first).
         meta = self.motorcycle_tracks.pop(track_id)
         meta["track_id"] = track_id
         meta["helmet"] = self.riders.helmet_status(track_id)
@@ -37,7 +37,7 @@ class MotorcycleTracker:
         return meta
 
     def drain(self) -> List[Dict[str, Any]]:
-        """Finish every active track (end of video / shutdown) and return their summaries."""
+        # Finish every active track (end of video / shutdown) and return their summaries.
         finished = [self._finish_track(tid) for tid in list(self.motorcycle_tracks.keys())]
         self.bbox_to_track_id = {}
         self.latest_mc_detections = []
@@ -45,8 +45,8 @@ class MotorcycleTracker:
 
     @staticmethod
     def _dedupe_detections(mc_dets):
-        """Drop duplicate boxes on one bike (YOLO sometimes returns two overlapping boxes per bike,
-        which would otherwise become two tracks and two reports). Highest confidence wins."""
+        # Drop duplicate boxes on one bike (YOLO sometimes returns two overlapping boxes per bike,
+        # which would otherwise become two tracks and two reports). Highest confidence wins.
         kept = []
         for bbox, conf in sorted(mc_dets, key=lambda d: d[1], reverse=True):
             x1, y1, x2, y2 = bbox
@@ -68,9 +68,9 @@ class MotorcycleTracker:
         return kept
 
     def _match_cost(self, meta, bbox, now: float) -> Optional[float]:
-        """Cost of assigning a detection to a track, or None if it can't be the same bike.
-        Compares against the position predicted from the track's velocity, scaled to the bike's size,
-        so a stale track left behind by another bike can't steal its detection."""
+        # Cost of assigning a detection to a track, or None if it can't be the same bike.
+        # Compares against the position predicted from the track's velocity, scaled to the bike's size,
+        # so a stale track left behind by another bike can't steal its detection.
         px1, py1, px2, py2 = meta["bbox"]
         dt = max(0.0, now - meta["last_seen"])
         horizon = min(dt, 1.0)  # don't extrapolate far: bikes turn and stop
@@ -95,8 +95,8 @@ class MotorcycleTracker:
         return dist / gate + 0.5 * horizon
 
     def update_tracks(self, mc_dets: List[Tuple[Tuple[int, int, int, int], float]], now: float) -> List[Dict[str, Any]]:
-        """Update active tracks with new detections using greedy matching on predicted position.
-        Returns summaries of tracks that left the scene (not seen for max_age_s)."""
+        # Update active tracks with new detections using greedy matching on predicted position.
+        # Returns summaries of tracks that left the scene (not seen for max_age_s).
         mc_dets = self._dedupe_detections(mc_dets)
         self.latest_mc_detections = mc_dets
 
@@ -109,8 +109,8 @@ class MotorcycleTracker:
         return finished
 
     def _assign(self, mc_dets, now: float) -> Dict[int, Tuple[Tuple[int, int, int, int], float]]:
-        """{track_id: (bbox, conf)}: each detection given to the track it matches best, greedily (all
-        feasible pairs, cheapest first, each detection and track used once); the rest start new tracks."""
+        # {track_id: (bbox, conf)}: each detection given to the track it matches best, greedily (all
+        # feasible pairs, cheapest first, each detection and track used once); the rest start new tracks.
         pairs = []
         for det_idx, (bbox, _) in enumerate(mc_dets):
             for track_id, meta in self.motorcycle_tracks.items():
@@ -129,7 +129,7 @@ class MotorcycleTracker:
         return assigned
 
     def _update_track(self, track_id: int, bbox, conf: float, now: float) -> None:
-        """Move a track to its new box, smoothing its velocity (pixels per second)."""
+        # Move a track to its new box, smoothing its velocity (pixels per second).
         # Update in place: summary fields (hits, speeds, plate) live for the whole track
         meta = self.motorcycle_tracks.setdefault(track_id, {"first_seen": now, "hits": 0, "speeds": []})
         prev, prev_t = meta.get("bbox"), meta.get("last_seen")
@@ -145,8 +145,8 @@ class MotorcycleTracker:
         meta["hits"] += 1
 
     def record_snapshot(self, track_id: int, frame, bbox: Tuple[int, int, int, int]) -> None:
-        """Keep a crop of the motorcycle and its riders from the frame where it looks biggest
-        (usually closest to the camera); used as evidence in the web dashboard."""
+        # Keep a crop of the motorcycle and its riders from the frame where it looks biggest
+        # (usually closest to the camera); used as evidence in the web dashboard.
         meta = self.motorcycle_tracks.get(track_id)
         if meta is None:
             return
@@ -163,7 +163,7 @@ class MotorcycleTracker:
             meta["snapshot_area"] = area
 
     def record_plate_snapshot(self, track_id: Optional[int], crop, sharpness: float) -> None:
-        """Keep the sharpest crop of the track's licence plate; saved as evidence next to the read text."""
+        # Keep the sharpest crop of the track's licence plate; saved as evidence next to the read text.
         meta = self.motorcycle_tracks.get(track_id) if track_id is not None else None
         if meta is None or sharpness <= meta.get("plate_snapshot_sharpness", -1.0):
             return
@@ -176,13 +176,13 @@ class MotorcycleTracker:
             meta["speeds"].append(speed)
 
     def record_plate(self, track_id: Optional[int], plate_text: str, province_text: str, conf: float) -> None:
-        """Keep the track's latest voted plate for its final report (each vote already weighs all recent reads)."""
+        # Keep the track's latest voted plate for its final report (each vote already weighs all recent reads).
         meta = self.motorcycle_tracks.get(track_id) if track_id is not None else None
         if meta is not None:
             meta.update(plate_text=plate_text, province_text=province_text, plate_conf=conf)
 
     def resolve_track_id(self, bbox: Tuple[int, int, int, int]) -> Optional[int]:
-        """Resolve a track ID for a given license plate bounding box."""
+        # Resolve a track ID for a given license plate bounding box.
         if bbox in self.bbox_to_track_id:
             return self.bbox_to_track_id[bbox]
 

@@ -1,12 +1,6 @@
-"""Start the CCTV admin dashboard (web server + detection) with one command:
-
-    venv\Scripts\python web\run.py
-
-Then open http://127.0.0.1:8000 and log in with an admin account
-(create one first with: venv\Scripts\python web\manage.py createsuperuser).
-Detection (models, video stream) runs only while staff are logged in.
-Always use the project's venv: the detection models and Django are installed there.
-"""
+# Starts the dashboard (web server + detection):
+#   venv\Scripts\python web\run.py
+# then open http://127.0.0.1:8000 (create an admin first: venv\Scripts\python web\manage.py createsuperuser).
 import multiprocessing as mp
 import os
 import sys
@@ -30,7 +24,7 @@ def _set_up_process() -> None:
 
 
 def _set_up_django() -> None:
-    """Load Django, bring the database and static files up to date, and stop if nobody can log in yet."""
+    # Load Django, bring the database and static files up to date, and stop if nobody can log in yet.
     import django
     from django.core.management import call_command
 

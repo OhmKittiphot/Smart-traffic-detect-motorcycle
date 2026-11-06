@@ -1,6 +1,6 @@
-"""The models run on each frame, one class per model: motorcycles, licence plates, rider heads (helmet
-model, with the head classifier deciding helmet or not) and the rider classifier. Optional models that are
-missing are skipped (available = False)."""
+# The models run on each frame, one class per model: motorcycles, licence plates, rider heads (helmet
+# model, with the head classifier deciding helmet or not) and the rider classifier. Optional models that are
+# missing are skipped (available = False).
 import os
 
 import torch
@@ -14,13 +14,13 @@ from .utils import log, log_error, suppress_overlapping_boxes
 
 
 def _boxes(result):
-    """(x1, y1, x2, y2, conf, class) of each box of one YOLO result, as plain numbers."""
+    # (x1, y1, x2, y2, conf, class) of each box of one YOLO result, as plain numbers.
     for b in result.boxes:
         yield (*map(int, b.xyxy[0].tolist()), float(b.conf[0]), int(b.cls[0]))
 
 
 class _YoloModel:
-    """One YOLO model and the predict() options every call shares."""
+    # One YOLO model and the predict() options every call shares.
 
     def __init__(self, config, device):
         self.config = config
@@ -36,9 +36,9 @@ class _YoloModel:
                                   quantize=self.config.inference_quantize, **options)
 
     def _predict_crops(self, crops: list, imgsz: int, **options) -> list:
-        """predict() on image crops, one result each. Every crop is letterboxed to the same imgsz square
-        (rect=False), and on a GPU the crops go in padded batches, so a few CUDA graphs cover any number of
-        them (cuda_graphs.split_batch)."""
+        # predict() on image crops, one result each. Every crop is letterboxed to the same imgsz square
+        # (rect=False), and on a GPU the crops go in padded batches, so a few CUDA graphs cover any number of
+        # them (cuda_graphs.split_batch).
         if not str(self.device).startswith("cuda"):
             return self._predict(crops, imgsz, rect=False, **options)
         results = []
@@ -47,7 +47,7 @@ class _YoloModel:
         return results
 
     def _warmup(self, image, imgsz: int) -> None:
-        """Run once on a blank image so CUDA kernels load before playback starts."""
+        # Run once on a blank image so CUDA kernels load before playback starts.
         if self.model is None:
             return
         try:
@@ -78,7 +78,7 @@ class MotorcycleDetector(_YoloModel):
         self._warmup(frame, self.config.detection_imgsz)
 
     def detect(self, frame) -> list:
-        """[((x1, y1, x2, y2), conf)] of each motorcycle (empty without the model)."""
+        # [((x1, y1, x2, y2), conf)] of each motorcycle (empty without the model).
         if self.model is None:
             return []
         results = self._predict(frame, self.config.detection_imgsz, classes=self.classes,
@@ -100,9 +100,9 @@ class PlateDetector(_YoloModel):
         self._warmup(frame, self.config.plate_roi_imgsz if roi else self.config.plate_imgsz)
 
     def _crop_rois(self, frame, mc_bboxes):
-        """Regions where each motorcycle's plate can be: the bike box, widened by plate_roi_pad because
-        in side and rear-quarter views the plate on the rear fender sits at or just past the box edge.
-        Each region is returned as (x1, y1, bike_height)."""
+        # Regions where each motorcycle's plate can be: the bike box, widened by plate_roi_pad because
+        # in side and rear-quarter views the plate on the rear fender sits at or just past the box edge.
+        # Each region is returned as (x1, y1, bike_height).
         h, w = frame.shape[:2]
         pad_x, pad_y = self.config.plate_roi_pad
         crops, rois = [], []
@@ -121,8 +121,8 @@ class PlateDetector(_YoloModel):
         return crops, rois
 
     def detect(self, frame, mc_bboxes, search_rois: bool) -> list:
-        """Plate boxes [x1, y1, x2, y2, conf] in frame coordinates. search_rois: look only inside the
-        motorcycles (config.plate_search "roi"), else in the whole frame."""
+        # Plate boxes [x1, y1, x2, y2, conf] in frame coordinates. search_rois: look only inside the
+        # motorcycles (config.plate_search "roi"), else in the whole frame.
         options = dict(conf=self.config.plate_conf, classes=self.classes)
         if not search_rois:
             results = self._predict(frame, self.config.plate_imgsz, **options)
@@ -145,8 +145,8 @@ class PlateDetector(_YoloModel):
 
 
 class HeadDetector(_YoloModel):
-    """Rider heads above each motorcycle, with and without a helmet. With the head classifier loaded, the
-    helmet model only finds the heads and the classifier decides helmet or not on each head crop."""
+    # Rider heads above each motorcycle, with and without a helmet. With the head classifier loaded, the
+    # helmet model only finds the heads and the classifier decides helmet or not on each head crop.
 
     def __init__(self, config, device, use_half):
         super().__init__(config, device)
@@ -185,7 +185,7 @@ class HeadDetector(_YoloModel):
 
     @staticmethod
     def _crop_rider_rois(frame, mc_bboxes):
-        """The region above each motorcycle where its riders' heads are."""
+        # The region above each motorcycle where its riders' heads are.
         h, w = frame.shape[:2]
         crops, rois = [], []
         for (mx1, my1, mx2, my2), _ in mc_bboxes:
@@ -206,8 +206,8 @@ class HeadDetector(_YoloModel):
         return crops, rois
 
     def detect(self, frame, mc_bboxes):
-        """(helmet boxes, bare-head boxes, rider boxes) in frame coordinates. Rider boxes are every head at
-        the lower rider_conf; helmet / bare-head ones only those at helmet_conf."""
+        # (helmet boxes, bare-head boxes, rider boxes) in frame coordinates. Rider boxes are every head at
+        # the lower rider_conf; helmet / bare-head ones only those at helmet_conf.
         helmets, heads = [], []
         crops, rois = self._crop_rider_rois(frame, mc_bboxes) if self.model is not None else ([], [])
         if not crops:
@@ -237,8 +237,8 @@ class HeadDetector(_YoloModel):
 
 
 class RiderClassification:
-    """The rider classifier (riders and helmet per seat) on each tracked motorcycle, averaged over the
-    track's frames (RiderVoting)."""
+    # The rider classifier (riders and helmet per seat) on each tracked motorcycle, averaged over the
+    # track's frames (RiderVoting).
 
     def __init__(self, config, device, use_half):
         self.config = config
@@ -261,7 +261,7 @@ class RiderClassification:
         return self.classifier is not None
 
     def reset(self) -> None:
-        """Drop per-track votes (track IDs restart with the media session)."""
+        # Drop per-track votes (track IDs restart with the media session).
         self.voting.reset()
 
     def warmup(self, frame):
@@ -273,8 +273,8 @@ class RiderClassification:
             log_error("Warmup", e)
 
     def _crop_motorcycles(self, frame, mc_ids):
-        """Crops of the motorcycles and their riders (5% padding, rider_crop_pad_up above for the heads) with
-        their track IDs. Crops shorter than rider_min_crop_h are skipped."""
+        # Crops of the motorcycles and their riders (5% padding, rider_crop_pad_up above for the heads) with
+        # their track IDs. Crops shorter than rider_min_crop_h are skipped.
         h, w = frame.shape[:2]
         crops, tids = [], []
         for (x1, y1, x2, y2), tid in mc_ids.items():
@@ -287,9 +287,9 @@ class RiderClassification:
         return crops, tids
 
     def classify(self, frame, mc_ids, det_lock) -> dict:
-        """Classify every tracked motorcycle (mc_ids: box -> track ID) and update its smoothed votes.
-        Returns {track_id: summary or None}. Votes are shared with the processing thread's resets, hence
-        det_lock."""
+        # Classify every tracked motorcycle (mc_ids: box -> track ID) and update its smoothed votes.
+        # Returns {track_id: summary or None}. Votes are shared with the processing thread's resets, hence
+        # det_lock.
         crops, tids = self._crop_motorcycles(frame, mc_ids)
         if not crops:
             return {}

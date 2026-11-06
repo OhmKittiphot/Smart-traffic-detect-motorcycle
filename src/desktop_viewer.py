@@ -10,7 +10,7 @@ _WINDOW_TITLE = "Motorcycle License Plate Detection"
 
 
 class DesktopViewer:
-    """Shows a DetectionApp in an OpenCV window (python -m src.main): [Space] pause, [C] calibrate speed, [Q] quit."""
+    # Shows a DetectionApp in an OpenCV window (python -m src.main): [Space] pause, [C] calibrate speed, [Q] quit.
 
     def __init__(self, app):
         self.app = app
@@ -26,7 +26,7 @@ class DesktopViewer:
             stream.playback.toggle_pause()
 
     def run(self) -> None:
-        """Start detection and show it until the window is closed; detection is stopped on the way out."""
+        # Start detection and show it until the window is closed; detection is stopped on the way out.
         try:
             self._run()
         finally:
@@ -51,7 +51,7 @@ class DesktopViewer:
             print("Camera feed active! Detection starting... Press 'q' to exit.")
 
     def _handle_key(self, key: int, raw) -> bool:
-        """Act on a key pressed in the window (raw: the frame on screen). False when the user quits."""
+        # Act on a key pressed in the window (raw: the frame on screen). False when the user quits.
         stream = self.app.video_stream
         if self.calibration.is_active:
             self.calibration.handle_key(key)

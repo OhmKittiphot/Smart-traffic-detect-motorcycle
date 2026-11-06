@@ -1,4 +1,4 @@
-"""Template tags for the dashboard pages: {% load dashboard_tags %}."""
+# Template tags for the dashboard pages: {% load dashboard_tags %}.
 from django import template
 from django.urls import reverse
 from django.utils.html import format_html, format_html_join
@@ -10,8 +10,8 @@ register = template.Library()
 
 @register.inclusion_tag("dashboard/_settings_panel.html", takes_context=True)
 def settings_panel(context):
-    """The top bar's Settings pop-up, with only what the logged-in account may change, and the box the
-    notifications of new violations appear in."""
+    # The top bar's Settings pop-up, with only what the logged-in account may change, and the box the
+    # notifications of new violations appear in.
     user = context["request"].user
     return {
         "user": user,
@@ -29,7 +29,7 @@ def settings_panel(context):
 
 @register.simple_tag(takes_context=True)
 def nav_link(context, view_name, label):
-    """Top bar link; marked aria-current="page" on the page it points to."""
+    # Top bar link; marked aria-current="page" on the page it points to.
     match = context["request"].resolver_match
     current = format_html(' aria-current="page"') if match and match.view_name == view_name else ""
     return format_html('<a class="plate-link" href="{}"{}>{}</a>', reverse(view_name), current, label)
@@ -37,13 +37,13 @@ def nav_link(context, view_name, label):
 
 @register.filter
 def first_part(text):
-    """The part of a comma-separated name before the first comma: a location short enough for a table."""
+    # The part of a comma-separated name before the first comma: a location short enough for a table.
     return text.split(",")[0]
 
 
 @register.simple_tag
 def skeleton_rows(rows, cols):
-    """Grey placeholder rows shown in a table body until its data loads."""
+    # Grey placeholder rows shown in a table body until its data loads.
     cell = format_html('<td><span class="skeleton skeleton-cell"></span></td>')
     row = format_html('<tr class="skeleton-row">{}</tr>', format_html_join("", "{}", [(cell,)] * cols))
     return format_html_join("", "{}", [(row,)] * rows)

@@ -1,8 +1,5 @@
-"""Speed calibrations saved per video source (SpeedCalibration rows, keyed by VideoSource.key).
-
-A row with points = None means the calibration was removed on purpose: it is kept so the IP camera's
-.env fallback (SPEED_CALIB_POINTS / SPEED_CALIB_WORLD) is not applied again after a restart.
-"""
+# Speed calibrations saved per video source (SpeedCalibration rows keyed by VideoSource.key).
+# points = None means removed on purpose, so the IP camera's .env fallback is not applied again on restart.
 from typing import Optional
 
 import cv2
@@ -19,19 +16,19 @@ def saved(source_key: str) -> Optional[SpeedCalibration]:
 
 
 def to_dict(calibration: Optional[SpeedCalibration]) -> Optional[dict]:
-    """{"points", "width_m", "length_m"} of a saved calibration, or None when there is none."""
+    # {"points", "width_m", "length_m"} of a saved calibration, or None when there is none.
     if calibration is None or not calibration.points:
         return None
     return {"points": calibration.points, "width_m": calibration.width_m, "length_m": calibration.length_m}
 
 
 def uses_env_fallback(source_key: str, calibration: Optional[SpeedCalibration], config) -> bool:
-    """The IP camera uses the calibration in .env until one is saved (or removed) from the dashboard."""
+    # The IP camera uses the calibration in .env until one is saved (or removed) from the dashboard.
     return source_key == _IP_CAMERA_KEY and calibration is None and bool(config.speed_calib_points)
 
 
 def for_estimator(source_key: str, config):
-    """(points, (width_m, length_m)) to give SpeedEstimator.set_calibration, or None."""
+    # (points, (width_m, length_m)) to give SpeedEstimator.set_calibration, or None.
     from src.speed import parse_calibration
 
     calibration = saved(source_key)
@@ -42,7 +39,7 @@ def for_estimator(source_key: str, config):
 
 
 def reference_frame(source_key: str) -> Optional[np.ndarray]:
-    """The frame a video file's points were clicked on (for following a moving camera), or None."""
+    # The frame a video file's points were clicked on (for following a moving camera), or None.
     calibration = saved(source_key)
     if calibration is None or not calibration.points or not calibration.reference_frame:
         return None
@@ -50,7 +47,7 @@ def reference_frame(source_key: str) -> Optional[np.ndarray]:
 
 
 def save(source_key: str, points, width_m: float, length_m: float, user, reference_jpeg=None) -> None:
-    """reference_jpeg: the frame the points were clicked on; kept for video files only."""
+    # reference_jpeg: the frame the points were clicked on; kept for video files only.
     if not source_key.startswith("file:"):
         reference_jpeg = None
     SpeedCalibration.objects.update_or_create(

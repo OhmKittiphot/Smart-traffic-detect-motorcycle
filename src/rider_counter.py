@@ -11,13 +11,9 @@ MIN_HEAD_TO_BIKE_HEIGHT = 0.12
 
 
 class RiderCounter:
-    """Riders and helmets of each tracked motorcycle, smoothed over its frames.
-
-    Two sources are combined: the rider classifier on the whole motorcycle (update_summary) and the heads the
-    helmet model finds above it (update_heads). The rider count comes from the classifier: in dense traffic the
-    heads above a bike include those of its neighbours (on IFGE2443.MOV head counts reached 5 riders on bikes
-    with 1-2). Helmet status comes from the heads, seen larger than in the whole motorcycle crop, when there
-    are any. Without the classifier both come from the heads."""
+    # Riders and helmets of each tracked motorcycle, smoothed over its frames.
+    # Rider count comes from the rider classifier (heads above a bike include its neighbours in dense traffic);
+    # helmet status comes from the detected heads when there are any. Without the classifier both use the heads.
 
     def __init__(self, window: int = 10, min_samples: int = 3, rider_min_frames: int = 3):
         # (helmets, bare heads) per frame for each track; the median over a window smooths flicker
@@ -42,7 +38,7 @@ class RiderCounter:
 
     @staticmethod
     def _count_per_track(track_boxes: Dict[Box, int], heads: List[Box]) -> Dict[int, int]:
-        """Assign each head to the nearest motorcycle whose rider zone contains its center."""
+        # Assign each head to the nearest motorcycle whose rider zone contains its center.
         counts = {track_id: 0 for track_id in track_boxes.values()}
         for head in heads:
             center = bbox_center(head)
@@ -66,8 +62,8 @@ class RiderCounter:
 
     def update_heads(self, track_boxes: Dict[Box, int], helmet_bboxes: List[Box], head_bboxes: List[Box],
                      rider_bboxes: Optional[List[Box]] = None) -> None:
-        """Record this frame's helmet / bare-head counts and rider count for every motorcycle in track_boxes
-        (its box -> track ID). rider_bboxes are all heads (helmeted or not) kept at the lower rider_conf."""
+        # Record this frame's helmet / bare-head counts and rider count for every motorcycle in track_boxes
+        # (its box -> track ID). rider_bboxes are all heads (helmeted or not) kept at the lower rider_conf.
         helmets = self._count_per_track(track_boxes, helmet_bboxes)
         heads = self._count_per_track(track_boxes, head_bboxes)
         riders = (self._count_per_track(track_boxes, rider_bboxes) if rider_bboxes is not None
@@ -84,14 +80,14 @@ class RiderCounter:
                 self._rider_max[track_id] = max(self._rider_max.get(track_id, 0), seen)
 
     def update_summary(self, track_id: int, summary: Optional[Dict[str, Any]]) -> None:
-        """Store the rider classifier's smoothed result for a track (None = not enough frames yet)."""
+        # Store the rider classifier's smoothed result for a track (None = not enough frames yet).
         if summary is not None:
             self._summaries[track_id] = summary
 
     def helmet_status(self, track_id: int) -> Optional[Tuple[int, int]]:
-        """Smoothed (helmets, bare heads) for a track, or None until enough frames were observed. Bare heads
-        are the median over the frames where heads were found (a frame where the helmet model missed them
-        says nothing), else the rider classifier's count; every other rider counted wears a helmet."""
+        # Smoothed (helmets, bare heads) for a track, or None until enough frames were observed. Bare heads
+        # are the median over the frames where heads were found (a frame where the helmet model missed them
+        # says nothing), else the rider classifier's count; every other rider counted wears a helmet.
         found = [bare for helmets, bare in self._helmets.get(track_id, ()) if helmets + bare]
         summary = self._summaries.get(track_id)
         if len(found) >= self.min_samples:
@@ -105,11 +101,11 @@ class RiderCounter:
         return riders - bare, bare
 
     def rider_count(self, track_id: int) -> int:
-        """Riders on this track: the rider classifier's count, else the most heads seen. A moving motorcycle
-        always has a driver, so this is at least 1 even when no head was detected."""
+        # Riders on this track: the rider classifier's count, else the most heads seen. A moving motorcycle
+        # always has a driver, so this is at least 1 even when no head was detected.
         summary = self._summaries.get(track_id)
         return max(1, summary["riders"] if summary is not None else self._rider_max.get(track_id, 0))
 
     def rider_seen(self, track_id: int) -> bool:
-        """A rider's head was found on this bike in enough frames, or the rider classifier gave a result."""
+        # A rider's head was found on this bike in enough frames, or the rider classifier gave a result.
         return self._rider_max.get(track_id, 0) > 0 or track_id in self._summaries

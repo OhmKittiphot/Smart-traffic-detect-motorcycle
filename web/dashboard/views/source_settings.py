@@ -1,6 +1,6 @@
-"""The live view's video settings menu: the settings of the source it shows (source_settings.py). Its speed
-calibration has views of its own (calibration.py); the frame rate is each account's preference
-(settings.py)."""
+# The live view's video settings menu: the settings of the source it shows (source_settings.py). Its speed
+# calibration has views of its own (calibration.py); the frame rate is each account's preference
+# (settings.py).
 from django.utils import timezone
 from django.utils.translation import gettext as _
 from rest_framework.response import Response
@@ -38,8 +38,8 @@ def _settings_data(service) -> dict:
 
 
 def _changing_source(request, service):
-    """The settings are for the source the menu was opened on: None, else a 409 when another tab has
-    switched the source meanwhile."""
+    # The settings are for the source the menu was opened on: None, else a 409 when another tab has
+    # switched the source meanwhile.
     if request.data.get("source_key") != service.source.key:
         return conflict(_("The video source has changed; open the video settings again"))
     return None
@@ -56,11 +56,11 @@ def _save(service, user, **fields) -> None:
 
 class SourceSettingsView(APIView):
     def get(self, request):
-        """The settings of the source the live view shows."""
+        # The settings of the source the live view shows.
         return Response(_settings_data(running_service()))
 
     def post(self, request):
-        """Change some of them (the fields sent); the others are kept."""
+        # Change some of them (the fields sent); the others are kept.
         service = running_service()
         changed = _changing_source(request, service)
         if changed:
@@ -80,8 +80,8 @@ class SourceSettingsView(APIView):
 
 class DetectionZoneView(APIView):
     def post(self, request):
-        """Save the area motorcycles are detected in, clicked on the current frame; points null = the whole
-        frame. Applies at once."""
+        # Save the area motorcycles are detected in, clicked on the current frame; points null = the whole
+        # frame. Applies at once.
         service = running_service()
         changed = _changing_source(request, service)
         if changed:
