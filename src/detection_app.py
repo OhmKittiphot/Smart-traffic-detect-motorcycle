@@ -10,7 +10,7 @@ from .ocr_process import OcrProcess
 from .processing_stats import ProcessingStats
 from .render import draw_calibration, draw_detections, draw_video_overlay, draw_zone
 from .report import print_motorcycle_reports
-from .speed import SpeedEstimator, parse_calibration
+from .speed import SpeedEstimator
 from .tracker import MotorcycleTracker
 from .utils import log, log_error
 from .video_stream import VideoStream
@@ -41,7 +41,7 @@ class DetectionApp:
             ocr_request_interval_s=config.ocr_request_interval_s,
         )
         self.speed_estimator = SpeedEstimator()
-        self._init_speed_calibration()
+        log.info("[Speed] Not calibrated. Press [C] in the video window to calibrate.")
         # Moves the calibration points with the camera in a video file (None: the camera does not move)
         self.camera_motion = None
         # The area motorcycles are detected in (the whole frame until one is set)
@@ -78,17 +78,6 @@ class DetectionApp:
         self._source_lock = threading.Lock()
         self._workers_started = False
         self._worker_threads = []
-
-    def _init_speed_calibration(self):
-        calib = parse_calibration(self.config.speed_calib_points, self.config.speed_calib_world)
-        if calib:
-            try:
-                self.speed_estimator.set_calibration(*calib)
-                log.info("[Speed] Calibration loaded from env.")
-            except Exception as e:
-                log.warning("[Speed] Invalid calibration in env (%s). Press [C] to recalibrate.", e)
-        else:
-            log.info("[Speed] Not calibrated. Press [C] in the video window to calibrate.")
 
     def _new_stream(self, video_camera: str, initial_generation: int = 0, paused=None) -> VideoStream:
         return VideoStream(

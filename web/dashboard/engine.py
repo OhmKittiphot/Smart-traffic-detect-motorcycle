@@ -194,7 +194,7 @@ class DetectionService:
 
     def _apply_calibration(self):
         # Give the speed estimator the saved calibration of the current source (or none).
-        calib = calibrations.for_estimator(self.source.key, self.config)
+        calib = calibrations.for_estimator(self.source.key)
         if calib is None:
             self.app.clear_calibration()
         else:

@@ -7,6 +7,11 @@ from pathlib import Path
 
 WEB_DIR = Path(__file__).resolve().parent
 PROJECT_DIR = WEB_DIR.parent
+HOST = "127.0.0.1"
+PORT = 8000
+# Each open video stream and event stream (views/events.py) holds one thread while its tab is shown:
+# up to 4 for a live view, at most 1 for the other pages. The rest answer API requests
+THREADS = 48
 
 
 def _set_up_process():
@@ -39,15 +44,6 @@ def _set_up_django() -> None:
         sys.exit(1)
 
 
-def _warn_about_settings(host: str) -> None:
-    from django.conf import settings
-
-    if host not in ("127.0.0.1", "localhost") and not os.getenv("DJANGO_ALLOWED_HOSTS"):
-        print(f"[Warning] Listening on {host} but DJANGO_ALLOWED_HOSTS is not set; other hosts will get 400.")
-    if settings.DEBUG:
-        print("[Warning] DJANGO_DEBUG is on. Never use it on a shared network.")
-
-
 def main():
     _set_up_process()
     _set_up_django()
@@ -58,21 +54,14 @@ def main():
     from dashboard.engine import resume_logged_in_staff, stop_service
     from dashboard.storage import start_cleanup_thread
 
-    # Old records and photos are removed now and every few hours (limits in .env, see dashboard/storage.py)
+    # Old records and photos are removed now and every few hours (limits in Settings, see dashboard/storage.py)
     start_cleanup_thread()
     # Detection starts when staff log in; those still logged in from before the restart count too
     resume_logged_in_staff()
 
-    host = os.getenv("DASHBOARD_HOST", "127.0.0.1")
-    port = int(os.getenv("DASHBOARD_PORT", "8000"))
-    # Each open video stream and event stream (views/events.py) holds one thread while its tab is shown:
-    # up to 4 for a live view, at most 1 for the other pages. The rest answer API requests
-    threads = int(os.getenv("DASHBOARD_THREADS", "48"))
-    _warn_about_settings(host)
-
-    print(f"\nCCTV dashboard: http://{'127.0.0.1' if host == '0.0.0.0' else host}:{port}\n")
+    print(f"\nCCTV dashboard: http://{HOST}:{PORT}\n")
     try:
-        serve(application, host=host, port=port, threads=threads, ident="cctv",
+        serve(application, host=HOST, port=PORT, threads=THREADS, ident="cctv",
               channel_timeout=60, connection_limit=200)
     finally:
         stop_service()

@@ -40,7 +40,6 @@ window.Dashboard.onPage("#system-page", (page) => {
     const size = c && interpolate(gettext("Calibrated · %(width)s × %(length)s m"),
                                   { width: c.width_m, length: c.length_m }, true);
     if (c) cell.append(el("span", { class: "tag tag-ok" }, size));
-    else if (source.calibration_from_env) cell.append(el("span", { class: "tag tag-ok" }, gettext("Calibrated (.env)")));
     else cell.append(el("span", { class: "tag tag-muted" }, gettext("Not calibrated")));
     if (canCalibrate && (c || canRedraw(source))) {
       const title = canRedraw(source) ? gettext("Redraw the points and change the size")

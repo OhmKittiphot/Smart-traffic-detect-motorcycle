@@ -50,11 +50,9 @@ class SystemStatusView(APIView):
         saved = {c.source_key: c for c in SpeedCalibration.objects.all()}
 
         def source_info(key):
-            # Calibrated when one was saved for it; the IP camera may also use the one in .env (not editable here)
             calibration = calibrations.to_dict(saved.get(key))
-            from_env = calibrations.uses_env_fallback(key, saved.get(key), config)
-            return {"source_key": key, "in_use": key == in_use, "speed_calibrated": bool(calibration) or from_env,
-                    "calibration": calibration, "calibration_from_env": from_env}
+            return {"source_key": key, "in_use": key == in_use, "speed_calibrated": bool(calibration),
+                    "calibration": calibration}
 
         cameras, checked_at = system_health.cameras(config.rtsp_url)
         cameras = [{**c, **source_info(f"live:{c['key'] or 'ip'}")} for c in cameras]

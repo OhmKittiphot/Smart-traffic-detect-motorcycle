@@ -6,18 +6,6 @@ import cv2
 import numpy as np
 
 
-def parse_calibration(points_str: str, world_str: str):
-    # Parse 'x,y;x,y;x,y;x,y' and 'W,L' (meters). Returns (points, (W, L)) or None.
-    try:
-        pts = [tuple(float(v) for v in p.split(",")) for p in points_str.split(";") if p.strip()]
-        w, l = (float(v) for v in world_str.split(","))
-        if len(pts) != 4 or any(len(p) != 2 for p in pts) or w <= 0 or l <= 0:
-            return None
-        return pts, (w, l)
-    except Exception:
-        return None
-
-
 class SpeedEstimator:
     # Speed from a homography to road-plane meters: arc length of the smoothed track over a sliding window,
     # so curved roads work too.

@@ -1,4 +1,3 @@
-import ipaddress
 from importlib import import_module
 from types import SimpleNamespace
 
@@ -21,15 +20,7 @@ def session_allows(session_key, perm: str) -> bool:
 
 
 def client_ip(request):
-    # The browser's IP address, for the audit log and django-axes (AXES_CLIENT_IP_CALLABLE). Behind a
-    # reverse proxy (DJANGO_BEHIND_PROXY=1) REMOTE_ADDR is the proxy's own; the proxy adds the browser's address
-    # last to X-Forwarded-For (anything before it was sent by the browser itself, so it is not trusted).
-    if settings.BEHIND_PROXY:
-        forwarded = request.META.get("HTTP_X_FORWARDED_FOR", "").split(",")[-1].strip()
-        try:
-            return str(ipaddress.ip_address(forwarded))
-        except ValueError:
-            pass
+    # The browser's IP address, for the audit log and django-axes (AXES_CLIENT_IP_CALLABLE).
     return request.META.get("REMOTE_ADDR")
 
 

@@ -1,14 +1,11 @@
 # Speed calibrations saved per video source (SpeedCalibration rows keyed by VideoSource.key).
-# points = None means removed on purpose, so the IP camera's .env fallback is not applied again on restart.
 from typing import Optional
 
 import cv2
 import numpy as np
 
 from .models import SpeedCalibration
-from .sources import IP_CAMERA
 
-_IP_CAMERA_KEY = f"live:{IP_CAMERA}"
 
 
 def saved(source_key: str) -> Optional[SpeedCalibration]:
@@ -22,19 +19,9 @@ def to_dict(calibration: Optional[SpeedCalibration]) -> Optional[dict]:
     return {"points": calibration.points, "width_m": calibration.width_m, "length_m": calibration.length_m}
 
 
-def uses_env_fallback(source_key: str, calibration: Optional[SpeedCalibration], config) -> bool:
-    # The IP camera uses the calibration in .env until one is saved (or removed) from the dashboard.
-    return source_key == _IP_CAMERA_KEY and calibration is None and bool(config.speed_calib_points)
-
-
-def for_estimator(source_key: str, config):
+def for_estimator(source_key: str):
     # (points, (width_m, length_m)) to give SpeedEstimator.set_calibration, or None.
-    from src.speed import parse_calibration
-
-    calibration = saved(source_key)
-    if uses_env_fallback(source_key, calibration, config):
-        return parse_calibration(config.speed_calib_points, config.speed_calib_world)
-    found = to_dict(calibration)
+    found = to_dict(saved(source_key))
     return ([tuple(p) for p in found["points"]], (found["width_m"], found["length_m"])) if found else None
 
 

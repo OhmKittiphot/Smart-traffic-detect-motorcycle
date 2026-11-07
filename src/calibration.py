@@ -81,9 +81,7 @@ class CalibrationController:
             self.msg = f"Calibration failed: {e}. Click 4 points again"
             print(f"[Speed] Calibration failed: {e}")
             return
-        print("[Speed] Calibrated. To persist, add to .env:")
-        print(f"SPEED_CALIB_POINTS={';'.join(f'{x},{y}' for x, y in pts)}")
-        print(f"SPEED_CALIB_WORLD={w},{l}")
+        print("[Speed] Calibrated.")
         self.end()
 
     def draw(self, frame):

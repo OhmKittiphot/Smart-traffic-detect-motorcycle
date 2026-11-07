@@ -33,7 +33,7 @@ class CameraSettings(models.Model):
 
 class SystemSettings(models.Model):
     # Settings Admins change on the settings page (a single row, pk=1).
-    # The retention limits start from .env (settings.py); the violation rules start from src/app_config.py.
+    # The retention limits start from settings.py; the violation rules start from src/app_config.py.
 
     speed_limit_kmh = models.PositiveSmallIntegerField(default=80)   # 0 = speed is not a violation
     max_riders = models.PositiveSmallIntegerField(default=2)

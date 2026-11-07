@@ -180,9 +180,6 @@ msgstr "ปรับเทียบ"
 msgid "Calibrate speed"
 msgstr "ปรับเทียบความเร็ว"
 
-msgid "Calibrated (.env)"
-msgstr "ปรับเทียบแล้ว (.env)"
-
 msgid "Calibrated · %(width)s × %(length)s m"
 msgstr "ปรับเทียบแล้ว · %(width)s × %(length)s ม."
 

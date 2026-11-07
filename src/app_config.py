@@ -102,10 +102,6 @@ class AppConfig:
     # Largest distance to reuse a remembered read for a box without a track (pixels)
     ocr_cache_distance: float = 120.0
 
-    # Speed calibration
-    speed_calib_points: str = ""
-    speed_calib_world: str = ""
-
     @classmethod
     def from_env(cls) -> "AppConfig":
         return cls(
