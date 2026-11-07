@@ -279,8 +279,6 @@ flowchart TD
 | `plate_det_th.pt` | Plate detection | YOLO | motorcycle license plate thai v4 |
 | `plate_ocr_th/` | Plate text recognition | PP-OCRv5 mobile (`th_PP-OCRv5_mobile_rec`) | 90,000 synthetic plate images |
 
-`plate_yolo26n.pt`, `yolo26s.pt`, `yolov8n.pt` and `runs/detect/moto-plate/weights/best.pt` are not used by the current configuration.
-
 Results on each model's validation set, as recorded in `runs/` and in the model files:
 
 | Model | Results |
