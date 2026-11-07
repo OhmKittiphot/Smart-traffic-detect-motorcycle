@@ -20,12 +20,12 @@ class DesktopViewer:
             on_resume=lambda: self._set_paused(False),
         )
 
-    def _set_paused(self, paused: bool) -> None:
+    def _set_paused(self, paused: bool) :
         stream = self.app.video_stream
         if stream.is_video_file and stream.playback.is_paused() != paused:
             stream.playback.toggle_pause()
 
-    def run(self) -> None:
+    def run(self):
         # Start detection and show it until the window is closed; detection is stopped on the way out.
         try:
             self._run()
@@ -38,7 +38,7 @@ class DesktopViewer:
             print("Program exited.")
 
     @staticmethod
-    def _wait_for_video(stream) -> None:
+    def _wait_for_video(stream):
         print("Waiting for video feed...")
         if not stream.wait_for_first_frame(timeout=FIRST_FRAME_TIMEOUT_S):
             reason = stream.error or f"no frame received within {FIRST_FRAME_TIMEOUT_S:.0f}s"
@@ -63,7 +63,7 @@ class DesktopViewer:
             self.calibration.begin(raw)
         return True
 
-    def _run(self) -> None:
+    def _run(self):
         app = self.app
         app.start_workers()
         stream = app.video_stream

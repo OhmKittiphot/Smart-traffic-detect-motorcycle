@@ -85,7 +85,7 @@ class GraphedForward:
         return self.after(output) if self.after else output
 
 
-def graph_yolo(yolo) -> None:
+def graph_yolo(yolo):
     # Run an ultralytics YOLO model, loaded on a CUDA device, through CUDA graphs (see GraphedForward).
     net = yolo.model   # the DetectionModel that ultralytics' predict() calls
     head = net.model[-1]

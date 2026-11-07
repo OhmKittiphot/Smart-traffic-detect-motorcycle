@@ -103,7 +103,7 @@ class LiveTrack(VideoStreamTrack):
         return frame
 
 
-async def _close(pc: RTCPeerConnection) -> None:
+async def _close(pc: RTCPeerConnection):
     _peers.pop(pc, None)
     await pc.close()
 

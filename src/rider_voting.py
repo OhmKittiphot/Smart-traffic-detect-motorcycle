@@ -20,13 +20,13 @@ class RiderVoting:
         self._weights: Dict[int, deque] = {}
         self._last_seen: Dict[int, float] = {}
 
-    def reset(self) -> None:
+    def reset(self):
         # Forget all tracks (track IDs restart after a video loop, seek or source switch).
         self._probs.clear()
         self._weights.clear()
         self._last_seen.clear()
 
-    def update(self, track_id: int, probs: np.ndarray, weight: float = 1.0) -> None:
+    def update(self, track_id: int, probs: np.ndarray, weight: float = 1.0):
         # probs: (positions, states) probabilities for one crop of this track.
         if track_id not in self._probs:
             self._probs[track_id] = deque(maxlen=self.window)
@@ -52,7 +52,7 @@ class RiderVoting:
         result["frames"] = len(hist)
         return result
 
-    def prune(self) -> None:
+    def prune(self):
         now = time.time()
         for tid in [t for t, ts in self._last_seen.items() if now - ts > self.max_age_s]:
             self._probs.pop(tid, None)

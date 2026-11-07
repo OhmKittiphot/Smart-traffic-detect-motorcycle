@@ -39,7 +39,7 @@ class SpeedEstimator:
     def calibrated(self) -> bool:
         return self._H is not None
 
-    def set_calibration(self, image_pts: List[Tuple[float, float]], world_size: Tuple[float, float]) -> None:
+    def set_calibration(self, image_pts: List[Tuple[float, float]], world_size: Tuple[float, float]):
         # image_pts order: far-left, far-right, near-right, near-left of a ground rectangle.
         # world_size = (width_m between pts 1-2, length_m between pts 2-3).
         w, l = world_size
@@ -55,7 +55,7 @@ class SpeedEstimator:
         self._motion = None
         self._tracks = {}
 
-    def set_camera_motion(self, motion: Optional[np.ndarray]) -> None:
+    def set_camera_motion(self, motion: Optional[np.ndarray]):
         # The camera moved: motion maps the frame the points were clicked on onto the current frame
         # (from CameraMotion). Road positions stay in the same metric frame, so speeds are not disturbed.
         if self._H_ref is None or motion is None:
@@ -121,16 +121,16 @@ class SpeedEstimator:
         st = self._tracks.get(track_id)
         return st["speed"] if st else None
 
-    def clear_calibration(self) -> None:
+    def clear_calibration(self):
         # Forget the calibration; speeds are not measured until it is set again.
         self._H = self._H_ref = self._ref_pts = self._motion = None
         self._tracks = {}
 
-    def reset(self) -> None:
+    def reset(self):
         # Drop per-track speed history; keep the homography calibration.
         self._tracks = {}
 
-    def prune(self, now_t: float, max_age_s: float = 3.0) -> None:
+    def prune(self, now_t: float, max_age_s: float = 3.0):
         for tid in list(self._tracks.keys()):
             if abs(now_t - self._tracks[tid]["last_t"]) > max_age_s:
                 del self._tracks[tid]

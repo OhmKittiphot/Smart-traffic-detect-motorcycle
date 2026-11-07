@@ -19,7 +19,7 @@ class OcrProcess:
         self._proc = mp.Process(target=ocr_worker, args=(self.in_q, self.out_q, model_path), daemon=True)
         self._started = False
 
-    def start(self) -> None:
+    def start(self):
         # Start the process and block until it reports ready; raise if it failed or died.
         self._proc.start()
         self._started = True
@@ -45,13 +45,13 @@ class OcrProcess:
             return f"OCR process exited (code {self._proc.exitcode})"
         return None
 
-    def release_queues(self) -> None:
+    def release_queues(self):
         # Ctrl+C also kills the OCR process; without this, exit waits forever to flush queued crops
         # into its closed pipe and the program never ends.
         for q in (self.in_q, self.out_q):
             q.cancel_join_thread()
 
-    def stop(self) -> None:
+    def stop(self):
         if not self._proc.is_alive():
             return
         try:

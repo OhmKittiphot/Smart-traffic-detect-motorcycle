@@ -59,7 +59,7 @@ class FrameExchange:
         with self._lock:
             return self._for_processing
 
-    def mark_processed(self, generation: int) -> None:
+    def mark_processed(self, generation: int):
         # Called by the processing thread after it finished a frame of this generation.
         with self._lock:
             self._processed_generation = max(self._processed_generation, generation)

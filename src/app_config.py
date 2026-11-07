@@ -1,136 +1,120 @@
 from dataclasses import dataclass
 import os
-
-from dotenv import load_dotenv
-
 import torch
 
+from dotenv import load_dotenv
 from .cuda_graphs import graph_yolo
 from .utils import log
 
-
 load_dotenv()
-
 
 @dataclass(frozen=True)
 class AppConfig:
+    # Camera stream address (RTSP_URL in .env)
     rtsp_url: str
+    # Video file to play (VIDEO_FILE in .env)
     video_file: str
 
-    # Motorcycle detector: the stock COCO model (its class "motorcycle" is picked by name); it finds
-    # motorcycles on the wide, low-resolution iTIC CCTV views where models/motorcycle_det.pt found none
+    # Model files
+    # Motorcycle detector
     motorcycle_model_path: str = "models/yolo26n.pt"
-    # Thai motorcycle plate model
-    plate_model_path: str = "models/plate_det_th.pt"
+    # Helmet and bare head detector
     helmet_model_path: str = "models/helmet_det.pt"
-    # Rider count / helmet classifier. When the file exists it
-    # replaces the helmet model above for rider counting and helmet status
+    # Rider classifier
     rider_model_path: str = "models/rider_cls.pt"
-    # Fine-tuned plate text recognizer; PaddleOCR's stock Thai recognizer
-    # is used when this folder does not exist
-    plate_ocr_model_path: str = "models/plate_ocr_th"
-    # Helmet / no helmet of each head the helmet model finds, decided on the head crop (head_classifier.py).
-    # When the file exists it decides helmet status; the helmet model's own classes are used without it
+    # Licence plate detector
+    plate_model_path: str = "models/plate_det_th.pt"
+    # Head classifier
     head_classifier_path: str = "models/head_cls.pt"
-    # Frames of classifier output averaged per motorcycle before its result is used
+    # Plate OCR model folder
+    plate_ocr_model_path: str = "models/plate_ocr_th"
+
+    # Rider classifier
+    # Number of recent frames averaged per motorcycle
     rider_vote_window: int = 15
+    # Frames needed before the result is used
     rider_vote_min_frames: int = 3
-    # Fraction of the motorcycle box height added above its rider classifier crop. The COCO motorcycle box
-    # ends near the handlebars and cuts riders off at the neck; on input/IMG_9122.MOV the classifier then
-    # guessed NO HELMET for riders wearing one. 0.5 brings the heads of seated riders into the crop
+    # Extra space above the motorcycle box in the crop, as a fraction of its height
     rider_crop_pad_up: float = 0.5
-    # A seat counts as taken once its averaged probability of not being empty reaches this. With argmax a
-    # passenger half hidden behind the driver rarely beat "empty"; seats that are empty score about 0.15
+    # Probability at which a seat counts as taken
     rider_seat_threshold: float = 0.35
-    # Motorcycle crops shorter than this (pixels) are not classified: their riders are too small to tell
-    # apart. Larger crops weigh more in the vote (weight = crop height)
+    # Smallest motorcycle crop height to classify (pixels)
     rider_min_crop_h: int = 64
 
-    # Detection parameters
+    # Detection
+    # Motorcycle model input size
     detection_imgsz: int = 640
-    # Whole-frame plate search size ("frame" mode); the plate model was trained at 640 on plate close-ups
+    # Plate model input size when searching the whole frame
     plate_imgsz: int = 640
-    # Where to look for plates: "roi" = only inside each detected motorcycle, cropped from the full-size
-    # frame (no plate search at all when no motorcycle is close enough); "frame" = the whole frame at
-    # plate_imgsz (also used when the motorcycle model is missing). "roi" finds far more plates, and faster,
-    # because a plate is only ~30 px in a 1080p frame
+    # Where to search for plates: "roi" = inside each motorcycle, "frame" = the whole frame
     plate_search: str = "roi"
-    # Input size for each motorcycle region: 640 enlarges the plate to the size the model was trained on
-    # (138 plates on the video vs 43 at 320)
+    # Plate model input size for each motorcycle region
     plate_roi_imgsz: int = 640
-    # Fraction of the motorcycle box width/height added on each side of its plate search region.
-    # 0 = the box itself: on the video it found 138 plates vs 102 with (0.2, 0.1), whose larger region
-    # shrinks the plate
+    # Extra space around the motorcycle box in the plate search, as a fraction of its (width, height)
     plate_roi_pad: tuple = (0.0, 0.0)
-    # Plate settings favour finding a plate over reading it exactly (the plate search tolerates misreads).
-    # On input/IMG_9122.MOV these four together gave a plate to 40% of motorcycles, against 26% with
-    # the stricter 200 px / 0.2 / 0.25 / 0.40; going lower still (80 px, 0.1) found no more, only partial reads.
-    # Motorcycles shorter than this (pixels) are too far away for a plate and are skipped (it also keeps
-    # plate search fast on frames with many small bikes)
+    # Smallest motorcycle height to search for a plate (pixels)
     plate_min_bike_h: int = 120
-    # Plate boxes taller than this fraction of their motorcycle are dropped. On the video real plates
-    # were 0.09-0.17 of the bike height; boxes around a whole bike, wheel or rider were 0.23-0.48
+    # Largest plate height, as a fraction of the motorcycle height
     plate_max_bike_h_ratio: float = 0.25
+    # Motorcycle detector confidence threshold
     detection_conf: float = 0.25
-    # Plate detector confidence, lower than the motorcycles': a missed plate costs more than a false one,
-    # which OCR then reads as nothing
+    # Plate detector confidence threshold
     plate_conf: float = 0.15
+    # Helmet detector confidence threshold
     helmet_conf: float = 0.25
-    # Lower threshold for counting riders only: a passenger's head behind the driver often scores
-    # 0.25-0.4, while single-rider bikes show no extra heads even far below this.
-    # Helmet / NO HELMET status still uses helmet_conf.
+    # Confidence threshold for counting a head as a rider
     rider_conf: float = 0.20
-    # Heads are small in wide shots, so the helmet model runs at a higher resolution
+    # Helmet model input size
     helmet_imgsz: int = 960
-    # Class names of the helmet model (lowercase, "_" and "-" read as spaces); match your data.yaml
+    # Helmet model classes that mean a helmet is worn
     helmet_class_names: tuple = ("helmet", "with helmet")
+    # Helmet model classes that mean no helmet is worn
     no_helmet_class_names: tuple = ("head", "no helmet", "without helmet", "bare head")
-    # Riders allowed on one motorcycle (Thai law: driver + 1 passenger); more is flagged OVERLOAD
+
+    # Violations and reports
+    # Most riders allowed on one motorcycle
     max_riders: int = 2
-    # Median speed above this is reported as SPEEDING (only when speed is calibrated); 0 disables it
+    # Speed limit in km/h (0 = off)
     speed_limit_kmh: float = 80.0
-    # A motorcycle's summary is printed when it leaves; tracks seen in fewer YOLO frames are ignored
+    # Fewest frames a motorcycle needs to be reported
     report_min_frames: int = 5
-    # A track's plate is 'locked' (no more OCR) once its voted series and number came out the same
-    # on this many consecutive reads. On input/IMG_9122.MOV 3 locked a wrong series early; 5 did not
+
+    # OCR requests
+    # Identical reads in a row needed to lock a plate
     ocr_lock_stable_count: int = 5
-    # Minimum time between OCR requests for one motorcycle; each read is one more vote for its plate
+    # Shortest time between OCR requests for one motorcycle (seconds)
     ocr_request_interval_s: float = 0.1
-    
-    # Motorcycle tracking parameters
-    # distance_threshold: max pixel distance between bbox centers to consider same motorcycle.
-    # Increase if motorcycles move fast between frames (e.g. 250 for ~30fps, higher for low-fps cameras).
+
+    # Motorcycle tracking
+    # Largest distance between box centers to count as the same motorcycle (pixels)
     motorcycle_track_distance: float = 250.0
-    # max_age_s: how long (seconds) to keep a track alive without a new detection.
-    # A bike is reported once it has been gone this long; 2.5 keeps the report within 3s of leaving the frame.
-    # Increase if YOLO sometimes misses a motorcycle for multiple frames.
+    # How long a track stays alive without a new detection (seconds)
     motorcycle_track_max_age_s: float = 2.5
-    
-    # Display parameters
+
+    # Frame rate used when the video does not report one
     display_fps: int = 25
-    # Lowest voted OCR confidence a plate is kept with (see the plate settings above)
+
+    # OCR results
+    # Lowest OCR confidence a plate is kept with
     ocr_conf_threshold: float = 0.20
+    # How long OCR reads are remembered (seconds)
     ocr_cache_ttl_s: float = 5.0
+    # Largest distance to reuse a remembered read for a box without a track (pixels)
     ocr_cache_distance: float = 120.0
 
-    # Speed calibration: 4 ground points in the image (far-left;far-right;near-right;near-left)
-    # and the real size "W,L" in meters of that rectangle (W = pts 1-2, L = pts 2-3).
+    # Speed calibration
     speed_calib_points: str = ""
     speed_calib_world: str = ""
 
     @classmethod
     def from_env(cls) -> "AppConfig":
-        # Only the video source and the speed calibration printed by the desktop window ([C]) come from .env;
-        # everything else is set above.
         return cls(
             rtsp_url=os.getenv("RTSP_URL", ""),
             video_file=os.getenv("VIDEO_FILE", ""),
-            speed_calib_points=os.getenv("SPEED_CALIB_POINTS", ""),
-            speed_calib_world=os.getenv("SPEED_CALIB_WORLD", ""),
         )
 
     @property
-    def inference_quantize(self) -> int:
+    def inference_quantize(self):
         return 16 if torch.cuda.is_available() else 32
 
 
@@ -140,17 +124,18 @@ def configure_torch_runtime():
     use_half = use_cuda
 
     if use_cuda:
-        # Off on purpose: helmet crops change shape every frame, and benchmark mode re-tunes for each new
-        # shape (measured: 19 stalls of 0.7-1.2 s in 8 s of video vs none without it, same median speed)
         torch.backends.cudnn.benchmark = False
+
         try:
             torch.backends.cuda.matmul.allow_tf32 = True
         except Exception:
             pass
+
         try:
             torch.set_float32_matmul_precision("high")
         except Exception:
             pass
+
         try:
             # Leave headroom on the GPU for the separate OCR process (also GPU-based)
             torch.cuda.set_per_process_memory_fraction(0.7, device=0)

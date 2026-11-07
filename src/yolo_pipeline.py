@@ -70,14 +70,14 @@ class YoloPipeline:
         print_motorcycle_reports(finished, self.speed_estimator.calibrated, self.config.report_min_frames)
         return self._read_plates(frame, frame_t, frame_gen, plate_boxes)
 
-    def _classify_riders(self, frame, mc_ids) -> None:
+    def _classify_riders(self, frame, mc_ids):
         summaries = self.rider_classification.classify(frame, mc_ids, self.det_lock)
         with self.det_lock:
             for tid, summary in summaries.items():
                 if tid in self.tracker.motorcycle_tracks:
                     self.tracker.riders.update_summary(tid, summary)
 
-    def _update_speeds(self, frame_t: float) -> None:
+    def _update_speeds(self, frame_t: float):
         with self.det_lock:
             if self.speed_estimator.calibrated:
                 for mc_bb, tid in self.tracker.bbox_to_track_id.items():

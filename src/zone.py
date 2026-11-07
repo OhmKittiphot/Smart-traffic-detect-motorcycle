@@ -11,7 +11,7 @@ class DetectionZone:
     def __init__(self):
         self._polygon: Optional[np.ndarray] = None
 
-    def set_points(self, points: Optional[List[Tuple[float, float]]]) -> None:
+    def set_points(self, points: Optional[List[Tuple[float, float]]]):
         # Corners of the area in frame pixels, in order around it (at least 3); None or [] = the whole frame.
         self._polygon = np.array(points, dtype=np.float32).reshape(-1, 1, 2) if points else None
 

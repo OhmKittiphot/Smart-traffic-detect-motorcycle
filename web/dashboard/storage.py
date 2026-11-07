@@ -46,7 +46,7 @@ def delete_photo_files(rel_paths) -> int:
     return freed
 
 
-def remove_empty_day_folders() -> None:
+def remove_empty_day_folders():
     snap_root = _media_root() / "snapshots"
     if snap_root.is_dir():
         for folder in snap_root.iterdir():
@@ -171,7 +171,7 @@ def clean_up() -> dict:
     return result
 
 
-def start_cleanup_thread() -> None:
+def start_cleanup_thread():
     # Run clean_up() now and then every CLEANUP_EVERY_H hours, in the background.
     def loop():
         while True:

@@ -30,7 +30,7 @@ class OCRManager:
         self.bbox_vote_history: Dict[Tuple[int, int, int, int], List[Tuple[Dict[str, Any], float]]] = {}
         self.bbox_last_request_time: Dict[Tuple[int, int, int, int], float] = {}
 
-    def reset(self) -> None:
+    def reset(self):
         # Clear caches and vote history so a new video loop starts clean.
         self.track_cache.clear()
         self.track_vote_history.clear()
@@ -116,7 +116,7 @@ class OCRManager:
         track_id: Optional[int],
         bbox: Tuple[int, int, int, int],
         now: float,
-    ) -> None:
+    ):
         # Record the timestamp of an OCR request to enforce interval throttling.
         if track_id is not None:
             self.track_last_request_time[track_id] = now
@@ -133,7 +133,7 @@ class OCRManager:
         plate_text: str = "",
         province_text: str = "",
         complete: bool = False,
-    ) -> None:
+    ):
         # Update the cache with a new voted OCR result; complete = both the series and the number are known.
         # Always maintain bbox fallback cache
         for k in [k for k, v in self.bbox_cache.items() if k != bbox and now - v[2] > self.cache_ttl_s]:
@@ -204,7 +204,7 @@ class OCRManager:
         province_conf = max((r["province"][1] for r, _ in history if r["province"][0] == province), default=0.0)
         return series, number, plate_conf, province, province_conf
 
-    def prune_inactive_tracks(self, active_track_ids: set, now: float) -> None:
+    def prune_inactive_tracks(self, active_track_ids: set, now: float):
         # Prune track cache and vote history for tracks that are no longer active and have exceeded TTL.
         cutoff = now - self.cache_ttl_s
         for tid in list(self.track_cache.keys()):

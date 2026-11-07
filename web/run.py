@@ -1,6 +1,5 @@
 # Starts the dashboard (web server + detection):
-#   venv\Scripts\python web\run.py
-# then open http://127.0.0.1:8000 (create an admin first: venv\Scripts\python web\manage.py createsuperuser).
+# venv\Scripts\python web\run.py
 import multiprocessing as mp
 import os
 import sys
@@ -10,7 +9,7 @@ WEB_DIR = Path(__file__).resolve().parent
 PROJECT_DIR = WEB_DIR.parent
 
 
-def _set_up_process() -> None:
+def _set_up_process():
     # Model paths in AppConfig are relative to the project root
     os.chdir(PROJECT_DIR)
     sys.path.insert(0, str(WEB_DIR))

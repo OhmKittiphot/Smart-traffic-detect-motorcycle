@@ -105,12 +105,12 @@ class VideoStream:
         self.source_fps = source_fps
         return source_fps
 
-    def _sleep_while_running(self, seconds: float) -> None:
+    def _sleep_while_running(self, seconds: float):
         end = time.time() + seconds
         while self._running and time.time() < end:
             time.sleep(0.2)
 
-    def _wait_for_fresh_playlist(self) -> None:
+    def _wait_for_fresh_playlist(self):
         # Block while an HLS playlist has stopped updating. Opening it anyway would replay its last few
         # segments (old video, re-detected and re-reported) and then stall, over and over.
         if not self._is_hls:
@@ -157,7 +157,7 @@ class VideoStream:
         self._notify(self.on_seek, generation)
         return True
 
-    def _rewind_at_end(self, cap) -> None:
+    def _rewind_at_end(self, cap):
         # Like a video player: back to the first frame, paused, instead of looping.
         log.info("[Video] End of video. Back to the start, paused.")
         cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
@@ -165,14 +165,14 @@ class VideoStream:
         self._notify(self.on_end, self.frames.new_generation())
 
     @staticmethod
-    def _notify(callback, generation: int) -> None:
+    def _notify(callback, generation: int):
         if callback:
             try:
                 callback(generation)
             except Exception as e:
                 log_error("Capture", e)
 
-    def _hold_for_processing(self, generation: int) -> None:
+    def _hold_for_processing(self, generation: int):
         # Block (without advancing the video) until frame generation `generation` was processed.
         self.playback.holding = True
         deadline = time.time() + _HOLD_TIMEOUT_S
@@ -267,7 +267,7 @@ class VideoStream:
             elif loop.pacer:
                 loop.pacer.wait()
 
-    def _reconnect(self, loop, message: str) -> None:
+    def _reconnect(self, loop, message: str):
         # Open the source again after a wait that doubles on each failure (reset by the next good frame).
         log.warning(message, loop.reconnect_delay)
         loop.cap = self._reopen(loop.cap, loop.reconnect_delay)

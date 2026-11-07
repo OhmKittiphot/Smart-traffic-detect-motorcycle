@@ -26,11 +26,11 @@ class ReportRecorder:
         # looked at for repeats, since two motorcycles side by side in one pass are two motorcycles
         self._pass_after_id = None
 
-    def new_pass(self) -> None:
+    def new_pass(self):
         # The file was opened, seeked, or played to its end: what comes next may be a part played before.
         self._pass_after_id = None
 
-    def __call__(self, meta: dict, speed_calibrated: bool) -> None:
+    def __call__(self, meta: dict, speed_calibrated: bool):
         # Called from the processing thread for each motorcycle that left the scene.
         from src.report import find_violations, median_speed
 

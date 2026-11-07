@@ -12,24 +12,20 @@ from django.utils import timezone
 from PIL import Image
 
 
-# Live cameras are sent at the desktop viewer's rate; for a video file each account chooses (chosen_fps)
-LIVE_STREAM_FPS = 25
+LIVE_STREAM_FPS = 30
 
 
 @functools.lru_cache(maxsize=256)
 def chosen_fps(user_id: int) -> int:
-    # The frame rate this account chose for video files (the live view's fps menu). Read by its streams
-    # for every frame, so it is kept in memory; saving preferences clears it (chosen_fps.cache_clear()).
     from .models import UserPreferences
 
     return UserPreferences.objects.get_or_create(user_id=user_id)[0].stream_fps
 
 
 def placeholder_frame(title: str, subtitle: str = "", detail: str = "") -> np.ndarray:
-    # Dark 'No Signal'-style card with a timestamp, sized like a 720p camera frame.
+    # Dark 'No Signal'-style card with a timestamp
     h, w = 720, 1280
     frame = np.full((h, w, 3), (24, 22, 20), dtype=np.uint8)
-    # Faint scan lines so it reads as a dead camera feed rather than a blank page
     frame[::4] = (30, 28, 26)
     font = cv2.FONT_HERSHEY_DUPLEX
     (tw, th), _ = cv2.getTextSize(title or " ", font, 2.4, 3)
@@ -77,7 +73,7 @@ class LiveFrames:
         self._jpeg = None    # self._frame as JPEG, once a stream asked for it
         self._key = None
 
-    def _refresh(self) -> None:
+    def _refresh(self):
         # Draw the picture again if what should be on screen changed (called holding _lock).
         key, make = self._picture()
         if key != self._key:
@@ -115,7 +111,6 @@ class LiveFrames:
         service = self._service
         second = int(time.time())
         if service.state == service.STARTING:
-            # No text: the page shows its loading animation in the middle of the video instead
             return ("starting", second), lambda: placeholder_frame("")
         if service.state == service.ERROR:
             return ("error", second), lambda: placeholder_frame("SYSTEM ERROR", "See server console")
@@ -123,11 +118,9 @@ class LiveFrames:
         if not service.has_signal():
             configured = service.camera_configured()
             sub = service.source.describe() if configured else "Camera not configured (RTSP_URL)"
-            # e.g. the stream's playlist stopped updating (see VideoStream.offline_reason)
             detail = (app.video_stream.offline_reason or "") if configured else ""
             return ("nosignal", sub, detail, second), lambda: placeholder_frame("NO SIGNAL", sub, detail)
         raw = app.video_stream.frames.latest()
-        # Re-render only when the frame or the detections changed
         return (id(raw), id(app.latest_detections), id(app.tracker.latest_mc_detections)), app.render_frame
 
     def raw_jpeg(self) -> bytes:

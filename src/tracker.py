@@ -18,7 +18,7 @@ class MotorcycleTracker:
         self.latest_mc_detections: List[Tuple[Tuple[int, int, int, int], float]] = []
         self.riders = RiderCounter()
 
-    def reset(self) -> None:
+    def reset(self):
         # Clear all tracks so a new video loop starts with a clean session.
         self.next_mc_id = 1
         self.motorcycle_tracks.clear()
@@ -128,7 +128,7 @@ class MotorcycleTracker:
                 self.next_mc_id += 1
         return assigned
 
-    def _update_track(self, track_id: int, bbox, conf: float, now: float) -> None:
+    def _update_track(self, track_id: int, bbox, conf: float, now: float):
         # Move a track to its new box, smoothing its velocity (pixels per second).
         # Update in place: summary fields (hits, speeds, plate) live for the whole track
         meta = self.motorcycle_tracks.setdefault(track_id, {"first_seen": now, "hits": 0, "speeds": []})
@@ -144,7 +144,7 @@ class MotorcycleTracker:
         meta["confidence"] = conf
         meta["hits"] += 1
 
-    def record_snapshot(self, track_id: int, frame, bbox: Tuple[int, int, int, int]) -> None:
+    def record_snapshot(self, track_id: int, frame, bbox: Tuple[int, int, int, int]):
         # Keep a crop of the motorcycle and its riders from the frame where it looks biggest
         # (usually closest to the camera); used as evidence in the web dashboard.
         meta = self.motorcycle_tracks.get(track_id)
@@ -162,7 +162,7 @@ class MotorcycleTracker:
             meta["snapshot"] = crop.copy()
             meta["snapshot_area"] = area
 
-    def record_plate_snapshot(self, track_id: Optional[int], crop, sharpness: float) -> None:
+    def record_plate_snapshot(self, track_id: Optional[int], crop, sharpness: float):
         # Keep the sharpest crop of the track's licence plate; saved as evidence next to the read text.
         meta = self.motorcycle_tracks.get(track_id) if track_id is not None else None
         if meta is None or sharpness <= meta.get("plate_snapshot_sharpness", -1.0):
@@ -170,12 +170,12 @@ class MotorcycleTracker:
         meta["plate_snapshot"] = crop.copy()
         meta["plate_snapshot_sharpness"] = sharpness
 
-    def record_speed(self, track_id: int, speed: Optional[float]) -> None:
+    def record_speed(self, track_id: int, speed: Optional[float]):
         meta = self.motorcycle_tracks.get(track_id)
         if meta is not None and speed is not None:
             meta["speeds"].append(speed)
 
-    def record_plate(self, track_id: Optional[int], plate_text: str, province_text: str, conf: float) -> None:
+    def record_plate(self, track_id: Optional[int], plate_text: str, province_text: str, conf: float):
         # Keep the track's latest voted plate for its final report (each vote already weighs all recent reads).
         meta = self.motorcycle_tracks.get(track_id) if track_id is not None else None
         if meta is not None:

@@ -14,17 +14,17 @@ class ProcessingStats:
         # for files and the wall clock for live
         self._last = None
 
-    def frame_done(self, generation: int, frame_t: float) -> None:
+    def frame_done(self, generation: int, frame_t: float):
         with self._lock:
             self._done_t.append(time.perf_counter())
             self._last = (generation, frame_t)
 
-    def forget_last(self) -> None:
+    def forget_last(self):
         # Nothing processed yet in the new media session.
         with self._lock:
             self._last = None
 
-    def clear(self) -> None:
+    def clear(self):
         with self._lock:
             self._done_t.clear()
             self._last = None

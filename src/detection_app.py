@@ -1,6 +1,5 @@
 import threading
 import time
-
 import numpy as np
 import torch
 
@@ -23,12 +22,9 @@ class DetectionApp:
     # Runs detection on one video source in background threads: capture, YOLO + tracking, camera motion
     # and plate OCR. Models stay loaded when the source changes. Shown by DesktopViewer or the web dashboard.
 
-    def __init__(self, config, video_camera: str, device, use_half, start_paused: bool = False,
-                 on_file_end=None):
+    def __init__(self, config, video_camera: str, device: str, use_half: bool, paused: bool = False, on_file_end=None):
         self.config = config
-        self.start_paused = start_paused   # video files open paused (the web dashboard: staff press play)
-        # Called (from the capture thread) when a video file has played to its end, e.g. to open the next
-        # file of a playlist
+        self.paused = paused
         self.on_file_end = on_file_end
         if torch.cuda.is_available():
             torch.cuda.empty_cache()
@@ -101,12 +97,12 @@ class DetectionApp:
             on_end=self._on_video_end,
             on_seek=self._on_video_seek,
             initial_generation=initial_generation,
-            start_paused=self.start_paused if paused is None else paused,
+            start_paused=self.paused if paused is None else paused,
         )
 
     # ----- media session: tracks, OCR votes and speeds of one stretch of video -----
 
-    def _report(self, finished) -> None:
+    def _report(self, finished):
         # Report motorcycles that left (or were still in view at the end). Called without det_lock: a report
         # listener may write to a database and disk (the web dashboard), which must not hold up detection.
         print_motorcycle_reports(finished, self.speed_estimator.calibrated, self.config.report_min_frames)
@@ -142,13 +138,13 @@ class DetectionApp:
     def speed_calibrated(self) -> bool:
         return self.speed_estimator.calibrated
 
-    def set_calibration(self, points, world_size) -> None:
+    def set_calibration(self, points, world_size):
         # Measure speeds on the ground rectangle of these 4 image points and its real (width, length) in
         # meters (see SpeedEstimator.set_calibration). Raises ValueError when they do not form a usable one.
         with self.det_lock:
             self.speed_estimator.set_calibration([tuple(p) for p in points], world_size)
 
-    def clear_calibration(self) -> None:
+    def clear_calibration(self):
         with self.det_lock:
             self.speed_estimator.clear_calibration()
 
@@ -162,7 +158,7 @@ class DetectionApp:
 
     # ----- moving camera -----
 
-    def follow_camera(self, reference_frame) -> None:
+    def follow_camera(self, reference_frame):
         # Move the calibration points with the camera, from the frame they were clicked on;
         # None: keep them where they were clicked (a fixed camera).
         motion = CameraMotion(reference_frame) if reference_frame is not None else None

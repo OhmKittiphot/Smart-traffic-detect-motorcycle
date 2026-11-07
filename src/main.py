@@ -1,21 +1,17 @@
 import os
 import sys
 import traceback
-
 import multiprocessing as mp
+from unittest import case
 import warnings
 warnings.filterwarnings("ignore", category=DeprecationWarning)
-
-if not __package__:   # started as a file (python src\main.py): its package imports below would fail
-    sys.exit("Run it as part of the src package, from the repository root: venv\\Scripts\\python -m src.main")
 
 from .app_config import AppConfig, configure_torch_runtime
 from .desktop_viewer import DesktopViewer
 from .detection_app import DetectionApp
-from .utils import setup_console_logging
 
 
-def select_source(config: AppConfig) -> str:
+def select_source(config: AppConfig):
     print("\n" + "=" * 50)
     print("Motorcycle Rider, Helmet & License Plate Detection")
     print("=" * 50)
@@ -28,44 +24,51 @@ def select_source(config: AppConfig) -> str:
         try:
             choice = input("Select [1/2] (default=1, q=quit): ").strip().lower()
         except EOFError:
-            choice = ""   # no stdin (e.g. piped/non-interactive): use the default
+            choice = "1"
         except KeyboardInterrupt:
             print("\nExiting...")
             sys.exit(0)
 
-        if choice == "" or choice == "1":
-            if not config.video_file:
-                print("VIDEO_FILE not found in .env, please set it first")
-                sys.exit(1)
-            if not os.path.isfile(config.video_file):
-                print(f"VIDEO_FILE does not exist: {config.video_file}")
-                sys.exit(1)
-            print(" > Using video file\n")
-            return config.video_file
+        match (choice):
+            case "1":
+                if not config.video_file:
+                    print("VIDEO_FILE not found in .env, please set it first")
+                    sys.exit(1)
+                if not os.path.isfile(config.video_file):
+                    print(f"VIDEO_FILE does not exist: {config.video_file}")
+                    sys.exit(1)
+                print(" > Using video file\n")
+                return config.video_file
 
-        elif choice == "2":
-            if not config.rtsp_url:
-                print("RTSP_URL not found in .env, please set it first")
-                sys.exit(1)
-            print(" > Using live RTSP camera\n")
-            return config.rtsp_url
+            case "2":
+                if not config.rtsp_url:
+                    print("RTSP_URL not found in .env, please set it first")
+                    sys.exit(1)
+                print(" > Using live RTSP camera\n")
+                return config.rtsp_url
 
-        elif choice == "q":
-            print("Exiting...")
-            sys.exit(0)
-        else:
+            case "q":
+                print("Exiting...")
+                sys.exit(0)
+            case _:
+                print("Please enter 1 or 2")
+
+        if __name__ == "__main__":
+            mp.freeze_support()
             print("Please enter 1 or 2")
 
+if not __package__:
+    sys.exit("Run it as part of the src package, from the repository root: venv\\Scripts\\python -m src.main")
 
 if __name__ == "__main__":
     mp.freeze_support()
+
     # Thai plate text crashes print() when stdout is redirected on Windows (cp1252 default)
     for stream in (sys.stdout, sys.stderr):
         try:
             stream.reconfigure(encoding="utf-8", errors="replace")
         except (AttributeError, ValueError):
             pass
-    setup_console_logging()
 
     config = AppConfig.from_env()
     video_camera = select_source(config)

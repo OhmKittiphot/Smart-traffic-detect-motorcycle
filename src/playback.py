@@ -38,7 +38,7 @@ class Playback:
         log.info("[Video] %s", "PAUSED" if paused else "RESUMED")
         return paused
 
-    def rewind_paused(self) -> None:
+    def rewind_paused(self):
         # End of the video: back to the start, paused, like a video player.
         with self._lock:
             self._paused = True
@@ -49,15 +49,15 @@ class Playback:
         with self._lock:
             return self._position_ms, self._total_ms
 
-    def set_position(self, position_ms: float) -> None:
+    def set_position(self, position_ms: float):
         with self._lock:
             self._position_ms = position_ms
 
-    def set_total(self, total_ms: float) -> None:
+    def set_total(self, total_ms: float):
         with self._lock:
             self._total_ms = max(0.0, total_ms)
 
-    def seek(self, position_ms: float) -> None:
+    def seek(self, position_ms: float):
         # Ask the capture thread to jump to a position (kept 0.5 s before the end).
         with self._lock:
             total = self._total_ms
@@ -86,11 +86,11 @@ class RealtimeClock:
         self._ms0 = 0.0        # video position (ms) at the anchor
         self._dropped = 0
 
-    def restart(self) -> None:
+    def restart(self):
         # Anchor again on the next frame (after a seek, pause or wait), so that time is not "caught up".
         self._t0 = None
 
-    def catch_up(self, cap) -> None:
+    def catch_up(self, cap):
         # Skip the frames whose time has already passed before the next one is read.
         pos_now = cap.get(cv2.CAP_PROP_POS_MSEC)
         if self._t0 is None:
@@ -110,7 +110,7 @@ class RealtimeClock:
             log.info("[Video] Behind real time: dropped %d frames", self._dropped)
             self._dropped = 0
 
-    def wait_for(self, pos_ms: float) -> None:
+    def wait_for(self, pos_ms: float):
         # Hold the frame at pos_ms until its time on the wall clock (never sleeps to slow down when behind).
         if self._t0 is None:
             return
@@ -126,7 +126,7 @@ class LivePacer:
         self.frame_interval = frame_interval
         self._slot_t = None   # wall time slot of the last frame
 
-    def wait(self) -> None:
+    def wait(self):
         now = time.time()
         if self._slot_t is None or now - self._slot_t > _PACE_RESYNC_S:
             self._slot_t = now

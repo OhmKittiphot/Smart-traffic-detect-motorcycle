@@ -7,11 +7,11 @@ from .utils import log
 _report_listeners: List[Callable[[Dict[str, Any], bool], None]] = []
 
 
-def add_report_listener(fn: Callable[[Dict[str, Any], bool], None]) -> None:
+def add_report_listener(fn: Callable[[Dict[str, Any], bool], None]):
     _report_listeners.append(fn)
 
 
-def remove_report_listener(fn: Callable[[Dict[str, Any], bool], None]) -> None:
+def remove_report_listener(fn: Callable[[Dict[str, Any], bool], None]):
     if fn in _report_listeners:
         _report_listeners.remove(fn)
 
@@ -76,7 +76,7 @@ def format_motorcycle_report(meta: Dict[str, Any], speed_calibrated: bool) -> st
     ])
 
 
-def print_motorcycle_reports(finished, speed_calibrated: bool, min_frames: int) -> None:
+def print_motorcycle_reports(finished, speed_calibrated: bool, min_frames: int):
     for meta in finished:
         # Only report a motorcycle detected together with its rider; short tracks or bikes with no
         # rider detected (parked bikes, false detections) are skipped

@@ -28,11 +28,11 @@ class RiderCounter:
         # Smoothed rider classifier result per track (rider_classifier.summarize)
         self._summaries: Dict[int, Dict[str, Any]] = {}
 
-    def reset(self) -> None:
+    def reset(self):
         for counts in (self._helmets, self._riders, self._rider_max, self._summaries):
             counts.clear()
 
-    def forget(self, track_id: int) -> None:
+    def forget(self, track_id: int):
         for counts in (self._helmets, self._riders, self._rider_max, self._summaries):
             counts.pop(track_id, None)
 
@@ -61,7 +61,7 @@ class RiderCounter:
         return counts
 
     def update_heads(self, track_boxes: Dict[Box, int], helmet_bboxes: List[Box], head_bboxes: List[Box],
-                     rider_bboxes: Optional[List[Box]] = None) -> None:
+                     rider_bboxes: Optional[List[Box]] = None):
         # Record this frame's helmet / bare-head counts and rider count for every motorcycle in track_boxes
         # (its box -> track ID). rider_bboxes are all heads (helmeted or not) kept at the lower rider_conf.
         helmets = self._count_per_track(track_boxes, helmet_bboxes)
@@ -79,7 +79,7 @@ class RiderCounter:
                 seen = sorted(history, reverse=True)[self.rider_min_frames - 1]
                 self._rider_max[track_id] = max(self._rider_max.get(track_id, 0), seen)
 
-    def update_summary(self, track_id: int, summary: Optional[Dict[str, Any]]) -> None:
+    def update_summary(self, track_id: int, summary: Optional[Dict[str, Any]]):
         # Store the rider classifier's smoothed result for a track (None = not enough frames yet).
         if summary is not None:
             self._summaries[track_id] = summary

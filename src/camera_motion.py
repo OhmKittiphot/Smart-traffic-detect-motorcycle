@@ -56,6 +56,6 @@ class CameraMotion:
         self._prev = (current, H) if H is not None else None
         return H
 
-    def restart(self) -> None:
+    def restart(self):
         # Forget the previous frame (after a seek it no longer comes right before the next one).
         self._prev = None

@@ -46,7 +46,7 @@ class _YoloModel:
             results += self._predict(part + part[:1] * (size - len(part)), imgsz, rect=False, **options)[:len(part)]
         return results
 
-    def _warmup(self, image, imgsz: int) -> None:
+    def _warmup(self, image, imgsz: int):
         # Run once on a blank image so CUDA kernels load before playback starts.
         if self.model is None:
             return
@@ -260,7 +260,7 @@ class RiderClassification:
     def available(self) -> bool:
         return self.classifier is not None
 
-    def reset(self) -> None:
+    def reset(self):
         # Drop per-track votes (track IDs restart with the media session).
         self.voting.reset()
 

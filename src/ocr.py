@@ -9,7 +9,7 @@ import torch
 
 from .ocr_voting import UNKNOWN
 from .province import extract_thai_province
-from .utils import log, log_error, setup_console_logging
+from .utils import log, log_error
 
 # A Thai motorcycle plate has three lines: the series (e.g. '6ขน'), the province and the number (e.g. '690').
 # Each line is cut from the plate crop by a fixed band of its height (the crop carries 10% padding around
@@ -141,8 +141,6 @@ def _read_batch(rec, item) -> list:
 def ocr_worker(in_q: mp.Queue, out_q: mp.Queue, model_dir: str = ""):
     # The OCR process: reads the plate crops sent on in_q and answers on out_q, until it gets None.
     _configure_paddle()
-    # A process of its own: the main process's logging set-up is not inherited
-    setup_console_logging()
     log.info("[OCR-Process] Loading PaddleOCR ...")
     try:
         rec = load_recognizer(model_dir, "gpu" if torch.cuda.is_available() else "cpu")
