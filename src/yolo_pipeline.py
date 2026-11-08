@@ -26,8 +26,8 @@ class YoloPipeline:
         log.info("Loading YOLO models...")
         self.plates = PlateDetector(config, device, use_half)
         self.motorcycles = MotorcycleDetector(config, device, use_half)
-        # Both run: the rider classifier counts the riders on each whole motorcycle, the helmet model and head
-        # classifier decide helmet or not on each head up close (RiderCounter combines the two)
+        # Both run: the rider classifier counts the riders on each whole motorcycle, the head detector and
+        # helmet classifier decide helmet or not on each head up close (RiderCounter combines the two)
         self.rider_classification = RiderClassification(config, device, use_half)
         self.heads = HeadDetector(config, device, use_half)
 

@@ -86,7 +86,7 @@ class RiderCounter:
 
     def helmet_status(self, track_id: int) -> Optional[Tuple[int, int]]:
         # Smoothed (helmets, bare heads) for a track, or None until enough frames were observed. Bare heads
-        # are the median over the frames where heads were found (a frame where the helmet model missed them
+        # are the median over the frames where heads were found (a frame where the head detector missed them
         # says nothing), else the rider classifier's count; every other rider counted wears a helmet.
         found = [bare for helmets, bare in self._helmets.get(track_id, ()) if helmets + bare]
         summary = self._summaries.get(track_id)

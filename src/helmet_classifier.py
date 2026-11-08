@@ -37,7 +37,7 @@ def crop_head(frame: np.ndarray, box) -> np.ndarray:
     return frame[top:max(top + 1, min(h, int(y2 + pad_h))), left:max(left + 1, min(w, int(x2 + pad_w)))]
 
 
-class HeadClassifier:
+class HelmetClassifier:
     # P(no helmet) for head crops.
 
     def __init__(self, weights_path: str, device: str = "cpu", use_half: bool = False):

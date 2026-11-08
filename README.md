@@ -273,8 +273,8 @@ flowchart TD
 | File in `models/` | Purpose | Architecture | Training data |
 |---|---|---|---|
 | `yolo26n.pt` | Motorcycle detection | YOLO26n (pretrained weights) | COCO |
-| `helmet_det.pt` | Head detection | YOLO11s | Motorcycle Helmet v7 |
-| `head_cls.pt` | Helmet / no helmet | EfficientNet-B0 | Head boxes from Motorcycle Helmet v7 |
+| `head_det.pt` | Head detection above each motorcycle | YOLO26s | Crops above the motorcycles in Motorcycle Helmet v7 |
+| `helmet_cls.pt` | Helmet / no helmet on each head | EfficientNet-B0 | Head boxes from Motorcycle Helmet v7 |
 | `rider_cls.pt` | Rider state in 5 positions | EfficientNet-B0 | HELMET dataset |
 | `plate_det_th.pt` | Plate detection | YOLO | motorcycle license plate thai v4 |
 | `plate_ocr_th/` | Plate text recognition | PP-OCRv5 mobile (`th_PP-OCRv5_mobile_rec`) | 90,000 synthetic plate images |
@@ -283,15 +283,13 @@ Results on each model's validation set, as recorded in `runs/` and in the model 
 
 | Model | Results |
 |---|---|
-| `helmet_det.pt` | mAP50 0.602, mAP50-95 0.249 |
+| `head_det.pt` | mAP50 0.657, mAP50-95 0.269 (test split) |
 | `plate_det_th.pt` | Precision 0.910, recall 0.647, mAP50 0.713, mAP50-95 0.536 |
-| `head_cls.pt` | Balanced accuracy 93.8% (recall: helmet 93.1%, no helmet 94.5%) |
+| `helmet_cls.pt` | Balanced accuracy 93.8% (recall: helmet 93.1%, no helmet 94.5%) |
 | `rider_cls.pt` | Rider count 89.1%, all positions correct 82.5%, finding a rider without a helmet: precision 94.9%, recall 83.5% |
 | `plate_ocr_th/` | Accuracy 62.9%, normalized edit distance 0.767 (3,000 synthetic images, before voting across frames) |
 
 The videos in `input/` are used for evaluation only, never for training.
-
-The training script still in the project is `src/train_head_classifier.py`. The scripts that prepared the HELMET dataset and trained the rider classifier were removed, and remain in git history at commit `d784601`.
 
 ## Data Storage
 
@@ -359,7 +357,7 @@ Project_01/
 | `video_stream.py`, `playback.py`, `frame_exchange.py`, `hls.py` | Video input, playback control, and passing frames between threads |
 | `detectors.py`, `cuda_graphs.py` | Run the YOLO models and speed them up on the GPU |
 | `tracker.py`, `zone.py` | Motorcycle tracking and the detection area |
-| `rider_classifier.py`, `rider_voting.py`, `rider_counter.py`, `head_classifier.py` | Rider counting and helmet checks |
+| `rider_classifier.py`, `rider_voting.py`, `rider_counter.py`, `helmet_classifier.py` | Rider counting and helmet checks |
 | `ocr.py`, `ocr_process.py`, `ocr_manager.py`, `ocr_handler.py`, `ocr_voting.py`, `province.py` | Plate reading and combining results |
 | `speed.py`, `calibration.py`, `camera_motion.py` | Speed measurement |
 | `report.py`, `render.py`, `processing_stats.py`, `utils.py` | Reports, drawing, statistics and shared helpers |
@@ -396,7 +394,7 @@ The pages talk to the server through `/api/...`, written with DRF, and receive n
 
 | Dataset | Size | Licence | Used for |
 |---|---|---|---|
-| [Motorcycle Helmet v7](https://universe.roboflow.com/naratipws/motorcycle-helmet-w75eo/dataset/7) by naratipws (Roboflow Universe) | 3,835 images | MIT | `helmet_det.pt`, `head_cls.pt` |
+| [Motorcycle Helmet v7](https://universe.roboflow.com/naratipws/motorcycle-helmet-w75eo/dataset/7) by naratipws (Roboflow Universe) | 3,835 images | MIT | `head_det.pt`, `helmet_cls.pt` |
 | [motorcycle license plate thai v4](https://universe.roboflow.com/zusture/motorcycle-license-plate-thai/dataset/4) by zusture (Roboflow Universe) | 652 images | CC BY 4.0 | `plate_det_th.pt` |
 | HELMET dataset (Lin et al., 2020), from a [copy on Hugging Face](https://huggingface.co/datasets/AryanRajMaurya/Helmets) | 910 clips, 10,006 motorcycles | See the source | `rider_cls.pt` |
 | [COCO](https://cocodataset.org/) | Dataset of the pretrained weights | See the source | `yolo26n.pt` |

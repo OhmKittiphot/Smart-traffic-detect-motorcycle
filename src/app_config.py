@@ -18,14 +18,14 @@ class AppConfig:
     # Model files
     # Motorcycle detector
     motorcycle_model_path: str = "models/yolo26n.pt"
-    # Helmet and bare head detector
-    helmet_model_path: str = "models/helmet_det.pt"
+    # Rider head detector (finds each head above a motorcycle)
+    head_model_path: str = "models/head_det.pt"
     # Rider classifier
     rider_model_path: str = "models/rider_cls.pt"
     # Licence plate detector
     plate_model_path: str = "models/plate_det_th.pt"
-    # Head classifier
-    head_classifier_path: str = "models/head_cls.pt"
+    # Helmet classifier (helmet / no helmet on each head crop)
+    helmet_classifier_path: str = "models/helmet_cls.pt"
     # Plate OCR model folder
     plate_ocr_model_path: str = "models/plate_ocr_th"
 
@@ -64,11 +64,11 @@ class AppConfig:
     helmet_conf: float = 0.25
     # Confidence threshold for counting a head as a rider
     rider_conf: float = 0.20
-    # Helmet model input size
-    helmet_imgsz: int = 960
-    # Helmet model classes that mean a helmet is worn
+    # Head detector input size
+    helmet_imgsz: int = 640
+    # Head detector classes that mean a helmet is worn
     helmet_class_names: tuple = ("helmet", "with helmet")
-    # Helmet model classes that mean no helmet is worn
+    # Head detector classes that mean no helmet is worn
     no_helmet_class_names: tuple = ("head", "no helmet", "without helmet", "bare head")
 
     # Violations and reports

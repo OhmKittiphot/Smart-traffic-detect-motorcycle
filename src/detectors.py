@@ -1,13 +1,13 @@
-# The models run on each frame, one class per model: motorcycles, licence plates, rider heads (helmet
-# model, with the head classifier deciding helmet or not) and the rider classifier. Optional models that are
-# missing are skipped (available = False).
+# The models run on each frame, one class per model: motorcycles, licence plates, rider heads (head
+# detector, with the helmet classifier deciding helmet or not) and the rider classifier. Optional models
+# that are missing are skipped (available = False).
 import os
 
 import torch
 
 from .app_config import load_yolo_model
 from .cuda_graphs import split_batch
-from .head_classifier import HeadClassifier, crop_head
+from .helmet_classifier import HelmetClassifier, crop_head
 from .rider_classifier import RiderClassifier
 from .rider_voting import RiderVoting
 from .utils import log, log_error, suppress_overlapping_boxes
@@ -145,15 +145,15 @@ class PlateDetector(_YoloModel):
 
 
 class HeadDetector(_YoloModel):
-    # Rider heads above each motorcycle, with and without a helmet. With the head classifier loaded, the
-    # helmet model only finds the heads and the classifier decides helmet or not on each head crop.
+    # Rider heads above each motorcycle, with and without a helmet. With the helmet classifier loaded, the
+    # head detector only finds the heads and the classifier decides helmet or not on each head crop.
 
     def __init__(self, config, device, use_half):
         super().__init__(config, device)
         self.helmet_ids, self.head_ids = set(), set()
         self.classifier = None
         try:
-            self.model = load_yolo_model(config.helmet_model_path, device, use_half)
+            self.model = load_yolo_model(config.head_model_path, device, use_half)
         except Exception as e:
             log.warning("[Helmet] Model not loaded (%s). Helmet detection disabled.", e)
             return
@@ -166,12 +166,12 @@ class HeadDetector(_YoloModel):
             elif norm(name) in head_names:
                 self.head_ids.add(int(cid))
         log.info("[Helmet] Model classes: %s", dict(self.model.names))
-        if os.path.isfile(config.head_classifier_path):
+        if os.path.isfile(config.helmet_classifier_path):
             try:
-                self.classifier = HeadClassifier(config.head_classifier_path, device, use_half)
-                log.info("[Helmet] Head classifier loaded: %s", config.head_classifier_path)
+                self.classifier = HelmetClassifier(config.helmet_classifier_path, device, use_half)
+                log.info("[Helmet] Helmet classifier loaded: %s", config.helmet_classifier_path)
             except Exception as e:
-                log.warning("[Helmet] Head classifier not loaded (%s); using the helmet model's classes.", e)
+                log.warning("[Helmet] Helmet classifier not loaded (%s); using the head detector's classes.", e)
         if self.classifier is None and not self.head_ids:
             log.warning("[Helmet] No bare-head/no-helmet class found; NO HELMET will never be reported.")
 
@@ -248,7 +248,7 @@ class RiderClassification:
                 self.classifier = RiderClassifier(config.rider_model_path, device, use_half)
                 log.info("[Rider] Classifier loaded: %s", config.rider_model_path)
             except Exception as e:
-                log.warning("[Rider] Classifier not loaded (%s); using the helmet model.", e)
+                log.warning("[Rider] Classifier not loaded (%s); using the head detector and helmet classifier.", e)
         self.voting = RiderVoting(
             window=config.rider_vote_window,
             min_frames=config.rider_vote_min_frames,

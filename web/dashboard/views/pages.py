@@ -86,7 +86,7 @@ def _detection_models(config):
         (_("Plate detector"), config.plate_model_path, _("finds the licence plate on each motorcycle")),
         (_("Plate OCR"), config.plate_ocr_model_path, _("reads the plate's letters and number")),
         (_("Rider classifier"), config.rider_model_path, _("counts riders and checks their helmets")),
-        (_("Helmet detector"), config.helmet_model_path,
+        (_("Helmet detector"), config.head_model_path,
          _("not used while the rider classifier is there") if rider_found else _("helmet / no helmet on each head")),
     ]
     return [{"name": name, "file": Path(path).name, "purpose": purpose, "found": found(path)}
