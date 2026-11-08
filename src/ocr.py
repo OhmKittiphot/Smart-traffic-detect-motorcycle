@@ -2,10 +2,10 @@ import multiprocessing as mp
 import os
 import queue
 import re
+import sys
 
 import cv2
 import numpy as np
-import torch
 
 from .ocr_voting import UNKNOWN
 from .province import extract_thai_province
@@ -98,8 +98,9 @@ def read_plate(rec, crop_bgr):
     }
 
 
-def load_recognizer(model_dir=None, device="gpu"):
+def load_recognizer(model_dir=None, device=None):
     # The plate recognizer: the fine-tuned model in model_dir when it exists, else PaddleOCR's stock one.
+    # device None: the GPU when Paddle finds one, else the CPU.
     from paddleocr import TextRecognition
 
     if model_dir and os.path.isdir(model_dir):
@@ -119,6 +120,9 @@ def _configure_paddle() -> None:
     # Grow GPU memory on demand instead of Paddle's default upfront ~92% reservation,
     # so this process can share the GPU with the main (YOLO) process's CUDA context.
     os.environ.setdefault("FLAGS_allocator_strategy", "auto_growth")
+    # PaddleX imports modelscope, whose logger loads torch whenever it is installed: about 340 MB of RAM
+    # this process never uses. Marked as missing, torch is skipped (unless this process already loaded it).
+    sys.modules.setdefault("torch", None)
     warnings.filterwarnings("ignore")
 
 
@@ -143,7 +147,7 @@ def ocr_worker(in_q: mp.Queue, out_q: mp.Queue, model_dir: str = ""):
     _configure_paddle()
     log.info("[OCR-Process] Loading PaddleOCR ...")
     try:
-        rec = load_recognizer(model_dir, "gpu" if torch.cuda.is_available() else "cpu")
+        rec = load_recognizer(model_dir)
     except Exception as e:
         # Tell the main process why OCR is unavailable instead of dying silently
         log.exception("[OCR-Process] PaddleOCR failed to load")

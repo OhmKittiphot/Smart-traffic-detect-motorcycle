@@ -2,16 +2,11 @@ import os
 import sys
 import traceback
 import multiprocessing as mp
-from unittest import case
 import warnings
 warnings.filterwarnings("ignore", category=DeprecationWarning)
 
-from .app_config import AppConfig, configure_torch_runtime
-from .desktop_viewer import DesktopViewer
-from .detection_app import DetectionApp
 
-
-def select_source(config: AppConfig):
+def select_source(config):
     print("\n" + "=" * 50)
     print("Motorcycle Rider, Helmet & License Plate Detection")
     print("=" * 50)
@@ -53,15 +48,17 @@ def select_source(config: AppConfig):
             case _:
                 print("Please enter 1 or 2")
 
-        if __name__ == "__main__":
-            mp.freeze_support()
-            print("Please enter 1 or 2")
 
 if not __package__:
     sys.exit("Run it as part of the src package, from the repository root: venv\\Scripts\\python -m src.main")
 
 if __name__ == "__main__":
     mp.freeze_support()
+    # Imported here, not at the top: the OCR process imports this module again when it starts, and these
+    # would load torch and the detectors there too (about 430 MB of RAM it never uses)
+    from .app_config import AppConfig, configure_torch_runtime
+    from .desktop_viewer import DesktopViewer
+    from .detection_app import DetectionApp
 
     # Thai plate text crashes print() when stdout is redirected on Windows (cp1252 default)
     for stream in (sys.stdout, sys.stderr):

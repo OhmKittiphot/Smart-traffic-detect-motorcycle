@@ -1,12 +1,23 @@
 # Runs a model's forward pass as a CUDA graph. On this GPU the models wait on the CPU launching many
 # small kernels one by one; a graph replays them in one call (one YOLO frame: 18 ms -> 4.8 ms).
 # A graph fits one input shape, so only common shapes get one and crop batches are padded to a few sizes.
+import threading
+
 import torch
 
 from .utils import log
 
 # Sizes a batch is padded up to (copies of one of its items, whose results are dropped)
 BATCH_SIZES = (1, 2, 4, 8)
+
+# Every graph, of every model, is recorded on one side stream into one memory pool. PyTorch gives each
+# stream its own 32 MB cuBLAS workspace and never frees it, and a pool keeps room for the largest
+# intermediates of its graphs: a new stream per graph and a pool per model held about 0.9 GB of this 4 GB
+# GPU. Sharing the pool is safe because graphs never run at the same time (_lock) and each output is copied
+# out right after its replay, before another graph can overwrite it.
+_stream = None
+_pool = None
+_lock = threading.Lock()
 
 
 def split_batch(items):
@@ -40,22 +51,25 @@ class GraphedForward:
         self.max_graphs = max_graphs
         self.graphs = {}   # (shape, dtype) -> (graph, its input tensor, its output, keep()); None: no graph
         self.calls = {}    # (shape, dtype) -> calls so far, until a graph is recorded for it
-        self.pool = None
 
     def _record(self, x: torch.Tensor):
+        global _stream, _pool
+        if _stream is None:
+            _stream = torch.cuda.Stream()
         static_in = x.clone()
-        # Run a few times on a side stream first, as recording requires (cuDNN picks its kernels then)
-        stream = torch.cuda.Stream()
-        stream.wait_stream(torch.cuda.current_stream())
-        with torch.cuda.stream(stream):
+        # Run a few times on the side stream first, as recording requires (cuDNN picks its kernels then)
+        _stream.wait_stream(torch.cuda.current_stream())
+        with torch.cuda.stream(_stream):
             for _ in range(3):
                 self.forward(static_in)
-        torch.cuda.current_stream().wait_stream(stream)
+        torch.cuda.current_stream().wait_stream(_stream)
         graph = torch.cuda.CUDAGraph()
-        # thread_local: other threads may use the GPU meanwhile (only this thread's work is recorded)
-        with torch.cuda.graph(graph, pool=self.pool, capture_error_mode="thread_local"):
+        # thread_local: other threads may use the GPU meanwhile (only this thread's work is recorded).
+        # A pool whose graphs are all gone (the models were unloaded) is freed when recording starts, and
+        # its id then starts a new pool.
+        with torch.cuda.graph(graph, pool=_pool, stream=_stream, capture_error_mode="thread_local"):
             static_out = self.forward(static_in)
-        self.pool = graph.pool()
+        _pool = graph.pool()
         return graph, static_in, static_out, self.keep() if self.keep else None
 
     def _graph_for(self, x: torch.Tensor):
@@ -74,14 +88,18 @@ class GraphedForward:
         return self.graphs[key]
 
     def __call__(self, x: torch.Tensor, *args, **kwargs):
-        graph = None if args or any(kwargs.values()) else self._graph_for(x)
-        if graph is None:   # an option the graph was not recorded with (ultralytics' augment, visualize...)
+        if args or any(kwargs.values()):   # an option graphs are not recorded with (ultralytics' augment...)
             output = self.forward(x, *args, **kwargs)
         else:
-            graph, static_in, static_out, _ = graph
-            static_in.copy_(x)
-            graph.replay()
-            output = _clone(static_out)
+            with _lock:
+                graph = self._graph_for(x)
+                if graph is None:
+                    output = self.forward(x)
+                else:
+                    graph, static_in, static_out, _ = graph
+                    static_in.copy_(x)
+                    graph.replay()
+                    output = _clone(static_out)
         return self.after(output) if self.after else output
 
 
