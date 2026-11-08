@@ -109,13 +109,11 @@ Create a `.env` file in the project root. It is not in git because it can contai
 
 ```ini
 RTSP_URL=rtsp://user:pass@192.168.1.10:554/stream
-VIDEO_FILE=input/IMG_9122.MOV
 ```
 
 | Variable | Meaning |
 |---|---|
 | `RTSP_URL` | IP camera URL, used by both the desktop program and the dashboard |
-| `VIDEO_FILE` | Video file for the desktop program |
 
 Detection settings such as confidence thresholds, image sizes and model paths are in [src/app_config.py](src/app_config.py).
 
@@ -145,7 +143,7 @@ Run it from the project root with `-m`, because `src/` is a Python package.
 venv\Scripts\python -m src.main
 ```
 
-Choose `[1]` for the video file (`VIDEO_FILE`) or `[2]` for the RTSP camera (`RTSP_URL`), then use these keys in the video window:
+Choose `[1]` for a video file or `[2]` for the RTSP camera (`RTSP_URL`). With `[1]`, the program lists the videos directly inside `input/` by number; press Enter to take the first one. Then use these keys in the video window:
 
 | Key | Action |
 |---|---|
@@ -374,7 +372,7 @@ The pages talk to the server through `/api/...`, written with DRF, and receive n
 | Problem | Solution |
 |---|---|
 | `No admin account yet` when starting `run.py` | Run `venv\Scripts\python web\manage.py createsuperuser`, then start again |
-| `VIDEO_FILE not found in .env` | Set `VIDEO_FILE` in `.env`, or choose the RTSP camera |
+| `No video files in input/` in the desktop program | Put the video directly in `input/`, not in a subfolder, or choose the RTSP camera |
 | The dashboard shows NO SIGNAL | Check `RTSP_URL` and the camera connection |
 | No files to choose from in the dashboard | Put the video directly in `input/`, not in a subfolder |
 | No speed in the records | Set up speed measurement for that source first |

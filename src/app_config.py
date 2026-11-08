@@ -14,8 +14,6 @@ load_dotenv()
 class AppConfig:
     # Camera stream address (RTSP_URL in .env)
     rtsp_url: str
-    # Video file to play (VIDEO_FILE in .env)
-    video_file: str
 
     # Model files
     # Motorcycle detector
@@ -106,10 +104,7 @@ class AppConfig:
 
     @classmethod
     def from_env(cls) -> "AppConfig":
-        return cls(
-            rtsp_url=os.getenv("RTSP_URL", ""),
-            video_file=os.getenv("VIDEO_FILE", ""),
-        )
+        return cls(rtsp_url=os.getenv("RTSP_URL", ""))
 
     @property
     def inference_quantize(self):
