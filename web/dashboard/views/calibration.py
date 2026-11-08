@@ -20,7 +20,6 @@ _REDRAW_FRAME_KEEP_S = 60 * 60
 
 
 # Cached per user and source, so two people editing one source each save the frame they clicked on
-
 def _frame_size_key(request, source_key) -> str:
     # Size of the last frame sent for redrawing a source's points, so the points saved for it can be checked.
     return f"calibration-frame-size:{request.user.pk}:{source_key}"

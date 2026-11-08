@@ -20,7 +20,7 @@ class DesktopViewer:
             on_resume=lambda: self._set_paused(False),
         )
 
-    def _set_paused(self, paused: bool) :
+    def _set_paused(self, paused: bool):
         stream = self.app.video_stream
         if stream.is_video_file and stream.playback.is_paused() != paused:
             stream.playback.toggle_pause()

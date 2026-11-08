@@ -405,6 +405,9 @@ msgstr "หารถจักรยานยนต์ในเฟรม"
 msgid "finds the licence plate on each motorcycle"
 msgstr "หาป้ายทะเบียนของรถจักรยานยนต์แต่ละคัน"
 
+msgid "finds the riders' heads above each motorcycle"
+msgstr "หาศีรษะของผู้ขับขี่และผู้ซ้อนเหนือรถจักรยานยนต์แต่ละคัน"
+
 msgid "Forward %(n)s seconds"
 msgstr "ไปข้างหน้า %(n)s วินาที"
 
@@ -420,6 +423,9 @@ msgstr "ไปที่หน้าภาพสด"
 msgid "GPU is catching up…"
 msgstr "GPU กำลังประมวลผลตามให้ทัน…"
 
+msgid "Head detector"
+msgstr "ตัวตรวจจับศีรษะ"
+
 msgid "Healthy"
 msgstr "ปกติ"
 
@@ -429,8 +435,8 @@ msgstr "หมวกนิรภัย"
 msgid "helmet / no helmet on each head"
 msgstr "สวม / ไม่สวมหมวกนิรภัย ของแต่ละคน"
 
-msgid "Helmet detector"
-msgstr "ตัวตรวจจับหมวกนิรภัย"
+msgid "Helmet classifier"
+msgstr "ตัวจำแนกหมวกนิรภัย"
 
 msgid "Imperial (mph, ft)"
 msgstr "ไมล์/ชม., ฟุต"
@@ -578,9 +584,6 @@ msgstr "ยังไม่ตรวจสอบ"
 
 msgid "Not reviewed yet"
 msgstr "ยังไม่ได้ตรวจสอบ"
-
-msgid "not used while the rider classifier is there"
-msgstr "ไม่ได้ใช้ เพราะมีตัวจำแนกผู้ขับขี่แล้ว"
 
 msgid "Note"
 msgstr "หมายเหตุ"

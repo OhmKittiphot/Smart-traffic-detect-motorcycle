@@ -138,22 +138,9 @@ def configure_torch_runtime():
     if use_cuda:
         _sleep_while_waiting_for_gpu()
         torch.backends.cudnn.benchmark = False
-
-        try:
-            torch.backends.cuda.matmul.allow_tf32 = True
-        except Exception:
-            pass
-
-        try:
-            torch.set_float32_matmul_precision("high")
-        except Exception:
-            pass
-
-        try:
-            # Leave headroom on the GPU for the separate OCR process (also GPU-based)
-            torch.cuda.set_per_process_memory_fraction(0.7, device=0)
-        except Exception:
-            pass
+        torch.set_float32_matmul_precision("high")   # float32 matrix products in TF32
+        # Leave headroom on the GPU for the separate OCR process (also GPU-based)
+        torch.cuda.set_per_process_memory_fraction(0.7, device=0)
 
     return primary_device, use_half
 

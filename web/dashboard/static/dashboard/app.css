@@ -113,7 +113,6 @@ button, input, select { font: inherit; color: inherit; }
   & :is(.settings-row > span:first-child small, .toast-text, .calib-next) { line-height: 1.5; }
 }
 .muted { color: var(--muted); }
-.sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 [hidden] { display: none !important; }
 
 /* ---------- buttons & inputs ---------- */
@@ -440,10 +439,6 @@ button.plate-link { cursor: pointer; font: inherit; font-size: 13px; font-weight
 .btn-warn {
   background: var(--warn); border-color: var(--warn); color: #1b1300;
   &:hover:not(:disabled) { filter: brightness(1.08); border-color: var(--warn); }
-}
-.btn-ok {
-  background: var(--ok); border-color: var(--ok); color: #fff;
-  &:hover:not(:disabled) { filter: brightness(1.08); border-color: var(--ok); }
 }
 .filters { display: inline-flex; gap: 4px; }
 .filter {

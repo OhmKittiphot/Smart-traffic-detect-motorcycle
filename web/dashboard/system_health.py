@@ -72,7 +72,7 @@ def cameras(rtsp_url: str) -> tuple:
 
 
 def video_files() -> list:
-    # Name, size and last change of each video file the staff can choose (see engine.list_video_files).
+    # Name, size and last change of each video file the staff can choose (see sources.list_video_files).
     folder = Path(settings.VIDEO_INPUT_DIR)
     files = []
     for name in list_video_files():

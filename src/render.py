@@ -137,8 +137,7 @@ def draw_detections(frame, dets, mc_dets, mc_ids, speeds, helmets, riders=None, 
             font_size=22, text_color=(255, 255, 255), bg_color=(0, 0, 0), bg_alpha=0.7
         )
 
-    for item in dets:
-        (x1, y1, x2, y2), text, conf = item[:3]
+    for (x1, y1, x2, y2), text, conf in dets:
         cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 255, 0), 3)
 
         if text:

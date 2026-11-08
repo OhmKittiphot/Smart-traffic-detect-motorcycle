@@ -7,7 +7,6 @@ import numpy as np
 from .models import SpeedCalibration
 
 
-
 def saved(source_key: str) -> Optional[SpeedCalibration]:
     return SpeedCalibration.objects.filter(source_key=source_key).first()
 

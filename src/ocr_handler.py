@@ -1,11 +1,10 @@
 import queue
-import time
 
 from .utils import format_thai_plate, log, log_error
 
 
 class OCRResultHandler:
-    # Processes OCR worker results, updates track voting caches, and logs plate detections.
+    # Votes the reads coming back from the OCR process into each motorcycle's plate (see ocr.ocr_worker).
 
     def __init__(self, ocr_out_q, ocr_manager, tracker, det_lock, get_media_gen_fn, ocr_conf_threshold: float):
         self.ocr_out_q = ocr_out_q
@@ -22,7 +21,7 @@ class OCRResultHandler:
     def run_loop(self):
         while self._running:
             try:
-                results = self.ocr_out_q.get(timeout=5.0)
+                batch = self.ocr_out_q.get(timeout=5.0)
             except queue.Empty:
                 continue
             except (EOFError, OSError) as e:
@@ -30,36 +29,25 @@ class OCRResultHandler:
                 log.warning("[OCR-Result] OCR queue closed (%s). Stopping result handler.", e)
                 return
 
-            try:
-                frame_t = time.time()
-                result_gen = None
-                if isinstance(results, dict):
-                    if "error" in results:
-                        log.error("[OCR-Result] OCR worker error: %s", results["error"])
-                        continue
-                    result_gen = results.get("gen")
-                    frame_t = float(results.get("t", frame_t))
-                    results = results.get("results", [])
-                if not isinstance(results, list):
-                    continue
-            except Exception as e:
-                log_error("OCR-Result", e)
+            if not isinstance(batch, dict):
+                continue   # "ready", when OCR finished loading after OcrProcess.start() stopped waiting
+            if "error" in batch:
+                log.error("[OCR-Result] OCR worker error: %s", batch["error"])
                 continue
-
             # Handle each plate on its own so one malformed result does not drop the whole batch
-            for item in results:
+            for read in batch["results"]:
                 try:
-                    self._handle_item(item, result_gen, frame_t)
+                    self._handle_item(read, batch["gen"], batch["t"])
                 except Exception as e:
                     log_error("OCR-Result", e)
 
-    def _handle_item(self, read, result_gen, frame_t: float):
+    def _handle_item(self, read, result_gen: int, frame_t: float):
         # Vote one OCR worker read (see ocr.read_plate) into its track and record the plate.
         bbox, track_id = read["bbox"], read["track_id"]
 
         with self.det_lock:
-            if result_gen is not None and result_gen != self.get_media_gen_fn():
-                return
+            if result_gen != self.get_media_gen_fn():
+                return   # read from a frame before a seek, the end of the video or a source switch
 
             if track_id is None:
                 track_id = self.tracker.resolve_track_id(bbox)
@@ -79,16 +67,8 @@ class OCRResultHandler:
             if not (final_text and final_conf >= self.ocr_conf_threshold):
                 return
 
-            self.ocr_manager.update_cache(
-                bbox=bbox,
-                final_text=final_text,
-                final_conf=final_conf,
-                now=frame_t,
-                track_id=track_id,
-                plate_text=plate_text,
-                province_text=province_text,
-                complete=bool(series and number),
-            )
+            self.ocr_manager.update_cache(bbox=bbox, final_text=final_text, final_conf=final_conf, now=frame_t,
+                                          track_id=track_id, complete=bool(series and number))
 
             # Nothing is printed here: the plate goes into the motorcycle's report, printed when it leaves
             formatted_plate = format_thai_plate(plate_text, "") if plate_text else ""

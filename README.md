@@ -163,12 +163,6 @@ Clean up old data now (same as the Clean up now button in Settings):
 venv\Scripts\python web\manage.py cleanup
 ```
 
-Retrain the head classifier (needs the `helmet-rider-dataset/` folder; see [Datasets](#datasets)):
-
-```bash
-venv\Scripts\python -m src.train_head_classifier --data helmet-rider-dataset --out models/head_cls.pt
-```
-
 ## Using the Dashboard
 
 Tables show normal motorcycles in green and violations in red.
@@ -246,7 +240,7 @@ Roles are Django groups, and page access uses 6 custom permissions in `dashboard
 flowchart TD
     A[Camera or video file] --> B[YOLO motorcycle detection]
     B --> C[Motorcycle tracking]
-    C --> D[Head detection + head classifier]
+    C --> D[Head detection + helmet classifier]
     C --> E[Rider classifier]
     C --> F[YOLO plate detection]
     C --> G[Speed from homography]
@@ -263,7 +257,7 @@ flowchart TD
 1. **Detect motorcycles**: YOLO26n finds motorcycles, which are then filtered by the detection area using the bottom-middle point of each box.
 2. **Track**: `MotorcycleTracker` matches motorcycles across frames using positions predicted from their velocity.
 3. **Count riders**: the rider classifier evaluates each position (driver, child in front, 3 passenger positions) and averages the results over several frames, giving larger, clearer views more weight.
-4. **Check helmets**: YOLO finds the heads above each motorcycle, then the head classifier decides from a head crop taken from the full-size frame.
+4. **Check helmets**: YOLO finds the heads above each motorcycle, then the helmet classifier decides from a head crop taken from the full-size frame.
 5. **Read plates**: YOLO finds the plate inside the motorcycle box. The plate is cut into 3 lines (series, province, number), and PaddleOCR reads them in a separate process so it does not share the GIL with detection. Characters are then voted on across frames, and the province is matched against the list of Thai provinces.
 6. **Measure speed**: a homography converts the ground contact point from image coordinates to road coordinates in metres, and speed is distance over time. If the camera moves in a video file, `CameraMotion` uses ORB and RANSAC to keep the 4 points on the road.
 7. **Report**: a motorcycle seen in at least 5 frames is reported when it leaves. `find_violations` applies the rules, and the dashboard saves the record and photos through `dashboard/recorder.py`.
@@ -357,11 +351,10 @@ Project_01/
 | `video_stream.py`, `playback.py`, `frame_exchange.py`, `hls.py` | Video input, playback control, and passing frames between threads |
 | `detectors.py`, `cuda_graphs.py` | Run the YOLO models and speed them up on the GPU |
 | `tracker.py`, `zone.py` | Motorcycle tracking and the detection area |
-| `rider_classifier.py`, `rider_voting.py`, `rider_counter.py`, `helmet_classifier.py` | Rider counting and helmet checks |
+| `rider_classifier.py`, `helmet_classifier.py`, `crop_classifier.py`, `rider_voting.py`, `rider_counter.py` | Rider counting and helmet checks |
 | `ocr.py`, `ocr_process.py`, `ocr_manager.py`, `ocr_handler.py`, `ocr_voting.py`, `province.py` | Plate reading and combining results |
 | `speed.py`, `calibration.py`, `camera_motion.py` | Speed measurement |
 | `report.py`, `render.py`, `processing_stats.py`, `utils.py` | Reports, drawing, statistics and shared helpers |
-| `train_head_classifier.py` | Trains the head classifier |
 
 | Files in `web/dashboard/` | Purpose |
 |---|---|
@@ -399,7 +392,7 @@ The pages talk to the server through `/api/...`, written with DRF, and receive n
 | HELMET dataset (Lin et al., 2020), from a [copy on Hugging Face](https://huggingface.co/datasets/AryanRajMaurya/Helmets) | 910 clips, 10,006 motorcycles | See the source | `rider_cls.pt` |
 | [COCO](https://cocodataset.org/) | Dataset of the pretrained weights | See the source | `yolo26n.pt` |
 
-The `helmet-rider-dataset/`, `motorcycle-license-plate-dataset/` and `datasets/` folders are not in git.
+The datasets are kept in `datasets/`, which is not in git.
 
 ### Papers
 

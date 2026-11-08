@@ -26,31 +26,21 @@ PROVINCE_NAMES_EN = {
     "อุบลราชธานี": "Ubon Ratchathani", "กรุงเทพมหานคร": "Bangkok",
 }
 THAI_PROVINCES = list(PROVINCE_NAMES_EN)
+# Longest first, so a whole name is found before a shorter one that is part of it
+_LONGEST_FIRST = sorted(THAI_PROVINCES, key=len, reverse=True)
+# Lowest similarity at which OCR text without a whole province name is still read as the closest province
+_MIN_SIMILARITY = 0.78
+
 
 def extract_thai_province(text: str) -> str:
-    if not text:
+    # The province on a plate's province line as OCR read it: a name found whole in the text, else the most
+    # similar name when it is similar enough; '' when there is none.
+    thai = re.sub(r"[^\u0E00-\u0E7F]", "", text or "")   # Thai characters only (no spaces, digits, Latin)
+    if len(thai) < 3:
         return ""
-
-    normalized = re.sub(r"\s+", "", text)
-    normalized = re.sub(r"[^\u0E00-\u0E7F]", "", normalized)
-
-    if len(normalized) < 3:
-        return ""
-
-    for province in sorted(THAI_PROVINCES, key=len, reverse=True):
-        if province in normalized:
+    for province in _LONGEST_FIRST:
+        if province in thai:
             return province
-
-    best_province = ""
-    best_score = 0.0
-
-    for province in THAI_PROVINCES:
-        score = SequenceMatcher(None, normalized, province).ratio()
-        if score > best_score:
-            best_score = score
-            best_province = province
-
-    if best_score >= 0.78:
-        return best_province
-
-    return ""
+    scores = {province: SequenceMatcher(None, thai, province).ratio() for province in THAI_PROVINCES}
+    best = max(scores, key=scores.get)
+    return best if scores[best] >= _MIN_SIMILARITY else ""

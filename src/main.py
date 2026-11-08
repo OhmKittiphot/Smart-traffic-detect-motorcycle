@@ -24,7 +24,7 @@ def select_source(config):
             print("\nExiting...")
             sys.exit(0)
 
-        match (choice):
+        match choice:
             case "1":
                 if not config.video_file:
                     print("VIDEO_FILE not found in .env, please set it first")

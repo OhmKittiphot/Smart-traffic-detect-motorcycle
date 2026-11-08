@@ -358,7 +358,7 @@ def stopped_status() -> dict:
     # DetectionService.status() for while detection is off.
     return {"state": DetectionService.STOPPED, "error": "", "mode": "", "source": "", "video_file": "",
             "signal": False, "paused": False, "fps": 0.0, "speed_calibrated": False, "speed_limit_kmh": None,
-            "camera_configured": False, "pos_ms": 0, "total_ms": 0, "loading": ""}
+            "camera_configured": False, "pos_ms": 0, "total_ms": 0, "source_fps": 0, "loading": ""}
 
 
 def engine_health() -> dict:

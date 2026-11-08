@@ -193,8 +193,6 @@ class MotorcycleTracker:
         # Prefer the nearest motorcycle whose box contains the plate (boxes overlap when bikes
         # are one behind the other); otherwise the nearest one within distance_threshold
         for mc_bbox, _ in self.latest_mc_detections:
-            if mc_bbox is None:
-                continue
             track_id = self.bbox_to_track_id.get(mc_bbox)
             if track_id is None:
                 continue

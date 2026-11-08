@@ -6,10 +6,10 @@ from django.utils import timezone
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from .. import calibrations, storage, system_health
+from .. import calibrations, source_settings, storage, system_health
 from ..engine import current_service, engine_health
 from ..models import Review, SpeedCalibration, VehicleRecord
-from .. import source_settings
+from ..sources import IP_CAMERA
 
 
 def _local_time(timestamp: float) -> datetime:
@@ -55,7 +55,7 @@ class SystemStatusView(APIView):
                     "calibration": calibration}
 
         cameras, checked_at = system_health.cameras(config.rtsp_url)
-        cameras = [{**c, **source_info(f"live:{c['key'] or 'ip'}")} for c in cameras]
+        cameras = [{**c, **source_info(f"live:{c['key'] or IP_CAMERA}")} for c in cameras]
         files = [{**f, **source_info(f"file:{f['name']}"), **_file_settings(f["name"]),
                   "modified": _local_time(f["modified"])}
                  for f in system_health.video_files()]

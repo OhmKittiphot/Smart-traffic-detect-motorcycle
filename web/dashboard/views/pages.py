@@ -80,14 +80,13 @@ def _detection_models(config):
     def found(path):   # AppConfig paths are relative to the project root
         return (Path(settings.PROJECT_DIR) / path).exists()
 
-    rider_found = found(config.rider_model_path)
     models = [
         (_("Motorcycle detector"), config.motorcycle_model_path, _("finds motorcycles in the frame")),
         (_("Plate detector"), config.plate_model_path, _("finds the licence plate on each motorcycle")),
         (_("Plate OCR"), config.plate_ocr_model_path, _("reads the plate's letters and number")),
         (_("Rider classifier"), config.rider_model_path, _("counts riders and checks their helmets")),
-        (_("Helmet detector"), config.head_model_path,
-         _("not used while the rider classifier is there") if rider_found else _("helmet / no helmet on each head")),
+        (_("Head detector"), config.head_model_path, _("finds the riders' heads above each motorcycle")),
+        (_("Helmet classifier"), config.helmet_classifier_path, _("helmet / no helmet on each head")),
     ]
     return [{"name": name, "file": Path(path).name, "purpose": purpose, "found": found(path)}
             for name, path, purpose in models]

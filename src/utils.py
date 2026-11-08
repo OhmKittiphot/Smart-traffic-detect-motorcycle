@@ -3,10 +3,10 @@ import re
 import threading
 import time
 import traceback
+from typing import Dict, List, Tuple
 from urllib.parse import urlsplit
 
 import cv2
-from typing import Dict, List, Tuple
 
 
 # Messages of the detection pipeline. Each one already starts with its part's tag ("[Video] ...").
@@ -15,14 +15,13 @@ class _PipelineLog:
     def _format(message: str, args: tuple) -> str:
         return message % args if args else message
 
-
     def info(self, message: str, *args) -> None:
         print(self._format(message, args))
 
     def warning(self, message: str, *args) -> None:
         print(self._format(message, args))
 
-    def error(self, message: str, *args, **kwargs) -> None:
+    def error(self, message: str, *args) -> None:
         print(self._format(message, args))
 
     def exception(self, message: str, *args) -> None:

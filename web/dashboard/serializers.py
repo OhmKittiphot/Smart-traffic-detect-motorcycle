@@ -28,6 +28,7 @@ def _known_source(source):
     if source and source.partition(":")[0] not in (*SourceMode.values, "location"):
         raise serializers.ValidationError(_("Unknown video source"))
 
+
 class RecordEventsSerializer(serializers.Serializer):
     # ?after=<id> (or the Last-Event-ID header): records newer than this id; none means from now on.
     after = serializers.IntegerField(min_value=0, required=False, allow_null=True, default=None)

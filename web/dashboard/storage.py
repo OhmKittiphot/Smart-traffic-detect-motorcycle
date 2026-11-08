@@ -150,8 +150,9 @@ def clean_up() -> dict:
     #    never those of confirmed violations
     _usage_cache = (0.0, None)
     limit = limits.media_max_mb * 1024 * 1024
-    over = photos_bytes() - int(limit * 0.9)
-    if photos_bytes() > limit:
+    in_use = photos_bytes()
+    if in_use > limit:
+        over = in_use - int(limit * 0.9)
         candidates = VehicleRecord.objects.filter(with_photos).exclude(keep).order_by("saved_at")
         for group in (candidates.filter(not_needed), candidates.exclude(not_needed)):
             for record in group.iterator():
