@@ -3,7 +3,9 @@
 # that are missing are skipped (available = False).
 import os
 
+import numpy as np
 import torch
+from ultralytics.models.yolo.detect import DetectionPredictor
 
 from .app_config import load_yolo_model
 from .cuda_graphs import split_batch
@@ -17,6 +19,18 @@ def _boxes(result):
     # (x1, y1, x2, y2, conf, class) of each box of one YOLO result, as plain numbers.
     for b in result.boxes:
         yield (*map(int, b.xyxy[0].tolist()), float(b.conf[0]), int(b.cls[0]))
+
+
+class _GpuLayoutPredictor(DetectionPredictor):
+    # ultralytics' predictor, with the BGR -> RGB swap and the (h, w, 3) -> (3, h, w) transpose done on the
+    # GPU, as the classifiers do: as a strided copy on the CPU it took about 10 ms of every frame.
+
+    def preprocess(self, im):
+        if isinstance(im, torch.Tensor):
+            return super().preprocess(im)
+        pixels = torch.from_numpy(np.stack(self.pre_transform(im))).to(self.device)   # (N, H, W, BGR) uint8
+        rgb = pixels.flip(-1).permute(0, 3, 1, 2).contiguous()                        # (N, RGB, H, W)
+        return (rgb.half() if self.model.fp16 else rgb.float()) / 255
 
 
 class _YoloModel:
@@ -33,7 +47,7 @@ class _YoloModel:
 
     def _predict(self, images, imgsz: int, **options):
         return self.model.predict(images, imgsz=imgsz, verbose=False, device=self.device,
-                                  quantize=self.config.inference_quantize, **options)
+                                  quantize=self.config.inference_quantize, predictor=_GpuLayoutPredictor, **options)
 
     def _predict_crops(self, crops: list, imgsz: int, **options) -> list:
         # predict() on image crops, one result each. Every crop is letterboxed to the same imgsz square

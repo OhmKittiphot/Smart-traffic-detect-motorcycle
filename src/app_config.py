@@ -1,4 +1,6 @@
 from dataclasses import dataclass
+import ctypes
+import glob
 import os
 import torch
 
@@ -114,12 +116,27 @@ class AppConfig:
         return 16 if torch.cuda.is_available() else 32
 
 
+# cudaDeviceScheduleBlockingSync, from the CUDA runtime API
+_CUDA_BLOCKING_SYNC = 4
+
+
+def _sleep_while_waiting_for_gpu():
+    # A thread waiting for the GPU (to read a result back) spins at 100% of a CPU core by default; with
+    # blocking sync it sleeps until the GPU is done. The frame rate stays the same, and the processing thread
+    # went from 85 to 52 ms of CPU per frame. torch has no setting for this, so it is set through the CUDA
+    # runtime that ships with torch (Windows). It only takes effect before CUDA starts in this process; a
+    # later call returns an error and changes nothing.
+    for path in glob.glob(os.path.join(os.path.dirname(torch.__file__), "lib", "cudart64_*.dll")):
+        ctypes.CDLL(path).cudaSetDeviceFlags(_CUDA_BLOCKING_SYNC)
+
+
 def configure_torch_runtime():
     use_cuda = torch.cuda.is_available()
     primary_device = "cuda:0" if use_cuda else "cpu"
     use_half = use_cuda
 
     if use_cuda:
+        _sleep_while_waiting_for_gpu()
         torch.backends.cudnn.benchmark = False
 
         try:

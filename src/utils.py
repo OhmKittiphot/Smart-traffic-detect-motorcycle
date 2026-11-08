@@ -86,10 +86,16 @@ def open_capture(camera_url: str) -> cv2.VideoCapture:
     is_rtsp = camera_url.lower().startswith(("rtsp://", "rtsps://"))
     is_network = is_rtsp or camera_url.lower().startswith(("http://", "https://"))
 
-    cap = cv2.VideoCapture()
+    # Decode on the GPU's video decoder when there is one, else on the CPU: the CPU took about 1.9 cores
+    # for this project's 1080p60 HEVC videos, against 0.8 this way. It costs about 200 MB of GPU memory, and
+    # the bottom 3 rows of a 1080-row frame come out black.
+    params = [cv2.CAP_PROP_HW_ACCELERATION, cv2.VIDEO_ACCELERATION_ANY]
     if is_network:
-        cap.set(cv2.CAP_PROP_OPEN_TIMEOUT_MSEC, _RTSP_OPEN_TIMEOUT_MS)
-        cap.set(cv2.CAP_PROP_READ_TIMEOUT_MSEC, _RTSP_READ_TIMEOUT_MS)
+        # Only read when the source is opened (set() on a capture not opened yet does nothing)
+        params += [cv2.CAP_PROP_OPEN_TIMEOUT_MSEC, _RTSP_OPEN_TIMEOUT_MS,
+                   cv2.CAP_PROP_READ_TIMEOUT_MSEC, _RTSP_READ_TIMEOUT_MS]
+
+    cap = cv2.VideoCapture()
 
     # Low-latency RTSP options; read by OpenCV on every open, and they would break probing of video files.
     # The variable is shared by the whole process, so two sources opened at once (the capture thread and a
@@ -101,7 +107,7 @@ def open_capture(camera_url: str) -> cv2.VideoCapture:
             )
         else:
             os.environ.pop("OPENCV_FFMPEG_CAPTURE_OPTIONS", None)
-        opened = cap.open(camera_url, cv2.CAP_FFMPEG)
+        opened = cap.open(camera_url, cv2.CAP_FFMPEG, params)
 
     if not opened:
         # Never print the RTSP URL itself: it usually carries the camera password
