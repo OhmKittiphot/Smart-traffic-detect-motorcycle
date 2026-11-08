@@ -22,6 +22,7 @@ A web dashboard shows the live video and lets staff search plates, view evidence
 - [Troubleshooting](#troubleshooting)
 - [References](#references)
 - [Licences](#licences)
+- [AI Assistance](#ai-assistance)
 
 ## Features
 
@@ -422,3 +423,7 @@ This project does not have a LICENSE file of its own yet. Third-party components
 | PyTorch, torchvision, Django, DRF, aiortc, PyAV | BSD |
 | django-axes, WhiteNoise | MIT |
 | Waitress | ZPL 2.1 |
+
+## AI Assistance
+
+Parts of the code were written, reviewed and cleaned up with the help of [Claude](https://www.anthropic.com/claude) by Anthropic, used through [Claude Code](https://claude.com/claude-code).
